@@ -6,6 +6,7 @@ import { articlePrompts, extractJson, fallbackArticle, fallbackPlan, planPrompts
 import { tr } from './i18n.js'
 import { coverPrompt, figurePrompt, shotPrompt } from './images.js'
 import { newId } from './ops.js'
+import { reduce } from './state.js'
 import { imageReady } from './settings.js'
 import { draftFormat } from './style.js'
 
@@ -100,6 +101,16 @@ export class Producer {
     }, { undoable: false })
   }
 
+  // 状态元组(item.status / production.status / scheduledAt / 正文保留)的迁移一律经 reducer
+  // (工单 #5):同一份裁决,Store 只负责持久化,不再有第二条状态写路径。
+  // 策划案与图片资产等非状态元组字段仍走 patch。
+  commit(label, event) {
+    return this.store.mutate(label, (state) => {
+      reduce(state, event)
+      return state
+    }, { undoable: false })
+  }
+
   async start(id, { withImages, sourceIds } = {}) {
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
@@ -112,11 +123,10 @@ export class Producer {
     const sources = [...new Set([id, ...(Array.isArray(sourceIds) ? sourceIds : [])])].filter(sid => state.items.some(row => row.id === sid))
     const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages: draw, sources }
     this.jobs.set(id, job)
+    // 开新的一轮走 reducer 的 start 事件(工单 #5):上一轮写好的正文与它的来历保留(重新成稿
+    // 不清空、重试不毁稿),导出仍存回原来的文件夹;画面清零等这一轮重画。
     await this.store.mutate('开始成稿', (draft) => {
-      const target = draft.items.find(row => row.id === id)
-      // 重新成稿后还存回原来的文件夹，不会每做一次多出一个
-      const { savedPath, savedHashes } = target.production ?? {}
-      target.production = { status: 'running', stage: 'brief', withImages: draw, startedAt: new Date().toISOString(), format: draftFormat(draft.draftFormat), title: target.title, article: '', cover: null, images: [], shots: [], ...(savedPath ? { savedPath, savedHashes } : {}) }
+      reduce(draft, { type: 'start', id, withImages: draw, format: draftFormat(draft.draftFormat) })
       return draft
     }, { undoable: false })
     // 不等待：浏览器靠轮询拿进度
