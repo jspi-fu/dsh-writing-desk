@@ -589,6 +589,19 @@ test('风格预设：旧模板换成新预设，清空示例也不会删预设',
   assert.equal(state.activeStyleId, 'preset_travel')
 })
 
+test('migrateState: 旧版 writing-desk 的空结构迁移成新版完整结构，不丢字段', () => {
+  // 重构前 state.json 是这套字段：cards/boxes/drafts/works…，客户端新版全用 items 等。
+  const legacy = JSON.parse('{"version":1,"cards":[],"boxes":[],"copies":[],"drafts":[],"mergeRecords":[],"upgradeIntents":[],"works":[],"undoHistory":[],"actions":[],"templates":[],"updatedAt":"2026-11-16T03:02:36.957Z"}')
+  const migrated = migrateState(legacy)
+  for (const key of ['items', 'people', 'angles', 'skills', 'accounts', 'metrics', 'styles']) {
+    assert.ok(Array.isArray(migrated[key]), `迁移后 ${key} 必须是数组`)
+  }
+  assert.equal(typeof migrated.sampleCleared, 'boolean')
+  assert.ok(migrated.sampleLang === 'zh' || migrated.sampleLang === 'en')
+  // 客户端 header 用 state.items.some，迁移后不得再是 undefined
+  assert.doesNotThrow(() => migrated.items.some(() => false))
+})
+
 test('harvestText 抽出正文，去掉脚本和导航', async () => {
   const page = '<html><head><title>标题</title><style>x{}</style></head><body><nav>导航内容不要这段内容</nav><script>var a=1</script><p>这是第一段正文内容，足够长。</p><div>这是第二段&amp;正文内容，足够长。</div></body></html>'
   const { text, title } = await harvestText('https://93.184.216.34/a', async () => new Response(page, { headers: { 'content-type': 'text/html' } }))

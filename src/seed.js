@@ -110,6 +110,11 @@ const SKILLS_EN = [
 ]
 
 export function migrateState(state) {
+  // 重构前的 state 是另一套字段（cards/boxes/drafts/works…），没有 items。
+  // 客户端新版全用 items/people/angles/skills/accounts/metrics/styles，把旧对象直接
+  // 交给它会让 state.items.some() 抛错。本插件没有存量数据，items 不是数组即视为
+  // 无效结构，用完整的新版初始状态整体替换（buildSeed 产出全部字段），一步到位。
+  if (!Array.isArray(state.items)) return buildSeed(new Date())
   if (state.activeStyleId === undefined) state.activeStyleId = null
   // 加入英文之前的数据都是中文示例
   if (state.sampleLang === undefined) state.sampleLang = 'zh'
