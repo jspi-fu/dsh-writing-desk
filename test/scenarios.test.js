@@ -97,3 +97,78 @@ test('场景② 真实序列:重新成稿不清空上一篇正文,新一轮写�
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 })
+
+// 场景①(User Story #28):成稿被取消时已经写好的正文被保留,面板谓词一致。
+test('场景① 真实序列:成稿中途取消,已写好的正文保留,面板谓词一致', async () => {
+  const callText = async ({ system }) => {
+    if (isPlan(system)) return { text: PLAN, model: 'd' }
+    return { text: '# 模型标题\n\n## 第一节\n取消前写完的正文', model: 'd1' }
+  }
+  // 生图挂着等取消:正文落盘后图片还在画,这时取消
+  const generate = (_, __, { signal } = {}) => new Promise((_, reject) => signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true }))
+  const { dir, store, producer } = await fixture({ callText, generate })
+  let id = null
+  try {
+    id = addItem(await store.read(), '写一半要取消的灵感')
+    await producer.start(id)
+    const written = await waitUntil(store, id, item => item.production?.article)
+    assert.ok(written, '正文已落盘')
+    assert.equal(written.status, 'draft', '正文落盘即成稿:灵感推进成草稿')
+    await producer.cancel(id)
+    await waitDone(producer, id)
+    const item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.production.status, 'cancelled')
+    assert.equal(item.production.error, null, '用户主动停,不算错误')
+    assert.equal(item.production.article, '## 第一节\n取消前写完的正文', '取消不丢已写好的正文')
+    assert.equal(item.production.cover.status, 'idle', '没跑完的资产停回待命')
+    assert.equal(item.status, 'draft')
+    assert.equal(isDrafted(item), true)
+    assert.equal(panelState(item), 'drafted')
+  } finally {
+    producer.jobs.get(id)?.controller.abort()
+    await waitDone(producer, id)
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})
+
+// 中断自愈也走 reducer:上次没做完的标失败,已落盘的正文保留,状态按事实对齐。
+test('真实序列:中断自愈(settle)走 reducer,标失败且正文保留、状态对齐', async () => {
+  const { dir, store, producer } = await fixture({ callText: async () => { throw new Error('不该被调用') }, ready: false })
+  try {
+    const id = addItem(await store.read(), '被中断的灵感')
+    await store.mutate('模拟上次中断', (draft) => {
+      draft.items.find(row => row.id === id).production = { status: 'running', stage: 'making', article: '上次已写好的正文', cover: { status: 'running' }, images: [], shots: [] }
+      return draft
+    }, { undoable: false })
+    await producer.settle(id)
+    const item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.production.status, 'failed')
+    assert.equal(item.production.article, '上次已写好的正文', '中断不丢已写好的正文')
+    assert.equal(item.production.cover.status, 'idle')
+    assert.equal(item.status, 'draft', '有正文就不会被留在灵感档')
+    assert.equal(isDrafted(item), true)
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})
+
+// 只是单张重画被中断时,成稿状态本身没卡:只把资产停回待命,不改成稿状态。
+test('真实序列:只是资产卡住的已完成成稿,settle 只停资产不改状态', async () => {
+  const { dir, store, producer } = await fixture({ callText: async () => { throw new Error('不该被调用') }, ready: false })
+  try {
+    const id = addItem(await store.read(), '补画被中断的灵感')
+    await store.mutate('模拟补画中断', (draft) => {
+      // done + draft 是完成成稿后的正常状态;这里只把一张重画中的资产卡住
+      draft.items.find(row => row.id === id).production = { status: 'done', stage: 'done', article: '已成稿的正文', cover: { status: 'running' }, images: [], shots: [] }
+      draft.items.find(row => row.id === id).status = 'draft'
+      return draft
+    }, { undoable: false })
+    await producer.settle(id)
+    const item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.production.status, 'done', '卡住的只是资产,成稿状态不动')
+    assert.equal(item.production.cover.status, 'idle')
+    assert.equal(item.status, 'draft')
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})
