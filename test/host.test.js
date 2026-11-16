@@ -79,6 +79,30 @@ test('速记卡的来源类型只接受「我写的 / AI 生成的」', () => {
   assert.equal(items.find(i => i.id === target).contentOrigin, null)
 })
 
+test('编辑界面保存沿用操作历史：撤销一次回到上一版正文', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-edit-'))
+  try {
+    const store = new Store(dir)
+    await store.read()
+    // 编辑器的保存就是 ops 路由那一套：applyOps + 可撤销的 store.mutate
+    const save = (label, ops) => store.mutate(label, draft => ({ ...applyOps(draft, ops), state: draft }))
+    const { receipts } = await save('记下灵感', [{ op: 'add_item', title: '第一版', body: '最初正文' }])
+    const id = receipts[0].target
+    await save('保存编辑', [{ op: 'update_item', id, body: '第二版正文' }])
+    await save('保存编辑', [{ op: 'update_item', id, title: '改个标题', body: '第三版正文' }])
+    assert.equal(await store.undoLast(), '保存编辑')
+    const after = (await store.read()).items.find(i => i.id === id)
+    assert.equal(after.body, '第二版正文')
+    assert.equal(after.title, '第一版', '那一步同时改过标题和正文，就一起回到上一版')
+    assert.equal(await store.undoLast(), '保存编辑')
+    const first = (await store.read()).items.find(i => i.id === id)
+    assert.equal(first.body, '最初正文')
+    assert.equal(first.title, '第一版')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('Store 持久化、撤销，并能感知另一进程的写入', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-'))
   try {
