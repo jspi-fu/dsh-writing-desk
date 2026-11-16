@@ -7,6 +7,8 @@
   "exports": {
     ".": "./src/host.js",
     "./client": "./dist/client.js",
+    "./preset-tool": "./src/preset-tool.js",
+    "./preset-skill": "./src/preset-skill.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
