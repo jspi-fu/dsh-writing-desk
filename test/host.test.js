@@ -838,6 +838,10 @@ test('Monid：重复导入只更新数字，示例数据退出统计，没有播
   const first = importPosts(draft, { account, profile: { nickname: '我', followers: 100 }, posts })
   assert.deepEqual(first, { added: 1, updated: 0 })
   const item = draft.items.find(row => row.imported)
+  // 导入条目天生已发布:发布时间沿用平台给的,不另盖时间戳(工单 #7 后状态元组经 reducer 落位)
+  assert.equal(item.status, 'published')
+  assert.equal(item.publishedAt, posts[0].publishedAt)
+  assert.equal(item.scheduledAt, posts[0].publishedAt)
   item.title = '我改过的标题'
   const second = importPosts(draft, { account, profile: { nickname: '我', followers: 120 }, posts: [{ ...posts[0], likes: 50 }] })
   assert.deepEqual(second, { added: 0, updated: 1 })

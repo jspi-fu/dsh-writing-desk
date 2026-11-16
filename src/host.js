@@ -6,6 +6,7 @@ import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { callModel, extractJson } from './ai.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
+import { exportForCli } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
@@ -360,6 +361,22 @@ async function route(ctx, store, desk, req, res) {
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
     }
+    // 工单 #9(发布交接)路由段:只出文件与命令,绝不写已发布状态——是否已发布由用户确认(publish_item)。
+    case 'produce/export': {
+      const settings = await desk.settings.read()
+      const state = await store.read()
+      const item = state.items.find(row => row.id === body.id)
+      if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以导出的成稿') })
+      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const next = await store.mutate(tr('导出发布包'), (draft) => {
+        const target = draft.items.find(row => row.id === body.id)
+        if (target?.production) target.production.cliPath = exported.dir
+        return draft
+      }, { undoable: false })
+      // 导出发布包同样算「导出稿」(工单 #10):与 produce/save 走同一个提炼入口,去重后直接生效
+      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      return json(res, 200, { ...exported, learned: learned?.added ?? 0, state: learned?.state ?? next })
+    }
     // ---- 工单 #10 风格闭环路由段:对成稿做反馈时把人工修改提炼成规则,直接生效 ----
     case 'skills/feedback': {
       const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
@@ -395,7 +412,11 @@ export default {
       generate: (image, prompt, options) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, options) : generateImage(image, prompt, options),
     })
     const monid = createMonidRunner()
-    const desk = { settings, producer, monid, versionCheck: createVersionCheck() }
+    const desk = { settings, producer, monid, versionCheck: createVersionCheck(), store }
+    // 创作模式(工单 #8):preset-writing 的子插件(tool/skill provider)经这个服务拿到
+    // 与页面路由同一份 Store 和 Producer,成稿写回同一个 reducer。假 ctx(测试)没有
+    // provide,跳过即可;真实宿主的 ctx 一定有。
+    ctx.provide?.('writingDesk', desk)
     ctx.effect(() => ctx.webServer.register({
       kind: 'prefix',
       path: '/writing-desk',

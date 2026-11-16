@@ -8,8 +8,9 @@ const DIR = new URL('../client/', import.meta.url)
 
 // 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
 // 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
+// 工单 #9：发布交接——成稿工作面经 desk.js 的 exportForPublish 导出发布包
 const WIRED = [
-  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'feedbackSkills'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish', 'feedbackSkills'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
   ['./studio.jsx', ['ProduceView'], name => `<${name}`],
@@ -84,4 +85,13 @@ test('成稿反馈入口接在共享提炼函数上(工单 #10)', () => {
   assert.match(desk, /'skills\/feedback'/, 'desk.js 要接 skills/feedback 路由')
   const learn = readFileSync(new URL('../src/learn.js', DIR), 'utf8')
   assert.match(learn, /export function learnFromEdits/, 'Host 要导出 learnFromEdits 供反馈提炼共用')
+})
+
+// 遗留口径清理(工单 #7):草稿字段已整体下线,client 的任何面板都不许再引用它
+test('client 不再引用遗留的草稿字段口径', () => {
+  for (const file of readdirSync(DIR)) {
+    if (!file.endsWith('.jsx')) continue
+    const source = readFileSync(new URL(file, DIR), 'utf8')
+    assert.doesNotMatch(source, /\bdrafts\b/, `${file} 还在引用遗留的草稿字段`)
+  }
 })

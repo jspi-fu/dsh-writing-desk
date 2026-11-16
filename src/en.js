@@ -92,6 +92,10 @@ export const EN = {
 
   // 保存成稿与生图设置
   还没有可以保存的成稿: 'Nothing drafted to save yet',
+  // 发布交接(工单 #9)
+  '还没有可以导出的成稿': 'Nothing drafted to export yet',
+  导出发布包: 'Export publish pack',
+  '《{title}》已发布': '"{title}" marked as published',
   封面不是有效的图片: 'The cover isn\'t a valid image',
   还没有保存过: 'Not saved yet',
   '先填好接口地址、模型和密钥': 'Fill in the endpoint, model and key first',
