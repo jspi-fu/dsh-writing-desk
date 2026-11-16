@@ -6,6 +6,12 @@ import test from 'node:test'
 
 const DIR = new URL('../client/', import.meta.url)
 
+// 各模块导出的 API 与组件用法：openProduce 是函数调用，Editor 是 JSX 组件
+const WIRED = [
+  ['./desk.js', ['openProduce'], name => `${name}(`],
+  ['./editor.jsx', ['Editor'], name => `<${name}`],
+]
+
 for (const file of readdirSync(DIR)) {
   if (!file.endsWith('.jsx')) continue
   const source = readFileSync(new URL(file, DIR), 'utf8')
@@ -15,5 +21,14 @@ for (const file of readdirSync(DIR)) {
     test(`${file}：用 ${name}() 之前先从 ./version.js import`, () => {
       assert.ok(imported.includes(name), `${file} 用了 ${name}()，却没从 ./version.js import`)
     })
+  }
+  for (const [module, names, used] of WIRED) {
+    const imported = new RegExp(`import\\s*\\{([^}]*)\\}\\s*from\\s*'\\.${module.slice(1).replace(/\./g, '\\.')}'`).exec(source)?.[1] ?? ''
+    for (const name of names) {
+      if (!source.includes(used(name))) continue
+      test(`${file}：用 ${name} 之前先从 ${module} import`, () => {
+        assert.ok(imported.includes(name), `${file} 用了 ${name}，却没从 ${module} import`)
+      })
+    }
   }
 }

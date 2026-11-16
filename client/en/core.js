@@ -42,6 +42,14 @@ export const CORE = {
   '想法': 'Idea',
   '好的选题不是想出来的……': 'The best topics aren’t invented. They’re noticed…',
   '想到什么就写什么。': 'Write whatever comes to mind.',
+  '留空就自动取名': 'Leave empty and we’ll name it',
+  '来源': 'Source',
+  '标签': 'Tags',
+  '来源类型': 'Origin',
+  '我写的': 'Written by me',
+  'AI 生成的': 'AI-generated',
+  '哪里看到的？': 'Where’s this from?',
+  '用逗号分开': 'Separated by commas',
   '放到灵感墙': 'Add to wall',
 
   // 通用

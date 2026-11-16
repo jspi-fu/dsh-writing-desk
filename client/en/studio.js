@@ -157,6 +157,16 @@ export const STUDIO = {
   '返回灵感': 'Back to ideas',
   '成稿': 'Studio',
 
+  // 编辑界面（点开一条灵感进入的地方）
+  '编辑灵感': 'Edit idea',
+  '保存编辑': 'Save edits',
+  '去成稿': 'Draft',
+  '查找': 'Find',
+  '字数': 'Word count',
+  '预览': 'Preview',
+  '替换': 'Replace',
+  '全部替换': 'Replace all',
+
   // 视频封面
   '封面图读取失败': 'Couldn’t load the cover image',
 }
