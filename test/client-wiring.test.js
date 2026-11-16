@@ -67,3 +67,12 @@ test('成稿工作面的成稿中判断走共享谓词', () => {
   const source = readFileSync(new URL('studio.jsx', DIR), 'utf8')
   assert.match(source, SHARED_PREDICATE, 'studio.jsx 要从 src/state.js 引共享谓词')
 })
+
+// 遗留口径清理(工单 #7):草稿字段已整体下线,client 的任何面板都不许再引用它
+test('client 不再引用遗留的草稿字段口径', () => {
+  for (const file of readdirSync(DIR)) {
+    if (!file.endsWith('.jsx')) continue
+    const source = readFileSync(new URL(file, DIR), 'utf8')
+    assert.doesNotMatch(source, /\bdrafts\b/, `${file} 还在引用遗留的草稿字段`)
+  }
+})
