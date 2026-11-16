@@ -6,6 +6,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { assertPublicUrl } from './harvest.js'
 import { newId } from './ops.js'
+import { reduce } from './state.js'
 import { platformName, tr } from './i18n.js'
 
 const POST_COUNT = 20
@@ -487,11 +488,15 @@ export function importPosts(draft, { account, profile, posts, covers = new Map()
     let item = draft.items.find(row => row.externalId === externalId)
     if (!item) {
       item = {
-        id: newId('it'), kind: 'web', title: post.title, body: post.body, tags: [], status: 'published', personaIds: [], drafts: {},
-        createdAt: post.publishedAt, publishedAt: post.publishedAt, scheduledAt: post.publishedAt, platform, url: post.url, source: nickname, media: null, imported: true, externalId,
+        id: newId('it'), kind: 'web', title: post.title, body: post.body, tags: [], personaIds: [],
+        createdAt: post.publishedAt, publishedAt: post.publishedAt, platform, url: post.url, source: nickname, media: null, imported: true, externalId,
       }
       draft.items.push(item)
       added += 1
+      // 导入条目天生已发布:排期与发布都经 reducer 落位(工单 #7 后状态元组没有直写),
+      // 发布时间沿用平台给的 publishedAt,publish 事件不会另盖时间戳。
+      reduce(draft, { type: 'schedule', id: item.id, scheduledAt: post.publishedAt, at: now })
+      reduce(draft, { type: 'publish', id: item.id, at: now })
     }
     if (covers.has(post.id)) item.media = { src: covers.get(post.id) }
     const numbers = { views: post.views, likes: post.likes, comments: post.comments, shares: post.shares, saves: post.saves }
