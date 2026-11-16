@@ -12,6 +12,7 @@ import { generateToolImage, imageTool } from './image-tool.js'
 import { computeInsights, exportSkill, proposeRules } from './learn.js'
 import { createMonidRunner, fetchAccount, importPosts, monidStatus, postsToMaterial, resolveAccount, saveCovers } from './monid.js'
 import { applyOps, newId } from './ops.js'
+import { resolveProduceInput } from './produce-input.js'
 import { Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
 import { normalizeStyle, referenceExcerpt, stylePrompts } from './style.js'
@@ -258,8 +259,11 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { label, state: await store.read(), canUndo: store.undo.length > 0 })
     }
     case 'produce': {
-      const started = await desk.producer.start(String(body.id), { withImages: body.withImages })
-      return json(res, 200, { started, state: await store.read() })
+      // 统一成稿入口(工单 #6):{id} 与 {itemIds}/{capsuleIds} 归一成同一种输入,
+      // 单灵感行为不变;没有可用灵感时解析层抛 400
+      const input = resolveProduceInput(await store.read(), body)
+      const started = await desk.producer.start(input.targetId, { sourceIds: input.sourceIds, withImages: body.withImages })
+      return json(res, 200, { started, targetId: input.targetId, state: await store.read() })
     }
     case 'produce/cancel':
       await desk.producer.cancel(String(body.id))

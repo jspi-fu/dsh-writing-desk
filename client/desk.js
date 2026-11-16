@@ -1,5 +1,6 @@
 // 浏览器侧的状态：Host 状态的本地镜像，加上只属于界面的选中、视图等。
 import React from 'react'
+import { resolveProduceInput } from '../src/produce-input.js'
 import { coverDataUrl } from './cover.js'
 import { lang, plural, setLanguagePreference, t } from './i18n.js'
 
@@ -7,8 +8,8 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, query: '', kindFilter: 'all', related: null,
-  capsuleId: null, retag: null, tagFilter: null,
+  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, produceSources: null, query: '', kindFilter: 'all', related: null,
+  capsuleId: null, retag: null, tagFilter: null, selection: null,
   live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
@@ -112,19 +113,52 @@ export function closeRetag() {
   setDesk({ retag: null })
 }
 
-// 成稿工作区是显式动作：从编辑界面的「去成稿」进，点灵感不再直接到这里
-export function openProduce(id) {
-  setDesk({ focusId: null, produceId: id, sheetOrigin: null })
+// 画布多选:Shift+点选灵感或胶囊,凑一批直接成稿;成稿或清除后收回
+export function toggleSelect(kind, id) {
+  setDesk(s => {
+    const key = kind === 'capsule' ? 'capsules' : 'items'
+    const current = s.selection ?? { items: [], capsules: [] }
+    const list = current[key].includes(id) ? current[key].filter(row => row !== id) : [...current[key], id]
+    return { selection: { ...current, [key]: list } }
+  })
+}
+
+export function clearSelection() {
+  setDesk({ selection: null })
+}
+
+// 统一成稿入口(GLOSSARY「成稿输入」):单灵感/多灵感/单胶囊/多胶囊都进这一个工作面。
+// 字符串 = 单灵感(编辑界面「去成稿」);对象 = { itemIds } / { capsuleIds }(画布多选、胶囊、标签资料架)。
+// 解析与 Host 用同一个模块:去重、滤掉已删除;产物落在第一个来源上。
+export function openProduce(input) {
+  const state = getDesk().state
+  const resolved = typeof input === 'string' ? { itemIds: [input] } : input ?? {}
+  let sourceIds = []
+  try {
+    sourceIds = resolveProduceInput(state ?? { items: [], capsules: [] }, resolved).sourceIds
+  } catch {
+    sourceIds = []
+  }
+  if (!sourceIds.length) return toast(t('没有可成稿的灵感'), { error: true })
+  setDesk({
+    focusId: null, sheetOrigin: null, selection: null,
+    produceId: sourceIds[0],
+    produceSources: sourceIds.length > 1 ? sourceIds : null,
+  })
 }
 
 export function closeProduce() {
-  setDesk({ produceId: null })
+  setDesk({ produceId: null, produceSources: null })
 }
 
-/** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
-export async function runProduce(id, { withImages } = {}) {
+/** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度；多来源时把来源一并交给 Host 解析。 */
+export async function runProduce(id, { withImages, itemIds } = {}) {
   try {
-    const data = await request('produce', { id, ...(typeof withImages === 'boolean' ? { withImages } : {}) })
+    const data = await request('produce', {
+      id,
+      ...(Array.isArray(itemIds) && itemIds.length > 1 ? { itemIds } : {}),
+      ...(typeof withImages === 'boolean' ? { withImages } : {}),
+    })
     setDesk({ state: data.state })
   } catch (err) {
     report(err)

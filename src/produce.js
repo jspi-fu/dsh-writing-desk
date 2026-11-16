@@ -100,7 +100,7 @@ export class Producer {
     }, { undoable: false })
   }
 
-  async start(id, { withImages } = {}) {
+  async start(id, { withImages, sourceIds } = {}) {
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
     const item = state.items.find(row => row.id === id)
@@ -108,7 +108,9 @@ export class Producer {
     // 单次选择优先；没传就按设置里的默认值
     const settings = await this.settings.read()
     const draw = typeof withImages === 'boolean' ? withImages : settings.generateImages !== false
-    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages: draw }
+    // 成稿输入归一后的来源(工单 #6):落点排第一,其余来源只出素材;没传就只写这一条,流水线行为不变
+    const sources = [...new Set([id, ...(Array.isArray(sourceIds) ? sourceIds : [])])].filter(sid => state.items.some(row => row.id === sid))
+    const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages: draw, sources }
     this.jobs.set(id, job)
     await this.store.mutate('开始成稿', (draft) => {
       const target = draft.items.find(row => row.id === id)
@@ -136,10 +138,12 @@ export class Producer {
 
       signal.throwIfAborted()
       const backup = normalizePlan(fallbackPlan(item, '', settings), settings, item.title)
+      // 多来源时把其余灵感的素材一并进提示词;没带来源清单(如直接手搓 job)就只写这一条
+      const sources = (job.sources ?? [id]).map(sid => snapshot.items.find(row => row.id === sid)).filter(Boolean)
 
       let plan
       try {
-        const prompts = planPrompts(snapshot, item, settings)
+        const prompts = planPrompts(snapshot, item, settings, sources)
         const { text } = await this.callText({ ...prompts, maxTokens: 3000, light: true, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.planText += delta } })
         plan = normalizePlan(extractJson(text), settings, item.title)
       } catch (err) {
@@ -175,7 +179,7 @@ export class Producer {
         let notice = null
         let markdown = ''
         try {
-          const prompts = articlePrompts(snapshot, item, settings.voice, plan)
+          const prompts = articlePrompts(snapshot, item, settings.voice, plan, sources)
           const result = await this.callText({ ...prompts, maxTokens: 6000, signal: AbortSignal.any([signal, AbortSignal.timeout(TEXT_TIMEOUT_MS)]), onText: (delta) => { job.text += delta } })
           markdown = result.text
           engine = result.model

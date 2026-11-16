@@ -1,18 +1,18 @@
-// 胶囊:持久化的命名灵感集合。卡片收成员的封面和名字,对话框里改名、看成员、解散;
+// 胶囊:持久化的命名灵感集合。卡片收成员的封面和名字,对话框里改名、看成员、整体成稿、解散;
 // 成员灵感仍然独立存在,点成员照常进编辑界面。
 import React from 'react'
-import { closeCapsule, dispatchOps, openItem, useDesk } from './desk.js'
+import { closeCapsule, dispatchOps, openItem, openProduce, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
-import { Dialog } from './ui.jsx'
+import { Dialog, Icon } from './ui.jsx'
 import { posterOf } from './util.js'
 
 /** 散落画布和信息流复用同一张胶囊卡:封面叠一摞,名字加成员数。 */
-export function CapsuleCard({ capsule, items, onOpen }) {
+export function CapsuleCard({ capsule, items, onOpen, selected = false }) {
   const members = capsule.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean)
   const covers = members.map(posterOf).filter(Boolean).slice(0, 3)
   return (
     <article
-      className="md-capsule"
+      className={`md-capsule ${selected ? 'is-selected' : ''}`}
       data-capsule={capsule.id}
       tabIndex={0}
       role="button"
@@ -72,6 +72,8 @@ export function CapsuleDialog() {
           <button type="button" className="md-btn is-danger" onClick={dissolve}>{t('解散胶囊')}</button>
           <span style={{ flex: 1 }} />
           <button type="button" className="md-btn" onClick={closeCapsule}>{t('完成')}</button>
+          {/* 整体成稿和单灵感/多选走同一个统一成稿入口(工单 #6) */}
+          <button type="button" className="md-btn is-primary" onClick={() => { openProduce({ capsuleIds: [capsule.id] }); closeCapsule() }}><Icon name="bolt" size={14} />{t('整体成稿')}</button>
         </div>
       </div>
     </Dialog>

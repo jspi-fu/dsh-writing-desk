@@ -245,7 +245,9 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
 .md-chips button:hover { color: var(--ink); background: var(--hover); }
 .md-chips button.is-on { color: var(--ink); background: var(--active); }
 .md-stage.is-focusing ~ .md-dockbar { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(12px); }
-.md-root:has(.md-sheet) .md-dockbar { opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(12px); }
+/* 多选后的浮动工具条:四种成稿输入里的「多灵感 / 多胶囊」从这里进统一成稿入口 */
+.md-selectbar { position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%); z-index: 14; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 16px; border-radius: 24px; corner-shape: round; background: var(--glass); backdrop-filter: blur(28px) saturate(170%); box-shadow: var(--dsw-elevation-prominent); }
+.md-selectbar > span { color: var(--ink2); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* 迷你邮票条 */
 .md-ministamps { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
@@ -320,9 +322,13 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-feed-hero { max-width: 560px; margin: 8px auto 34px; }
 
 /* 灵感工作区：顶部是这条灵感和成稿入口，下面是稿面 */
+/* .md-studio 现在只剩编辑界面在用;统一成稿工作面(工单 #6)占住主内容区,不再是全屏浮层 */
 .md-studio { --canvas: color-mix(in srgb, var(--ink) 3.5%, var(--bg)); position: absolute; inset: 0; z-index: 31; display: flex; flex-direction: column; background: var(--canvas); will-change: clip-path; }
+.md-produce { --canvas: color-mix(in srgb, var(--ink) 3.5%, var(--bg)); position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--canvas); }
 .md-studio-head { flex: none; display: flex; align-items: center; gap: 2px; min-height: 52px; padding: 10px 12px 4px max(10px, var(--dsh-frame-leading-clearance, 0px)); }
 .md-root .md-studio-head h2 { font-size: 15px; line-height: 22px; font-weight: 600; }
+/* 多选中的卡片与胶囊:描一圈实线,和拖拽悬停的落点提示区分开 */
+.md-card.is-selected, .md-capsule.is-selected { box-shadow: 0 0 0 1.5px var(--ink), 0 22px 54px -14px rgb(0 0 0 / .28); }
 
 /* 灵感卡 */
 .md-idea-card { flex: none; padding: 14px; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); }

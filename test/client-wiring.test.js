@@ -7,10 +7,12 @@ import test from 'node:test'
 const DIR = new URL('../client/', import.meta.url)
 
 // 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
+// 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
 const WIRED = [
-  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
+  ['./studio.jsx', ['ProduceView'], name => `<${name}`],
   ['./retag.jsx', ['RetagDialog'], name => `<${name}`],
 ]
 
@@ -34,3 +36,9 @@ for (const file of readdirSync(DIR)) {
     }
   }
 }
+
+// 统一成稿入口(工单 #6):client 侧的输入归一与 Host 共用同一个解析模块,不许各写一套
+test('desk.js：统一成稿入口与 Host 共用 produce-input 解析模块', () => {
+  const source = readFileSync(new URL('./desk.js', DIR), 'utf8')
+  assert.match(source, /import\s*\{[^}]*resolveProduceInput[^}]*\}\s*from\s*'\.\.\/src\/produce-input\.js'/)
+})

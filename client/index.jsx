@@ -10,7 +10,7 @@ import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
-import { Studio } from './studio.jsx'
+import { ProduceView } from './studio.jsx'
 import css from './styles.css'
 import { lang, subscribeLang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
@@ -172,6 +172,7 @@ function Desk() {
   const ready = useDesk(s => Boolean(s.state))
   const error = useDesk(s => s.error)
   const view = useDesk(s => s.view)
+  const produceId = useDesk(s => s.produceId)
   const canUndo = useDesk(s => s.canUndo)
   const rootRef = React.useRef(null)
   const [width, setWidth] = React.useState(1600)
@@ -206,7 +207,7 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null })}>{entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}</button>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, produceId: null, produceSources: null, selection: null })}>{entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}</button>
             ))}
           </nav>
           <span style={{ flex: 1 }} />
@@ -218,10 +219,12 @@ function Desk() {
         <main className="md-content" key={view}>
           {error ? (
             <div className="md-page"><p className="md-muted">{t('工作台加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={loadDesk}>{t('重试')}</button></div>
-          ) : ready ? <Active /> : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
+          ) : ready ? (
+            // 统一成稿工作面占住主区域,关闭后回到原来的视图;不是浮层,点灵感也不会再进 Studio
+            produceId ? <ProduceView /> : <Active />
+          ) : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
         </main>
         {ready ? <Editor /> : null}
-        {ready ? <Studio /> : null}
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />

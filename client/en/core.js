@@ -70,7 +70,11 @@ export const CORE = {
   '回去改标签': 'Back to tags',
   '不变': 'Unchanged',
   '给这批灵感改标签': 'Retag these ideas',
+  '这批灵感一起成稿': 'Draft these ideas together',
   '不看这个标签了': 'Stop filtering by this tag',
+  '已选 {n} 项': '{n} selected',
+  '已选灵感': 'Selected ideas',
+  '清除': 'Clear',
 
   // 通用
   '取消': 'Cancel',
