@@ -9,7 +9,7 @@ import { activeStyle, normalizeStyle, stylePrompts, styleToVoice } from '../src/
 import { articlePrompts, planPrompts } from '../src/ai.js'
 import { migrateState } from '../src/seed.js'
 import { requestRejection } from '../src/host.js'
-import { computeInsights, exportSkill, proposeRules } from '../src/learn.js'
+import { computeInsights, exportSkill, learnFromEdits, proposeRules } from '../src/learn.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
@@ -183,6 +183,69 @@ test('exportSkill 不导出示例规则和示例人物', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+// 工单 #10 风格闭环:两条有人工删改的成稿 → 提炼出一条规则,写入(active)后
+// 下次成稿自动套用(进提示词),并可导出进 DSH Skill。
+function editedProductions(state, names, cut) {
+  const long = '字'.repeat(400)
+  state.items = names.map((name, i) => ({
+    id: `it_${i}`, title: name, status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
+    production: { status: 'done', format: 'article', title: name, aiArticle: `# ${name}\n\n${long}`, article: `# ${name}\n\n${long.slice(0, long.length - cut)}` },
+  }))
+}
+
+test('成稿反馈:修改差异提炼成规则,写入后直接生效并可导出', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-loop-'))
+  try {
+    const state = seed()
+    state.skills = []
+    editedProductions(state, ['甲', '乙'], 200)
+    const proposals = learnFromEdits(state)
+    assert.equal(proposals.length, 1)
+    assert.equal(proposals[0].source, '成稿反馈')
+    assert.ok(proposals[0].rule)
+    applyOps(state, proposals.map(row => ({ op: 'add_skill', ...row, status: 'active' })))
+    // 下次成稿自动套用:active 规则进入成稿提示词
+    const { system } = articlePrompts(state, state.items[0], null, null)
+    assert.ok(system.includes(proposals[0].rule))
+    // 风格规则可导出为 DSH Skill:导出内容含新规则
+    const result = await exportSkill(state, dir)
+    assert.equal(result.rules, 1)
+    const body = await readFile(result.path, 'utf8')
+    assert.ok(body.includes(proposals[0].rule))
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('成稿反馈不重复:同名或近同义规则不再写入,提案路径同样挡住', () => {
+  const state = seed()
+  state.skills = []
+  editedProductions(state, ['甲', '乙'], 200)
+  const first = learnFromEdits(state)
+  assert.equal(first.length, 1)
+  const name = first[0].name
+  // 已有同名规则(哪怕还在待确认)→ 不重复写入
+  applyOps(state, [{ op: 'add_skill', name, rule: '另一段规则文本', status: 'proposed' }])
+  assert.equal(learnFromEdits(state).length, 0)
+  // 近同义(名字只差标点)同样算已有规则;proposeRules 的提案也被挡住
+  state.skills = state.skills.filter(row => row.name !== name)
+  applyOps(state, [{ op: 'add_skill', name: `${name}！`, rule: '另一段规则文本', status: 'active' }])
+  assert.equal(learnFromEdits(state).length, 0)
+  assert.equal(proposeRules(state).filter(row => row.name === name).length, 0)
+})
+
+test('成稿没有人工修改时不提炼', () => {
+  const state = seed()
+  state.skills = []
+  const long = '字'.repeat(400)
+  state.items = [{ id: 'it_1', title: '甲', status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
+    production: { status: 'done', format: 'article', title: '甲', aiArticle: `# 甲\n\n${long}`, article: `# 甲\n\n${long}` } }]
+  assert.equal(learnFromEdits(state).length, 0)
+  // 只有 AI 快照、还没人工改过的成稿,同样不提炼
+  delete state.items[0].production.article
+  assert.equal(learnFromEdits(state).length, 0)
 })
 
 test('assertPublicUrl 拒绝本机和内网地址', async () => {

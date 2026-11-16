@@ -60,7 +60,7 @@ function bestGroup(rows) {
   return ranked
 }
 
-/** 对比 AI 原稿和你改完的版本，粗略判断修改方向。 */
+/** 对比 AI 原稿快照和你改完的成稿，粗略判断修改方向。 */
 function editSignals(state) {
   const signals = []
   for (const item of state.items) {
@@ -70,15 +70,35 @@ function editSignals(state) {
       const after = production.article.replace(/\s/g, '').length
       signals.push({ title: item.title, ratio: before ? after / before : 1 })
     }
-    for (const format of ['article', 'script']) {
-      const draft = item.drafts?.[format]
-      if (!draft?.aiText || draft.by !== 'user' || draft.text === draft.aiText) continue
-      const before = draft.aiText.replace(/\s/g, '').length
-      const after = draft.text.replace(/\s/g, '').length
-      signals.push({ title: item.title, ratio: before ? after / before : 1 })
-    }
   }
   return signals
+}
+
+/** 把修改幅度转成规则提案：删得多就写短些，补得多就多给细节。样本不够不提案。 */
+function editProposals(edits) {
+  if (edits.length < 2) return []
+  const avg = edits.reduce((a, b) => a + b.ratio, 0) / edits.length
+  if (avg < 0.85) {
+    return [{ name: tr('初稿写短一些'), rule: tr('你通常把 AI 初稿删到原来的 {pct}%，以后初稿控制得更紧凑。', { pct: Math.round(avg * 100) }), evidence: tr('来自 {n} 次成稿修改', { n: edits.length }), confidence: Math.min(0.9, 0.5 + edits.length * 0.08), source: tr('成稿反馈') }]
+  }
+  if (avg > 1.15) {
+    return [{ name: tr('初稿多给细节'), rule: tr('你通常把 AI 初稿扩写到原来的 {pct}%，以后初稿多给具体细节和例子。', { pct: Math.round(avg * 100) }), evidence: tr('来自 {n} 次成稿修改', { n: edits.length }), confidence: Math.min(0.9, 0.5 + edits.length * 0.08), source: tr('成稿反馈') }]
+  }
+  return []
+}
+
+/** 近同义比较：去掉空白和常见标点后再比，「初稿写短一些！」和「初稿写短一些」是同一条。 */
+function ruleKey(text) {
+  return String(text ?? '').replace(/[\s,，、。.!！?？:：;；·'"“”‘’()（）-]+/g, '').toLowerCase()
+}
+
+/**
+ * 已有规则(任何状态,含待确认)的指纹:名字和规则文本都算。
+ * 提案与写入共用这道闸,同名/近同义都不重复。
+ */
+function filterKnown(proposals, state) {
+  const known = new Set(state.skills.flatMap(skill => [ruleKey(skill.name), ruleKey(skill.rule)]))
+  return proposals.filter(row => !known.has(ruleKey(row.name)) && !known.has(ruleKey(row.rule)))
 }
 
 /**
@@ -112,18 +132,20 @@ export function proposeRules(state) {
     })
   }
 
-  const edits = editSignals(state)
-  if (edits.length >= 2) {
-    const avg = edits.reduce((a, b) => a + b.ratio, 0) / edits.length
-    if (avg < 0.85) {
-      proposals.push({ name: tr('初稿写短一些'), rule: tr('你通常把 AI 初稿删到原来的 {pct}%，以后初稿控制得更紧凑。', { pct: Math.round(avg * 100) }), evidence: tr('来自 {n} 次草稿修改', { n: edits.length }), confidence: Math.min(0.9, 0.5 + edits.length * 0.08), source: tr('草稿修改') })
-    } else if (avg > 1.15) {
-      proposals.push({ name: tr('初稿多给细节'), rule: tr('你通常把 AI 初稿扩写到原来的 {pct}%，以后初稿多给具体细节和例子。', { pct: Math.round(avg * 100) }), evidence: tr('来自 {n} 次草稿修改', { n: edits.length }), confidence: Math.min(0.9, 0.5 + edits.length * 0.08), source: tr('草稿修改') })
-    }
-  }
+  proposals.push(...editProposals(editSignals(state)))
 
-  const known = new Set(state.skills.map(skill => skill.name))
-  return proposals.filter(row => !known.has(row.name))
+  return filterKnown(proposals, state)
+}
+
+/**
+ * 风格闭环第一步(工单 #10):从成稿产物的人工修改(AI 快照与定稿的差异)里提炼规则。
+ * 对成稿做反馈或导出成稿后调用;返回的提案由调用方以 active 状态写入,
+ * 下次成稿自动套用,并可导出成 DSH Skill。已有规则(同名或近同义)不再产出。
+ * @param {object} state - 当前状态。
+ * @returns {Array<{name: string, rule: string, evidence: string, confidence: number, source: string}>} 提案。
+ */
+export function learnFromEdits(state) {
+  return filterKnown(editProposals(editSignals(state)), state)
 }
 
 /**

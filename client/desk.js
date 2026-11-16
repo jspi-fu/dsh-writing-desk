@@ -239,7 +239,11 @@ export async function saveProduced(id) {
     const videoCover = await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
     const data = await request('produce/save', { id, videoCover })
     setDesk({ state: data.state })
-    toast(data.backups?.length ? t('已保存到 {path}。你在文件夹里改过的稿子另存成了 {names}', { path: data.path, names: data.backups.join(lang() === 'en' ? ', ' : '、') }) : t('已保存到 {path}', { path: data.path }))
+    const where = data.backups?.length
+      ? t('已保存到 {path}。你在文件夹里改过的稿子另存成了 {names}', { path: data.path, names: data.backups.join(lang() === 'en' ? ', ' : '、') })
+      : t('已保存到 {path}', { path: data.path })
+    // 导出成稿也沉淀规则(工单 #10):Host 保存后顺手提炼,这里把结果说清楚
+    toast(data.learned ? t('{where}，并把你的修改沉淀成了规则', { where }) : where)
   } catch (err) {
     report(err)
   }
@@ -348,6 +352,19 @@ export async function exportSkills() {
     const data = await request('skills/export', {})
     setDesk({ state: data.state })
     toast(t(plural(data.rules, '已导出 Skill：{name}（1 条规则）', '已导出 Skill：{name}（{n} 条规则）'), { name: data.name, n: data.rules }))
+  } catch (err) {
+    report(err)
+  }
+}
+
+// 风格闭环(工单 #10):把成稿的人工修改提炼成写作规则,去重后写入并直接生效,下次成稿自动套用
+export async function feedbackSkills() {
+  try {
+    const data = await request('skills/feedback', {})
+    setDesk({ state: data.state, canUndo: data.added > 0 })
+    toast(data.added
+      ? t(plural(data.added, '已把你的修改沉淀成 1 条规则，下次成稿自动套用', '已把你的修改沉淀成 {n} 条规则，下次成稿自动套用'), { n: data.added })
+      : t('这次的修改还沉淀不出新规则，多改几篇再来'))
   } catch (err) {
     report(err)
   }

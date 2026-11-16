@@ -9,7 +9,7 @@ const DIR = new URL('../client/', import.meta.url)
 // 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
 // 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
 const WIRED = [
-  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'feedbackSkills'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
   ['./studio.jsx', ['ProduceView'], name => `<${name}`],
@@ -66,4 +66,22 @@ test('四个面板的状态口径统一走 src/state.js 共享谓词', () => {
 test('成稿工作面的成稿中判断走共享谓词', () => {
   const source = readFileSync(new URL('studio.jsx', DIR), 'utf8')
   assert.match(source, SHARED_PREDICATE, 'studio.jsx 要从 src/state.js 引共享谓词')
+})
+
+// 工单 #10:数据面板降级为可选模块——导航带「可选」标识,首页/主流程不出现数据采集入口
+test('复盘导航标注为可选模块,主流程不引数据采集(工单 #10)', () => {
+  const index = readFileSync(new URL('./index.jsx', DIR), 'utf8')
+  assert.match(index, /\{\s*id:\s*'insights',[^\n]*optional:\s*true/, '导航里的复盘要带 optional 标识')
+  const home = readFileSync(new URL('./canvas.jsx', DIR), 'utf8')
+  for (const fn of ['fetchInsights', 'importAccount', 'monidStatus']) {
+    assert.ok(!home.includes(fn), `首页/主流程不应出现数据采集入口 ${fn}`)
+  }
+})
+
+// 工单 #10:风格闭环——成稿反馈走 desk.js 的 feedbackSkills → Host 的 skills/feedback
+test('成稿反馈入口接在共享提炼函数上(工单 #10)', () => {
+  const desk = readFileSync(new URL('./desk.js', DIR), 'utf8')
+  assert.match(desk, /'skills\/feedback'/, 'desk.js 要接 skills/feedback 路由')
+  const learn = readFileSync(new URL('../src/learn.js', DIR), 'utf8')
+  assert.match(learn, /export function learnFromEdits/, 'Host 要导出 learnFromEdits 供反馈提炼共用')
 })

@@ -118,6 +118,8 @@ export function StyleView() {
     <li key={skill.id} className="md-rule">
       <div>
         <strong>{skill.name}</strong>
+        {/* 来源(工单 #10):「成稿反馈」的规则是从你对成稿的修改里沉淀的,一眼能认出来 */}
+        {skill.source ? <small className="md-rule-source">{skill.source}</small> : null}
         <p>{skill.rule}</p>
       </div>
       {skill.status === 'proposed'

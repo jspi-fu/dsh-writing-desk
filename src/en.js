@@ -189,10 +189,11 @@ export const EN = {
   '这个时段 {n} 篇平均 {avg} 互动': '{n} posts in this slot average {avg} engagements',
   初稿写短一些: 'Shorter first drafts',
   '你通常把 AI 初稿删到原来的 {pct}%，以后初稿控制得更紧凑。': 'You usually cut AI drafts to {pct}% of their length, so first drafts should be tighter.',
-  '来自 {n} 次草稿修改': 'From {n} draft edits',
-  草稿修改: 'Draft edits',
+  '来自 {n} 次成稿修改': 'From {n} edits of finished pieces',
+  成稿反馈: 'Edit feedback',
   初稿多给细节: 'More detail in first drafts',
   '你通常把 AI 初稿扩写到原来的 {pct}%，以后初稿多给具体细节和例子。': 'You usually expand AI drafts to {pct}% of their length, so first drafts should bring more specific details and examples.',
+  '把成稿修改沉淀为规则': 'Distill your edits into rules',
 
   // 导出 Skill
   '还没有你自己的风格或规则。示例规则和模板不会被导出': 'You don\'t have your own style or writing rules yet. Sample rules and presets are never exported.',

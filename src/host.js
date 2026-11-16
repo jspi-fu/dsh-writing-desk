@@ -9,7 +9,7 @@ import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
-import { computeInsights, exportSkill, proposeRules } from './learn.js'
+import { computeInsights, exportSkill, learnFromEdits, proposeRules } from './learn.js'
 import { createMonidRunner, fetchAccount, importPosts, monidStatus, postsToMaterial, resolveAccount, saveCovers } from './monid.js'
 import { applyOps, newId } from './ops.js'
 import { resolveProduceInput } from './produce-input.js'
@@ -189,6 +189,24 @@ async function refreshAccount(store, body) {
   })
 }
 
+/**
+ * 风格闭环(工单 #10):把成稿产物的人工修改提炼成规则写入 state.skills。
+ * 写入前按已有规则去重(learnFromEdits 内),状态直接 active,下次成稿自动套用。
+ * 对成稿做反馈(skills/feedback)与导出成稿(produce/save)都走这里。
+ * 修改差异全部来自示例成稿时,写出的规则也算示例,清空示例时一起清掉、导出时跳过。
+ */
+async function learnEditsInto(store, label) {
+  const proposals = learnFromEdits(await store.read())
+  if (!proposals.length) return null
+  const state = await store.mutate(label, (draft) => {
+    const fromSamples = !draft.items.some(item => !item.sample && item.production?.aiArticle && item.production.article !== item.production.aiArticle)
+    const { receipts } = applyOps(draft, proposals.map(row => ({ op: 'add_skill', ...row, status: 'active' })))
+    if (fromSamples) for (const receipt of receipts) { const skill = draft.skills.find(row => row.id === receipt?.target); if (skill) skill.sample = true }
+    return draft
+  })
+  return { added: proposals.length, state }
+}
+
 async function handleUpload(req, store, res) {
   const type = (req.headers['content-type'] || '').split(';')[0].trim().toLowerCase()
   const ext = UPLOAD_EXT[type]
@@ -291,7 +309,9 @@ async function route(ctx, store, desk, req, res) {
         }
         return draft
       }, { undoable: false })
-      return json(res, 200, { ...saved, state: next })
+      // 导出成稿也算一次反馈(工单 #10):顺手把人工修改提炼成规则,去重后直接生效
+      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      return json(res, 200, { ...saved, learned: learned?.added ?? 0, state: learned?.state ?? next })
     }
     case 'produce/reveal': {
       // 路径只取自保存记录，不接受请求里传来的路径
@@ -339,6 +359,11 @@ async function route(ctx, store, desk, req, res) {
         return draft
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
+    }
+    // ---- 工单 #10 风格闭环路由段:对成稿做反馈时把人工修改提炼成规则,直接生效 ----
+    case 'skills/feedback': {
+      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      return json(res, 200, learned ?? { added: 0, state: await store.read() })
     }
     default: return json(res, 404, { error: tr('接口不存在') })
   }
