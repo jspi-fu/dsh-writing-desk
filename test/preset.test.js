@@ -121,26 +121,54 @@ test('tool provider 挂到 ctx.tools,只注册一个 writing_desk_produce', () =
   assert.equal(produceTool.name, 'writing-desk-produce-tool')
 })
 
-test('execute 把输入归一成 {sourceIds, targetId} 并按路由同一形状启动 Producer', async () => {
-  const calls = []
-  const state = seedState()
-  const desk = {
-    store: { read: async () => state },
-    producer: { start: async (...args) => { calls.push(args); return true } },
-  }
-  const { ctx, registered } = toolContext(desk)
-  produceTool.apply(ctx)
-  const tool = registered[0]
-  const result = await tool.execute({ itemIds: ['seed_1', 'seed_2'], withImages: false }, { signal: SIGNAL })
-  assert.deepEqual(result, { started: true, targetId: 'seed_1', sourceIds: ['seed_1', 'seed_2'] })
-  // 与 host.js produce 路由完全同一条链:producer.start(input.targetId, { sourceIds, withImages })
-  assert.deepEqual(calls, [['seed_1', { sourceIds: ['seed_1', 'seed_2'], withImages: false }]])
+test('execute 把输入归一成 {sourceIds, targetId},成稿写回同一份状态机', async () => {
+  // 真实 Store + Producer(假模型):断言落点灵感的最终状态,不盯 mock 的调用参数——
+  // 输入归一、落点取舍与产物落库都由状态本身说话(与 host.js produce 路由同一条链)。
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-preset-'))
+  try {
+    const store = new Store(dir)
+    await store.read()
+    // 空库自带种子灵感;胶囊要自己收一份,胶囊输入才有东西可展开
+    await store.mutate('预置选题堆', draft => { applyOps(draft, [{ op: 'add_capsule', name: '选题堆', itemIds: ['seed_1', 'seed_2'] }]); return draft })
+    const settings = new Settings(dir)
+    // 不配生图服务(assets 停在 skipped),withImages 的两种取值都能从状态上分辨出来
+    await settings.update({ imageCount: 1, shotCount: 2 })
+    const PLAN = JSON.stringify({ title: '归一成稿标题', cover: 'c', characters: '', images: [{ anchor: '一', caption: '图', prompt: 'p' }], shots: [] })
+    const callText = async ({ system, onText }) => {
+      if (system.includes('策划案')) { onText(PLAN); return { text: PLAN, model: 'd' } }
+      onText('# 归一成稿标题\n\n正文')
+      return { text: '# 归一成稿标题\n\n正文', model: 'd' }
+    }
+    const producer = new Producer({ store, settings, callText, generate: async () => ({ buffer: Buffer.alloc(8), ext: '.png' }) })
+    const desk = { store, producer }
+    const { ctx, registered } = toolContext(desk)
+    produceTool.apply(ctx)
+    const tool = registered[0]
+    // 多灵感输入:落点取首个,产物只落在落点灵感;显式 withImages: false 时不画图
+    const result = await tool.execute({ itemIds: ['seed_1', 'seed_2'], withImages: false }, { signal: SIGNAL })
+    assert.deepEqual(result, { started: true, targetId: 'seed_1', sourceIds: ['seed_1', 'seed_2'] })
+    for (let i = 0; i < 200 && producer.isRunning(result.targetId); i += 1) await new Promise(resolve => setTimeout(resolve, 5))
+    let state = await store.read()
+    const target = state.items.find(row => row.id === result.targetId)
+    assert.equal(target.production.status, 'done')
+    assert.equal(target.production.article, '正文')
+    assert.equal(target.production.withImages, false, '显式 withImages: false 不画图')
+    assert.equal(state.items.find(row => row.id === 'seed_2').production, undefined, '其余来源只出素材,不成稿')
 
-  // 胶囊展开与 withImages 缺省(不传时路由也不传)
-  calls.length = 0
-  const capsule = (await desk.store.read()).capsules[0]
-  await tool.execute({ capsuleIds: [capsule.id] }, { signal: SIGNAL })
-  assert.deepEqual(calls, [['seed_1', { sourceIds: ['seed_1', 'seed_2'] }]])
+    // 胶囊展开归一成同一批 sourceIds;withImages 缺省时按工作台设置(默认画图)
+    const capsule = (await store.read()).capsules.find(row => row.name === '选题堆')
+    const again = await tool.execute({ capsuleIds: [capsule.id] }, { signal: SIGNAL })
+    assert.deepEqual(again, { started: true, targetId: 'seed_1', sourceIds: ['seed_1', 'seed_2'] })
+    for (let i = 0; i < 200 && producer.isRunning(again.targetId); i += 1) await new Promise(resolve => setTimeout(resolve, 5))
+    state = await store.read()
+    const rewritten = state.items.find(row => row.id === again.targetId)
+    assert.equal(rewritten.production.status, 'done')
+    assert.equal(rewritten.production.article, '正文')
+    assert.equal(rewritten.production.withImages, true, '缺省时按设置画图')
+    assert.equal(rewritten.production.images.length, (await settings.read()).imageCount, '配图数量按工作台设置')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('execute 报告已运行,空输入与不可用灵感报错', async () => {
