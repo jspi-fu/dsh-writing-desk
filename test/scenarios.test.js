@@ -214,3 +214,80 @@ test('场景④ 真实序列:已成稿条目手动改回灵感,系统按成稿�
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 })
+
+// 场景③:手动写稿与生成稿在所有面板谓词口径一致——drafts 与 production 不再是两套口径。
+test('场景③ 真实序列:手动写稿与生成稿在谓词与状态推演上口径一致', async () => {
+  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# 标题\n\n## 第一节\n生成的正文', model: 'd' })
+  const { dir, store, producer } = await fixture({ callText, ready: false })
+  const runOps = ops => store.mutate('操作', draft => applyOps(draft, ops))
+  const itemOf = async id => (await store.read()).items.find(row => row.id === id)
+  try {
+    const { receipts } = await runOps([{ op: 'add_item', title: '手写的' }, { op: 'add_item', title: '生成的' }])
+    const [manualId, producedId] = receipts.map(row => row.target)
+    // 各写各的稿:手写的进 drafts,生成的进 production,谓词说同一个口径
+    await runOps([{ op: 'save_draft', id: manualId, format: 'article', text: '我自己写的正文', by: 'user' }])
+    assert.equal(await producer.start(producedId, { withImages: false }), true)
+    await waitDone(producer, producedId)
+    for (const id of [manualId, producedId]) {
+      const item = await itemOf(id)
+      assert.equal(isDrafted(item), true, `${item.title}:已成稿`)
+      assert.equal(panelState(item), 'drafted', `${item.title}:面板口径是已成稿`)
+      assert.equal(item.status, 'draft')
+    }
+    // 排期:两条一起推进待发布,面板口径仍一致
+    await runOps([
+      { op: 'schedule_item', id: manualId, scheduledAt: '2026-12-01T12:00:00Z' },
+      { op: 'schedule_item', id: producedId, scheduledAt: '2026-12-01T12:00:00Z' },
+    ])
+    for (const id of [manualId, producedId]) {
+      const item = await itemOf(id)
+      assert.equal(item.status, 'ready')
+      assert.equal(isScheduled(item), true)
+      assert.equal(panelState(item), 'drafted')
+    }
+    // 手动改回灵感:两条同样自愈,不再出现「手写稿能标回灵感、生成稿不能」的分叉
+    await runOps([{ op: 'set_status', id: manualId, status: 'idea' }, { op: 'set_status', id: producedId, status: 'idea' }])
+    for (const id of [manualId, producedId]) {
+      const item = await itemOf(id)
+      assert.equal(item.status, 'ready', `${item.title}:已排期且已成稿,自愈回待发布`)
+    }
+    // 排了期还没写稿的条目,补一段手动稿:状态按排期与事实对齐,不会停在「排了期却是草稿」
+    const [third] = (await runOps([{ op: 'add_item', title: '排期后手写' }])).receipts
+    await runOps([{ op: 'schedule_item', id: third.target, scheduledAt: '2026-12-02T12:00:00Z' }])
+    assert.equal((await itemOf(third.target)).status, 'outline')
+    await runOps([{ op: 'save_draft', id: third.target, format: 'script', text: '排期后补的手写稿', by: 'user' }])
+    const thirdItem = await itemOf(third.target)
+    assert.equal(thirdItem.status, 'ready', '排期里写完稿就对待发布')
+    assert.equal(isDrafted(thirdItem), true)
+    assert.equal(panelState(thirdItem), 'drafted')
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})
+
+// 胶囊集合关系纳入同一套 ops/reducer 不变量:成员的成稿、改状态、排期都不影响胶囊存在性,
+// 成员被删自动出列、删光解散。
+test('真实序列:胶囊成员的状态迁移与删除不破坏集合关系', async () => {
+  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# 标题\n\n## 第一节\n正文', model: 'd' })
+  const { dir, store, producer } = await fixture({ callText, ready: false })
+  const runOps = ops => store.mutate('操作', draft => applyOps(draft, ops))
+  const members = async name => (await store.read()).capsules.find(capsule => capsule.name === name)?.itemIds
+  try {
+    const { receipts } = await runOps([{ op: 'add_item', title: '成员甲' }, { op: 'add_item', title: '成员乙' }, { op: 'add_item', title: '成员丙' }])
+    const [a, b, c] = receipts.map(row => row.target)
+    await runOps([{ op: 'add_capsule', name: '选题堆', itemIds: [a, b, c] }])
+    // 成员甲生成成稿、成员乙手动改状态来回、成员丙排期又取消——胶囊纹丝不动
+    assert.equal(await producer.start(a, { withImages: false }), true)
+    await waitDone(producer, a)
+    await runOps([{ op: 'set_status', id: b, status: 'draft' }, { op: 'set_status', id: b, status: 'idea' }])
+    await runOps([{ op: 'schedule_item', id: c, scheduledAt: '2026-12-03T12:00:00Z' }, { op: 'schedule_item', id: c, scheduledAt: null }])
+    assert.deepEqual(await members('选题堆'), [a, b, c], '成员状态变化不影响胶囊存在性')
+    // 成员被删自动出列;删光解散
+    await runOps([{ op: 'delete_item', id: a }])
+    assert.deepEqual(await members('选题堆'), [b, c])
+    await runOps([{ op: 'delete_item', id: b }, { op: 'delete_item', id: c }])
+    assert.equal((await store.read()).capsules.length, 0, '成员删光,胶囊跟着解散')
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})
