@@ -1,4 +1,26 @@
-# dsh-writing-desk bundle patch：同一个包提供 host 半片与浏览器半片
+# dsh-writing-desk bundle patch：同一个包提供 host 半片与浏览器半片。
+# 两行 insert：writing-desk 是全局工作台（UI slots/侧栏，任何模式可用）；
+# preset-writing 是创作模式（工单 #8）——tool 与 skill provider 只作为它的
+# plugins 子项注册，注册落在该 preset 的 Cordis scope 层，其他模式看不到
+# （dsh-agent-preset/skills/dsh-doc/references/compositions.md 的声明格式，
+# dsh-web-app/presets/minimal.patch.yml 为官方先例）。
 - insert:
     - id: writing-desk
       name: 'dsh-writing-desk'
+    - id: preset-writing
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: writing
+        name: 创作
+        description: 图文创作台模式：成稿 tool 与写作规则 skill 只在本模式注册，工作台侧栏全局可用。
+        order: 10
+        plugins:
+          # 子项 name 引用本包子路径（profile 根 node_modules 解析，见 package.json exports）
+          - id: writing-desk-produce-tool
+            name: 'dsh-writing-desk/preset-tool'
+          - id: writing-desk-rules-skill
+            name: 'dsh-writing-desk/preset-skill'
+          # 模型消费 skill 的官方 tool（ADR 阶段 2：SKILL.md 由 preset 内 skill provider
+          # 提供，配 dsh-tool-skill 让模型按需加载）
+          - id: writing-desk-tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'

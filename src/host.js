@@ -370,7 +370,11 @@ export default {
       generate: (image, prompt, options) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, options) : generateImage(image, prompt, options),
     })
     const monid = createMonidRunner()
-    const desk = { settings, producer, monid, versionCheck: createVersionCheck() }
+    const desk = { settings, producer, monid, versionCheck: createVersionCheck(), store }
+    // 创作模式(工单 #8):preset-writing 的子插件(tool/skill provider)经这个服务拿到
+    // 与页面路由同一份 Store 和 Producer,成稿写回同一个 reducer。假 ctx(测试)没有
+    // provide,跳过即可;真实宿主的 ctx 一定有。
+    ctx.provide?.('writingDesk', desk)
     ctx.effect(() => ctx.webServer.register({
       kind: 'prefix',
       path: '/writing-desk',
