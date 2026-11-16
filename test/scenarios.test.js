@@ -8,17 +8,11 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { isDrafted, isScheduled, panelState } from '../src/state.js'
 import { applyOps } from '../src/ops.js'
-import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import { Producer } from '../src/produce.js'
 import { Settings } from '../src/settings.js'
 
-const NOW = new Date('2026-10-31T15:00:00+08:00')
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
-
-function seed() {
-  return buildSeed(NOW)
-}
 
 const isPlan = system => system.includes('策划案')
 const PLAN = JSON.stringify({ title: '最终标题', cover: 'cover', characters: 'a man', images: [{ anchor: '第一节', caption: '图注', prompt: 'fig' }], shots: [{ shot: '特写', visual: '手', voice: '说', seconds: 4, prompt: 's1' }, { shot: '全景', visual: '街', voice: '说', seconds: 6, prompt: 's2' }] })
