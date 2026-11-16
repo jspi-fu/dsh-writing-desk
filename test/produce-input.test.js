@@ -31,7 +31,9 @@ test('四种成稿输入归一为同一种 {sourceIds, targetId}', () => {
   // 单灵感:旧入口 {id} 与 {itemIds:[id]} 同一种输入
   assert.deepEqual(resolveProduceInput(state, { id: 'seed_2' }), { sourceIds: ['seed_2'], targetId: 'seed_2' })
   assert.deepEqual(resolveProduceInput(state, { itemIds: ['seed_2'] }), { sourceIds: ['seed_2'], targetId: 'seed_2' })
-  // 多灵感:产物落点取第一个
+  // 多灵感:产物落点取第一个。理由:成稿产物必须写在一条灵感的 production 字段上
+  // (production 形状与 draft/ready 状态、排期依赖都不能动);新建承载灵感要多出一种实体,
+  // 首个来源当落点最小——全部素材照样进策划案与正文,其余来源原样保留、随时可单独打开
   assert.deepEqual(resolveProduceInput(state, { itemIds: ['seed_1', 'seed_2'] }), { sourceIds: ['seed_1', 'seed_2'], targetId: 'seed_1' })
   // 单胶囊 / 多胶囊:解析成员,同一种输入
   assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capA.id] }), { sourceIds: ['seed_1', 'seed_2'], targetId: 'seed_1' })
