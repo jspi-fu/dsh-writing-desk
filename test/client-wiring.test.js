@@ -95,3 +95,14 @@ test('client 不再引用遗留的草稿字段口径', () => {
     assert.doesNotMatch(source, /\bdrafts\b/, `${file} 还在引用遗留的草稿字段`)
   }
 })
+
+// React #185 防复发:useDesk 走 useSyncExternalStore,选择器缺字段时用 ?? [] 兜底
+// 会在每次渲染返回新数组,判定为快照持续变化,无限重渲染直到 'main' slot 崩溃。
+// 缺字段一律回落 desk.js 导出的 EMPTY_LIST(同一个引用)。
+test('useDesk 选择器不得每次渲染返回新数组(React #185 防复发)', () => {
+  for (const file of readdirSync(DIR)) {
+    if (!file.endsWith('.jsx') && !file.endsWith('.js')) continue
+    const source = readFileSync(new URL(file, DIR), 'utf8')
+    assert.doesNotMatch(source, /useDesk\([^\n]*\?\? \[\]/, `${file} 的 useDesk 选择器里还有 ?? [],要改用 desk.js 的 EMPTY_LIST`)
+  }
+})

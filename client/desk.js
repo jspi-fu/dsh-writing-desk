@@ -12,6 +12,9 @@ let snapshot = {
   capsuleId: null, retag: null, tagFilter: null, selection: null,
   live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
+// getSnapshot 稳定性:useDesk 选择器缺字段时回落到这同一个数组引用,
+// 每次返回新 [] 会让 useSyncExternalStore 认为快照一直在变,触发 React #185 无限渲染
+export const EMPTY_LIST = []
 const listeners = new Set()
 
 export function getDesk() {

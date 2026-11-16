@@ -3,7 +3,7 @@
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
 import { CapsuleCard } from './capsule.jsx'
-import { captureFiles, captureUrl, clearSelection, dispatchOps, getDesk, openCapsule, openItem, openProduce, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
+import { captureFiles, captureUrl, clearSelection, dispatchOps, EMPTY_LIST, getDesk, openCapsule, openItem, openProduce, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
@@ -161,7 +161,7 @@ function originOf(event) {
 
 function Scatter() {
   const items = useDesk(s => s.state.items)
-  const capsules = useDesk(s => s.state.capsules ?? [])
+  const capsules = useDesk(s => s.state.capsules ?? EMPTY_LIST)
   const stageRef = React.useRef(null)
   const worldRef = React.useRef(null)
   const { cam, flyTo, halt } = useCamera(stageRef, worldRef)
@@ -489,7 +489,7 @@ function Scatter() {
 /** 信息流：原来的瀑布流卡片，按时间从新到旧排。胶囊排成一条资料架横在最上面。 */
 function Feed() {
   const items = useDesk(s => s.state.items)
-  const capsules = useDesk(s => s.state.capsules ?? [])
+  const capsules = useDesk(s => s.state.capsules ?? EMPTY_LIST)
   const kind = useDesk(s => s.kindFilter)
   const tag = useDesk(s => s.tagFilter)
   const related = useDesk(s => s.related)

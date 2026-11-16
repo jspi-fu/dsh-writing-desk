@@ -232,8 +232,8 @@ function Desk() {
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
-      <CapsuleDialog />
-      <RetagDialog />
+      {ready ? <CapsuleDialog /> : null}
+      {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
       <Toast />
     </div>

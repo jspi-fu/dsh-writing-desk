@@ -1,14 +1,14 @@
 // 批量改标签:先写标签看「改前 → 改后」的 diff,确认后带着每条灵感的当前版本提交;
 // 预览之后有人又手动改过标签的话,Host 会整批拒绝,不覆盖手动分类。
 import React from 'react'
-import { closeRetag, dispatchOps, useDesk } from './desk.js'
+import { closeRetag, dispatchOps, EMPTY_LIST, useDesk } from './desk.js'
 import { t } from './i18n.js'
 import { Dialog } from './ui.jsx'
 import { retagPreview } from './tags.js'
 
 export function RetagDialog() {
   const retag = useDesk(s => s.retag)
-  const items = useDesk(s => s.state?.items ?? [])
+  const items = useDesk(s => s.state?.items ?? EMPTY_LIST)
   const [tags, setTags] = React.useState('')
   const [rows, setRows] = React.useState(null)
   React.useEffect(() => { setTags(''); setRows(null) }, [retag])

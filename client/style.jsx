@@ -1,6 +1,6 @@
 // 风格：按博主类型分板块的预设，加上从自己账号提炼的专属风格。选哪张，就按哪张写。
 import React from 'react'
-import { dispatchOps, exportSkills, extractStyle, learnSkills, setDesk, useDesk } from './desk.js'
+import { dispatchOps, EMPTY_LIST, exportSkills, extractStyle, learnSkills, setDesk, useDesk } from './desk.js'
 import { ConnectDialog } from './connect.jsx'
 import { lang, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
@@ -101,7 +101,7 @@ function StyleCard({ style, active }) {
 
 export function StyleView() {
   useLang()
-  const styles = useDesk(s => s.state.styles ?? [])
+  const styles = useDesk(s => s.state.styles ?? EMPTY_LIST)
   const activeId = useDesk(s => s.state.activeStyleId)
   const skills = useDesk(s => s.state.skills)
   const [adding, setAdding] = React.useState(null)

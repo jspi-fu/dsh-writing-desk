@@ -2,7 +2,7 @@
 import React from 'react'
 import { panelState } from '../src/state.js'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeProduce, dispatchOps, exportForPublish, feedbackSkills, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeProduce, dispatchOps, EMPTY_LIST, exportForPublish, feedbackSkills, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
@@ -104,7 +104,7 @@ function IdeaCard({ item, live, settings, sources }) {
   const production = item.production
   // 正在成稿与一键成稿入口走共享谓词(工单 #5),与其余面板同一口径
   const running = panelState(item) === 'producing'
-  const styles = useDesk(s => s.state.styles ?? [])
+  const styles = useDesk(s => s.state.styles ?? EMPTY_LIST)
   const activeId = useDesk(s => s.state.activeStyleId)
   const [draw, setDraw] = React.useState(null)
   React.useEffect(() => setDraw(null), [item.id])

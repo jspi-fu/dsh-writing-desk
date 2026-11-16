@@ -1,7 +1,7 @@
 // 胶囊:持久化的命名灵感集合。卡片收成员的封面和名字,对话框里改名、看成员、整体成稿、解散;
 // 成员灵感仍然独立存在,点成员照常进编辑界面。
 import React from 'react'
-import { closeCapsule, dispatchOps, openItem, openProduce, useDesk } from './desk.js'
+import { closeCapsule, dispatchOps, EMPTY_LIST, openItem, openProduce, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Dialog, Icon } from './ui.jsx'
 import { capsuleMembers, posterOf } from './util.js'
@@ -37,7 +37,7 @@ export function CapsuleCard({ capsule, items, onOpen, selected = false }) {
 export function CapsuleDialog() {
   const id = useDesk(s => s.capsuleId)
   const capsule = useDesk(s => s.state?.capsules?.find(row => row.id === s.capsuleId))
-  const items = useDesk(s => s.state?.items ?? [])
+  const items = useDesk(s => s.state?.items ?? EMPTY_LIST)
   const [name, setName] = React.useState('')
   React.useEffect(() => { setName(capsule?.name ?? '') }, [capsule?.name, id])
   // 正看着的胶囊被解散或撤销掉时,退回灵感墙
