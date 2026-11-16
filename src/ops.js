@@ -16,6 +16,7 @@ export function statusLabel(status) {
 const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
   personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', pos: 'pos', score: 'num',
+  contentOrigin: 'origin',
 }
 const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list', tone: 'num' }
 const ANGLE_FIELDS = { name: 'text', hook: 'text', prompt: 'text' }
@@ -45,6 +46,8 @@ function coerce(type, value) {
     case 'id': return value === null || typeof value === 'string' ? value : undefined
     case 'kind': return KINDS.includes(value) ? value : undefined
     case 'status': return STATUSES.includes(value) ? value : undefined
+    // 来源类型：null 表示清掉标注；「我写的 / AI 生成的」沿用 stashdock 的 contentOrigin 命名
+    case 'origin': return value === null || value === 'user' || value === 'ai' ? value : undefined
     case 'platform': return value === null || PLATFORMS.includes(value) ? value : undefined
     case 'list': return Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0, 24) : undefined
     case 'bool': return typeof value === 'boolean' ? value : undefined

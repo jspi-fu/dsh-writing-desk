@@ -63,6 +63,22 @@ test('clear_samples 清空示例但保留用户内容', () => {
   assert.equal(state.metrics.length, 0)
 })
 
+test('速记卡的来源类型只接受「我写的 / AI 生成的」', () => {
+  const state = seed()
+  const { receipts } = applyOps(state, [
+    { op: 'add_item', title: '手写的', body: 'x', source: '速记', tags: ['选题'], contentOrigin: 'user' },
+    { op: 'add_item', title: 'AI 出的', body: 'y', contentOrigin: 'ai' },
+    { op: 'add_item', title: '坏值不落库', contentOrigin: 'gpt' },
+  ])
+  const items = state.items
+  assert.equal(items.find(i => i.id === receipts[0].target).contentOrigin, 'user')
+  assert.equal(items.find(i => i.id === receipts[1].target).contentOrigin, 'ai')
+  assert.equal(items.find(i => i.title === '坏值不落库').contentOrigin, undefined)
+  const target = receipts[0].target
+  applyOps(state, [{ op: 'update_item', id: target, contentOrigin: 'ai' }, { op: 'update_item', id: target, contentOrigin: null }])
+  assert.equal(items.find(i => i.id === target).contentOrigin, null)
+})
+
 test('Store 持久化、撤销，并能感知另一进程的写入', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-'))
   try {
