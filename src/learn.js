@@ -70,13 +70,6 @@ function editSignals(state) {
       const after = production.article.replace(/\s/g, '').length
       signals.push({ title: item.title, ratio: before ? after / before : 1 })
     }
-    for (const format of ['article', 'script']) {
-      const draft = item.drafts?.[format]
-      if (!draft?.aiText || draft.by !== 'user' || draft.text === draft.aiText) continue
-      const before = draft.aiText.replace(/\s/g, '').length
-      const after = draft.text.replace(/\s/g, '').length
-      signals.push({ title: item.title, ratio: before ? after / before : 1 })
-    }
   }
   return signals
 }

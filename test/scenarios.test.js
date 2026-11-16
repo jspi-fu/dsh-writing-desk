@@ -209,17 +209,20 @@ test('场景④ 真实序列:已成稿条目手动改回灵感,系统按成稿�
   }
 })
 
-// 场景③:手动写稿与生成稿在所有面板谓词口径一致——drafts 与 production 不再是两套口径。
-test('场景③ 真实序列:手动写稿与生成稿在谓词与状态推演上口径一致', async () => {
+// 场景③:成稿只有一个口径——手写稿走 update_production 改的是同一份成稿产物,
+// 面板谓词与状态推演不再有第二套判断(工单 #7 清掉遗留草稿字段)。
+test('场景③ 真实序列:手动改稿与生成稿在谓词与状态推演上口径一致', async () => {
   const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# 标题\n\n## 第一节\n生成的正文', model: 'd' })
   const { dir, store, producer } = await fixture({ callText, ready: false })
   const runOps = ops => store.mutate('操作', draft => applyOps(draft, ops))
   const itemOf = async id => (await store.read()).items.find(row => row.id === id)
   try {
-    const { receipts } = await runOps([{ op: 'add_item', title: '手写的' }, { op: 'add_item', title: '生成的' }])
+    const { receipts } = await runOps([{ op: 'add_item', title: '手改的' }, { op: 'add_item', title: '生成的' }])
     const [manualId, producedId] = receipts.map(row => row.target)
-    // 各写各的稿:手写的进 drafts,生成的进 production,谓词说同一个口径
-    await runOps([{ op: 'save_draft', id: manualId, format: 'article', text: '我自己写的正文', by: 'user' }])
+    // 两条都先有一份成稿产物;手改的那条再经 ops 手动改正文(可撤销的唯一手写通道)
+    assert.equal(await producer.start(manualId, { withImages: false }), true)
+    await waitDone(producer, manualId)
+    await runOps([{ op: 'update_production', id: manualId, article: '我自己改写的正文' }])
     assert.equal(await producer.start(producedId, { withImages: false }), true)
     await waitDone(producer, producedId)
     for (const id of [manualId, producedId]) {
@@ -239,17 +242,19 @@ test('场景③ 真实序列:手动写稿与生成稿在谓词与状态推演上
       assert.equal(isScheduled(item), true)
       assert.equal(panelState(item), 'drafted')
     }
-    // 手动改回灵感:两条同样自愈,不再出现「手写稿能标回灵感、生成稿不能」的分叉
+    // 手动改回灵感:两条同样自愈,手改与生成不再出现能标回/不能标回的分叉
     await runOps([{ op: 'set_status', id: manualId, status: 'idea' }, { op: 'set_status', id: producedId, status: 'idea' }])
     for (const id of [manualId, producedId]) {
       const item = await itemOf(id)
       assert.equal(item.status, 'ready', `${item.title}:已排期且已成稿,自愈回待发布`)
     }
-    // 排了期还没写稿的条目,补一段手动稿:状态按排期与事实对齐,不会停在「排了期却是草稿」
+    // 排了期还没写稿的条目:先停在大纲,补写正文(手动改稿)后状态按排期与事实对齐回待发布
     const [third] = (await runOps([{ op: 'add_item', title: '排期后手写' }])).receipts
     await runOps([{ op: 'schedule_item', id: third.target, scheduledAt: '2026-12-02T12:00:00Z' }])
     assert.equal((await itemOf(third.target)).status, 'outline')
-    await runOps([{ op: 'save_draft', id: third.target, format: 'script', text: '排期后补的手写稿', by: 'user' }])
+    assert.equal(await producer.start(third.target, { withImages: false }), true)
+    await waitDone(producer, third.target)
+    await runOps([{ op: 'update_production', id: third.target, article: '排期后补写的正文' }])
     const thirdItem = await itemOf(third.target)
     assert.equal(thirdItem.status, 'ready', '排期里写完稿就对待发布')
     assert.equal(isDrafted(thirdItem), true)

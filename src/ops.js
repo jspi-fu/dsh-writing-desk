@@ -145,7 +145,7 @@ const handlers = {
   add_item(state, op, now) {
     const fields = pick(ITEM_FIELDS, op)
     const item = {
-      id: newId('it'), kind: 'note', title: '', body: '', tags: [], status: 'idea', personaIds: [], createdAt: now, drafts: {}, ...fields,
+      id: newId('it'), kind: 'note', title: '', body: '', tags: [], status: 'idea', personaIds: [], createdAt: now, ...fields,
     }
     if (!item.title && !item.body && !item.media) throw new Error(tr('灵感内容为空'))
     // 只贴了图或视频也要有个名字，卡片和回执才有东西可显示
@@ -207,16 +207,8 @@ const handlers = {
     reduce(state, { type: 'publish', id: item.id, at: now })
     return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
-  save_draft(state, op, now) {
-    const item = findById(state.items, op.id)
-    const format = op.format === 'script' ? 'script' : 'article'
-    if (typeof op.text !== 'string') throw new Error(tr('草稿内容无效'))
-    const previous = item.drafts?.[format]
-    item.drafts = { ...item.drafts, [format]: { text: op.text.slice(0, 200000), by: op.by === 'ai' ? 'ai' : 'user', engine: typeof op.engine === 'string' ? op.engine : undefined, at: now, aiText: op.by === 'ai' ? op.text : previous?.aiText } }
-    // 写了稿就不再是灵感档:状态推进同样经 reducer,排期里的照事实对齐回待发布
-    if (['idea', 'outline'].includes(item.status)) reduce(state, { type: 'setStatus', id: item.id, status: 'draft', at: now })
-    return { text: tr(format === 'script' ? '保存《{title}》的脚本' : '保存《{title}》的文章', { title: short(item.title) }), target: item.id, kind: 'item' }
-  },
+  // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
+  // 正文不是状态元组,直写 production.article;AI 原稿快照留给 learn 对比修改方向。
   update_production(state, op) {
     const item = findById(state.items, op.id)
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))

@@ -287,7 +287,11 @@ export class Producer {
     }
   }
 
-  /** 单独重画一张。 */
+  /**
+   * 单独重画一张。
+   * 资产状态(idle/pending/running/done/failed)是单张画面的进度,不是 item 的状态元组
+   * (工单 #7):这里直写资产字段属于设计内,状态元组的裁决仍然只在 state.js。
+   */
   async regenerate(id, target) {
     const settings = await this.settings.read()
     if (!this.ready(settings)) throw Object.assign(new Error(tr('还没有接入生图模型')), { status: 400 })

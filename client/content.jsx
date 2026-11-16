@@ -38,9 +38,8 @@ function BoardCard({ item: raw }) {
       <span className="md-board-meta">
         {item.platform ? <span>{t(item.platform)}</span> : null}
         {isScheduled(item) ? <span className="is-time">{relativeDay(item.scheduledAt)}</span> : null}
-        {/* 已成稿走共享谓词:手动稿与生成稿同一个口径;胶片只标记遗留口播稿(清理见工单 #7) */}
+        {/* 已成稿走共享谓词:生成稿与手动改稿改的是同一份成稿产物,同一个口径 */}
         {isDrafted(item) ? <Icon name="pen" size={12} /> : null}
-        {item.drafts?.script ? <Icon name="film" size={12} /> : null}
       </span>
     </button>
   )
