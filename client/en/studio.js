@@ -159,6 +159,12 @@ export const STUDIO = {
   '返回灵感': 'Back to ideas',
   '成稿': 'Studio',
 
+  // 统一成稿工作面（工单 #6：单灵感 / 多选灵感 / 胶囊 / 标签架都进这里，浮层壳已下线）
+  '返回': 'Back',
+  '按 {n} 条灵感成稿': 'Drafting from {n} ideas',
+  '整体成稿': 'Draft whole capsule',
+  '没有可成稿的灵感': 'No ideas to draft from',
+
   // 编辑界面（点开一条灵感进入的地方）
   '编辑灵感': 'Edit idea',
   '保存编辑': 'Save edits',

@@ -33,7 +33,7 @@ function hostOf(url) {
   }
 }
 
-export function Card({ item: raw, onOpen }) {
+export function Card({ item: raw, onOpen, selected = false }) {
   const item = displayItem(raw)
   const inverted = item.pinned
   const running = item.production?.status === 'running'
@@ -43,7 +43,7 @@ export function Card({ item: raw, onOpen }) {
 
   return (
     <article
-      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''}`}
+      className={`md-card kind-${item.kind} ${inverted ? 'is-inverted' : ''} ${item.status === 'published' ? 'is-published' : ''} ${selected ? 'is-selected' : ''}`}
       data-card={item.id}
       tabIndex={0}
       role="button"

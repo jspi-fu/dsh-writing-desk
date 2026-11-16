@@ -98,8 +98,8 @@ const FORMAT_OPTIONS = [
   { id: 'article', label: '文章', hint: '文章：一个一个自然段' },
 ]
 
-/** 这条灵感的标题、体裁、风格与成稿入口。 */
-function IdeaCard({ item, live, settings }) {
+/** 落点灵感的标题、体裁、风格与成稿入口;多来源时成稿把全部来源的素材一并交给流水线。 */
+function IdeaCard({ item, live, settings, sources }) {
   const production = item.production
   const running = production?.status === 'running'
   const styles = useDesk(s => s.state.styles ?? [])
@@ -139,7 +139,7 @@ function IdeaCard({ item, live, settings }) {
       ) : null}
       {canStart ? (
         <div className="md-go-row">
-          <button type="button" className="md-go" onClick={() => runProduce(item.id, { withImages })}>{t('一键成稿')}</button>
+          <button type="button" className="md-go" onClick={() => runProduce(item.id, { withImages, itemIds: sources ?? undefined })}>{t('一键成稿')}</button>
           <label className="md-go-option">
             <input type="checkbox" checked={withImages} onChange={e => setDraw(e.target.checked)} />
             {t('生成图片')}
@@ -174,7 +174,7 @@ function Stat({ icon, value, unit }) {
 }
 
 /** 主视觉：渐变底、大标题、数字，右边是视频封面和配图的拼贴。 */
-function HeroTile({ item, live, onView }) {
+function HeroTile({ item, live, onView, sources }) {
   const settings = useDesk(s => s.settings)
   const production = item.production
   const running = production?.status === 'running'
@@ -206,7 +206,7 @@ function HeroTile({ item, live, onView }) {
         { name: 'note', label: t('现在的文章、封面和分镜会被替换，也会再消耗一次模型额度。'), type: 'hidden' },
         { name: 'withImages', label: t('同时生成封面、配图和分镜图'), type: 'checkbox' },
       ],
-      onSubmit: values => runProduce(item.id, { withImages: values.withImages !== false }),
+      onSubmit: values => runProduce(item.id, { withImages: values.withImages !== false, itemIds: sources ?? undefined }),
     },
   })
   const figures = images.length ? images : [null, null].slice(0, settings?.imageCount ?? 2)
@@ -437,7 +437,7 @@ function Viewer({ item, target, onChange, onClose }) {
   )
 }
 
-function Sheet({ item, live }) {
+function Sheet({ item, live, sources }) {
   const settings = useDesk(s => s.settings)
   const [open, setOpen] = React.useState(null)
   const [viewing, setViewing] = React.useState(null)
@@ -500,8 +500,8 @@ function Sheet({ item, live }) {
   return (
     <div className="md-sheet">
       <div className={`md-bento ${open ? 'has-open' : ''}`} ref={bento}>
-        <section className="md-tile md-tile-idea"><IdeaCard item={item} live={live} settings={settings} /></section>
-        <HeroTile item={item} live={live} onView={setViewing} />
+        <section className="md-tile md-tile-idea"><IdeaCard item={item} live={live} settings={settings} sources={sources} /></section>
+        <HeroTile item={item} live={live} onView={setViewing} sources={sources} />
         <section {...tile('article')}>
           <ArticleTile item={item} live={live} open={open === 'article'} onToggle={() => toggle('article')} onView={setViewing} tileRef={articleRef} />
         </section>
@@ -514,13 +514,16 @@ function Sheet({ item, live }) {
   )
 }
 
-export function Studio() {
-  // 只由「去成稿」等显式动作打开；点灵感进编辑界面，不再落回这里
+/**
+ * 统一成稿工作面(工单 #6):单灵感、多选灵感、胶囊、标签资料架都从这里进同一个格子阵。
+ * 只由「去成稿 / 一键成稿 / 整体成稿」等显式动作打开;点灵感进编辑界面,不再落回这里。
+ * 多来源时产物写在落点灵感上,其余灵感只出素材。
+ */
+export function ProduceView() {
   const id = useDesk(s => s.produceId)
   const item = useDesk(s => s.state?.items.find(i => i.id === s.produceId))
-  const origin = useDesk(s => s.sheetOrigin)
+  const sources = useDesk(s => s.produceSources)
   const live = useDesk(s => s.live[s.produceId])
-  const ref = React.useRef(null)
   const production = item?.production
   const running = production?.status === 'running'
   const watching = running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)
@@ -529,21 +532,6 @@ export function Studio() {
     if (id && watching) return watchProduction(id)
     return undefined
   }, [id, watching])
-
-  // 从卡片的位置展开成整个工作区
-  React.useLayoutEffect(() => {
-    const el = ref.current
-    if (!id || !el || reducedMotion()) return
-    if (origin) {
-      const box = el.getBoundingClientRect()
-      const inset = `inset(${origin.y - box.top}px ${box.right - origin.x - origin.w}px ${box.bottom - origin.y - origin.h}px ${origin.x - box.left}px round 20px)`
-      el.animate([{ clipPath: inset }, { clipPath: 'inset(0px 0px 0px 0px round 0px)' }], { duration: SPRING_SOFT.duration, easing: SPRING_SOFT.easing })
-    } else {
-      el.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'ease-out' })
-    }
-    // 只在切换灵感时播放
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
 
   React.useEffect(() => {
     if (!id) return undefined
@@ -555,16 +543,17 @@ export function Studio() {
     return () => window.removeEventListener('keydown', onKey)
   }, [id])
 
-  // 打开的这条被删掉或撤销掉时，退回灵感墙，不留空白页
+  // 落点灵感被删掉或撤销掉时，退回工作台，不留空白页
   React.useEffect(() => { if (id && !item) closeProduce() }, [id, item])
   if (!item) return null
   return (
-    <div className="md-studio" ref={ref} role="dialog" aria-label={t('灵感')}>
+    <div className="md-produce">
       <header className="md-studio-head" data-window-drag="">
-        <IconButton icon="chevL" label={t('返回灵感')} onClick={closeProduce} />
+        <IconButton icon="chevL" label={t('返回')} onClick={closeProduce} />
         <h2>{t('成稿')}</h2>
+        {sources?.length > 1 ? <span className="md-ed-meta">{t('按 {n} 条灵感成稿', { n: sources.length })}</span> : null}
       </header>
-      <Sheet key={item.id} item={item} live={live} />
+      <Sheet key={item.id} item={item} live={live} sources={sources} />
     </div>
   )
 }

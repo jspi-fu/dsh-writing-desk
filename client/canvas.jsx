@@ -3,7 +3,7 @@
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
 import { CapsuleCard } from './capsule.jsx'
-import { captureFiles, captureUrl, dispatchOps, getDesk, openCapsule, openItem, openRetag, setDesk, useDesk } from './desk.js'
+import { captureFiles, captureUrl, clearSelection, dispatchOps, getDesk, openCapsule, openItem, openProduce, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
@@ -122,7 +122,13 @@ function Hero() {
   )
 }
 
-function Node({ item, pos, index, entered, onOpen, tone }) {
+// 点胶囊:普通点击开对话框;Shift/Ctrl+点选进多选,凑一批直接成稿
+function openCapsuleCard(capsule, event) {
+  if (event?.shiftKey || event?.ctrlKey || event?.metaKey) return toggleSelect('capsule', capsule.id)
+  openCapsule(capsule.id)
+}
+
+function Node({ item, pos, index, entered, onOpen, tone, selected }) {
   const ref = React.useRef(null)
   React.useLayoutEffect(() => {
     if (entered.current.has(item.id)) return
@@ -138,7 +144,7 @@ function Node({ item, pos, index, entered, onOpen, tone }) {
   const size = cardSize(item)
   return (
     <div ref={ref} className={`md-node${tone ? ` is-${tone}` : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
-      <div className="md-pop"><Card item={item} onOpen={onOpen} /></div>
+      <div className="md-pop"><Card item={item} onOpen={onOpen} selected={selected} /></div>
     </div>
   )
 }
@@ -162,6 +168,9 @@ function Scatter() {
   const kind = useDesk(s => s.kindFilter)
   const tag = useDesk(s => s.tagFilter)
   const related = useDesk(s => s.related)
+  const selection = useDesk(s => s.selection)
+  const pickedItems = React.useMemo(() => new Set(selection?.items ?? []), [selection])
+  const pickedCapsules = React.useMemo(() => new Set(selection?.capsules ?? []), [selection])
   const roots = React.useMemo(() => items.filter(isIdea), [items])
   const byTag = i => !tag || (i.tags ?? []).includes(tag)
   const shown = React.useMemo(() => roots.filter(i => byTag(i) && (kind === 'all' || displayItem(i).kind === kind)), [roots, kind, tag])
@@ -277,6 +286,8 @@ function Scatter() {
   }, [cam, flyTo])
 
   const openCard = React.useCallback((item, event) => {
+    // Shift/Ctrl+点选进多选,凑一批直接成稿(工单 #6);普通点击照常进编辑界面
+    if (event?.shiftKey || event?.ctrlKey || event?.metaKey) return toggleSelect('item', item.id)
     if (suppressClick.current) return
     openItem(item.id, originOf(event))
   }, [])
@@ -452,12 +463,12 @@ function Scatter() {
     >
       <div className="md-world" ref={worldRef}>
         <div className="md-hero-anchor"><Hero /></div>
-        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} />)}
+        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} selected={pickedItems.has(item.id)} />)}
         {capsules.map(capsule => {
           const pos = capsulePos(capsule)
           return (
             <div key={capsule.id} className="md-node is-capsule" style={{ left: pos.x, top: pos.y, width: 216, '--r': '0deg', '--d': 0 }}>
-              <div className="md-pop"><CapsuleCard capsule={capsule} items={items} onOpen={row => openCapsule(row.id)} /></div>
+              <div className="md-pop"><CapsuleCard capsule={capsule} items={items} selected={pickedCapsules.has(capsule.id)} onOpen={openCapsuleCard} /></div>
             </div>
           )
         })}
@@ -478,6 +489,13 @@ function Feed() {
   const kind = useDesk(s => s.kindFilter)
   const tag = useDesk(s => s.tagFilter)
   const related = useDesk(s => s.related)
+  const selection = useDesk(s => s.selection)
+  const pickedItems = React.useMemo(() => new Set(selection?.items ?? []), [selection])
+  const pickedCapsules = React.useMemo(() => new Set(selection?.capsules ?? []), [selection])
+  const openCard = (item, event) => {
+    if (event?.shiftKey || event?.ctrlKey || event?.metaKey) return toggleSelect('item', item.id)
+    openItem(item.id, originOf(event))
+  }
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
     .filter(i => isIdea(i) && (!tag || (i.tags ?? []).includes(tag)) && (kind === 'all' || displayItem(i).kind === kind))
@@ -494,13 +512,13 @@ function Feed() {
       <div className="md-feed-hero"><Hero /></div>
       {capsules.length ? (
         <div className="md-capsule-strip">
-          {capsules.map(capsule => <CapsuleCard key={capsule.id} capsule={capsule} items={items} onOpen={row => openCapsule(row.id)} />)}
+          {capsules.map(capsule => <CapsuleCard key={capsule.id} capsule={capsule} items={items} selected={pickedCapsules.has(capsule.id)} onOpen={openCapsuleCard} />)}
         </div>
       ) : null}
       <div className="md-wall">
         {sorted.map((item, index) => (
           <div key={item.id} className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`} style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}>
-            <Card item={item} onOpen={(row, event) => openItem(row.id, originOf(event))} />
+            <Card item={item} onOpen={openCard} selected={pickedItems.has(item.id)} />
           </div>
         ))}
       </div>
@@ -517,12 +535,22 @@ export function HomeView() {
   const kind = useDesk(s => s.kindFilter)
   const tag = useDesk(s => s.tagFilter)
   const items = useDesk(s => s.state.items)
-  // 标签就是选题资料架:挑一个标签,画布上只留这批灵感,还能顺手给它们批量改标签
+  const selection = useDesk(s => s.selection)
+  const picked = (selection?.items.length ?? 0) + (selection?.capsules.length ?? 0)
+  // 标签就是选题资料架:挑一个标签,画布上只留这批灵感,还能顺手给它们批量改标签、一起成稿
   const shelf = React.useMemo(() => tagShelf(items).slice(0, 9), [items])
   const tagged = React.useMemo(() => items.filter(i => tag && (i.tags ?? []).includes(tag)).map(i => i.id), [items, tag])
   return (
     <div className="md-home">
       {mode === 'feed' ? <Feed /> : <Scatter />}
+      {picked ? (
+        // 多选后的浮动工具条:四种成稿输入里的「多灵感 / 多胶囊」从这里进统一成稿入口
+        <div className="md-selectbar" role="toolbar" aria-label={t('已选灵感')}>
+          <span>{t('已选 {n} 项', { n: picked })}</span>
+          <button type="button" className="md-btn is-primary" onClick={() => openProduce({ itemIds: selection.items, capsuleIds: selection.capsules })}><Icon name="bolt" size={14} />{t('一键成稿')}</button>
+          <IconButton icon="close" label={t('清除')} onClick={clearSelection} />
+        </div>
+      ) : null}
       <div className="md-dockbar" role="toolbar" aria-label={t('灵感视图')}>
         <Segmented
           label={t('展示方式')}
@@ -549,6 +577,7 @@ export function HomeView() {
         {tag ? (
           <>
             <IconButton icon="pen" label={t('给这批灵感改标签')} onClick={() => openRetag(tagged)} />
+            <IconButton icon="bolt" label={t('这批灵感一起成稿')} onClick={() => openProduce({ itemIds: tagged })} />
             <IconButton icon="close" label={t('不看这个标签了')} onClick={() => setDesk({ tagFilter: null })} />
           </>
         ) : null}
