@@ -72,6 +72,8 @@ export const STUDIO = {
   '展示方式': 'Layout',
   '散落': 'Freeform',
   '信息流': 'Feed',
+  '聚合胶囊': 'Group into capsule',
+  '收进胶囊': 'Add to capsule',
 
   // 卡片和邮票
   '{kind}：{title}': '{kind}: {title}',

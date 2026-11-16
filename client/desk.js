@@ -8,6 +8,7 @@ const BASE = 'writing-desk/'
 let snapshot = {
   state: null, canUndo: false, error: null,
   view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, query: '', kindFilter: 'all', related: null,
+  capsuleId: null, retag: null, tagFilter: null,
   live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
@@ -91,6 +92,24 @@ export function openItem(id, origin = null) {
 
 export function closeItem() {
   setDesk({ focusId: null, sheetOrigin: null })
+}
+
+// 胶囊对话框:重命名、看成员、解散
+export function openCapsule(id) {
+  setDesk({ capsuleId: id })
+}
+
+export function closeCapsule() {
+  setDesk({ capsuleId: null })
+}
+
+// 批量改标签:先 diff 预览再应用,版本冲突时 Host 拒绝
+export function openRetag(ids) {
+  setDesk({ retag: { ids } })
+}
+
+export function closeRetag() {
+  setDesk({ retag: null })
 }
 
 // 成稿工作区是显式动作：从编辑界面的「去成稿」进，点灵感不再直接到这里

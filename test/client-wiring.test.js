@@ -6,10 +6,12 @@ import test from 'node:test'
 
 const DIR = new URL('../client/', import.meta.url)
 
-// 各模块导出的 API 与组件用法：openProduce 是函数调用，Editor 是 JSX 组件
+// 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
 const WIRED = [
-  ['./desk.js', ['openProduce'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
+  ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
+  ['./retag.jsx', ['RetagDialog'], name => `<${name}`],
 ]
 
 for (const file of readdirSync(DIR)) {

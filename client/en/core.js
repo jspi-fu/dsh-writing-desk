@@ -52,6 +52,26 @@ export const CORE = {
   '用逗号分开': 'Separated by commas',
   '放到灵感墙': 'Add to wall',
 
+  // 胶囊与批量改标签
+  '胶囊': 'Capsule',
+  '胶囊 {name}（{n} 条灵感）': 'Capsule {name} ({n} ideas)',
+  '{n} 条灵感': '{n} idea{s}',
+  '名字': 'Name',
+  '给这堆灵感起个名': 'Name this pile of ideas',
+  '成员灵感仍独立存在，点一条就能单独打开；想往里加，把卡片拖到胶囊上。': 'Members stay independent. Click one to open it on its own; to add more, drag a card onto the capsule.',
+  '重命名胶囊': 'Rename capsule',
+  '解散胶囊': 'Dissolve capsule',
+  '完成': 'Done',
+  '批量改标签': 'Retag in bulk',
+  '新标签（替换原有的）': 'New tags (replaces the old ones)',
+  '给 {n} 条灵感统一改标签。先看一遍改前改后，确认了再应用。': 'Retag {n} idea{s} in one go. Review the before → after, then apply.',
+  '预览改动': 'Preview changes',
+  '应用改动（共 {n} 条）': 'Apply changes ({n} rows)',
+  '回去改标签': 'Back to tags',
+  '不变': 'Unchanged',
+  '给这批灵感改标签': 'Retag these ideas',
+  '不看这个标签了': 'Stop filtering by this tag',
+
   // 通用
   '取消': 'Cancel',
   '保存': 'Save',
