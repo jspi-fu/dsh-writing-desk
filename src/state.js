@@ -3,7 +3,9 @@
 // 所以这里不能引 i18n.js(它依赖 node:async_hooks)或任何其他模块。
 // 对状态元组(status / scheduledAt / production)做裁决,不碰 Store、不做 IO。
 
-export const EVENTS = ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish']
+// editProduction 是人工改稿事件(工单 #7 之后补):spec 定下的九个状态迁移事件之外,
+// 成稿产物的人工可编辑字段(标题/正文/封面文案)也要经 reducer 落库,状态才能照常自愈。
+export const EVENTS = ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish', 'editProduction']
 
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
 
@@ -90,6 +92,17 @@ const handlers = {
     production.aiArticle = event.aiArticle ?? event.article
     production.engine = event.engine ?? 'local'
     production.notice = event.notice ?? null
+    heal(item)
+  },
+  // 人工改稿(手写稿的唯一通道,ops 的 update_production 走这里):标题/封面文案/正文
+  // 直接改在成稿产物上,写完照常自愈——清空正文就不再算已成稿,状态按事实拉回。
+  // AI 原稿快照不动:它只由 articleWritten 产生,learn 靠它对比修改方向,手改不许冲掉。
+  editProduction(item, event) {
+    const production = item.production
+    if (!production) throw new Error('这条灵感还没有成稿')
+    for (const field of ['title', 'coverText', 'article']) {
+      if (typeof event[field] === 'string') production[field] = event[field]
+    }
     heal(item)
   },
   // 完成:产物定稿,状态照常自愈(已排期的直接待发布)。

@@ -48,7 +48,8 @@ function stringList(value, field) {
 function produceTool(desk) {
   return {
     name: 'writing_desk_produce',
-    description: '把图文创作台里的一组灵感(或胶囊)写成一篇图文稿子:标题、正文、封面首图、配图、分镜一次生成。'
+    // 用词按 GLOSSARY:动作叫「成稿」,产物是标题、正文、封面首图、配图、分镜(不说「稿子」)
+    description: '把图文创作台里的一组灵感(或胶囊)一键成稿:标题、正文、封面首图、配图、分镜一次生成。'
       + '给 itemIds 或 capsuleIds 之一即可;生成进度与成稿结果在图文创作台界面查看。',
     parameters: PARAMETERS,
     output: {

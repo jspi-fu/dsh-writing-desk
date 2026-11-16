@@ -6,13 +6,16 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { isDrafted, isScheduled, panelState } from '../src/state.js'
+import { isDrafted, isScheduled, panelState, STATUSES } from '../src/state.js'
 import { applyOps } from '../src/ops.js'
+import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import { Producer } from '../src/produce.js'
 import { Settings } from '../src/settings.js'
 
 const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
+
+const NOW = new Date('2026-10-31T15:00:00+08:00')
 
 const isPlan = system => system.includes('策划案')
 const PLAN = JSON.stringify({ title: '最终标题', cover: 'cover', characters: 'a man', images: [{ anchor: '第一节', caption: '图注', prompt: 'fig' }], shots: [{ shot: '特写', visual: '手', voice: '说', seconds: 4, prompt: 's1' }, { shot: '全景', visual: '街', voice: '说', seconds: 6, prompt: 's2' }] })
@@ -207,6 +210,43 @@ test('场景④ 真实序列:已成稿条目手动改回灵感,系统按成稿�
   } finally {
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
+})
+
+// add_item 带状态/排期初值,与「先建空灵感再 set_status/schedule_item」必须走同一批
+// reducer 事件:同参数下终态完全一致,不许出现「新建时能到达、事后改不到」的状态。
+test('真实序列:add_item 带状态初值与先建后改的终态一致', () => {
+  const WHEN = '2026-12-01T12:00:00.000Z'
+  const newest = (state, title) => state.items.find(row => row.title === title)
+  for (const status of STATUSES) {
+    const direct = buildSeed(NOW)
+    applyOps(direct, [{ op: 'add_item', title: `直接带 ${status}`, body: '素材正文', status }])
+    const staged = buildSeed(NOW)
+    const { receipts } = applyOps(staged, [{ op: 'add_item', title: `先建后改 ${status}`, body: '素材正文' }])
+    applyOps(staged, [{ op: 'set_status', id: receipts[0].target, status }])
+    const a = newest(direct, `直接带 ${status}`)
+    const b = newest(staged, `先建后改 ${status}`)
+    assert.equal(a.status, b.status, `status=${status}:两种路径终态一致`)
+    assert.equal(Boolean(a.publishedAt), Boolean(b.publishedAt), `status=${status}:发布时间同进同退`)
+    if (status === 'published') assert.ok(a.publishedAt, '发布的记下发布时间')
+  }
+  // 带排期的初值也一样:与 add_item + schedule_item + set_status 同参数同终态
+  const direct = buildSeed(NOW)
+  applyOps(direct, [{ op: 'add_item', title: '直接带排期', body: '素材正文', status: 'ready', scheduledAt: WHEN }])
+  const staged = buildSeed(NOW)
+  const { receipts } = applyOps(staged, [{ op: 'add_item', title: '先建后排期', body: '素材正文' }])
+  applyOps(staged, [
+    { op: 'schedule_item', id: receipts[0].target, scheduledAt: WHEN },
+    { op: 'set_status', id: receipts[0].target, status: 'ready' },
+  ])
+  const a = newest(direct, '直接带排期')
+  const b = newest(staged, '先建后排期')
+  assert.equal(a.status, 'ready', '排期里补状态按成稿与排期事实对齐')
+  assert.equal(a.status, b.status)
+  assert.equal(a.scheduledAt, b.scheduledAt)
+  // 没成稿的灵感标待发布,自愈拉回草稿——新建时也不许绕过这条规则
+  const bare = buildSeed(NOW)
+  applyOps(bare, [{ op: 'add_item', title: '直接标待发布', body: '素材正文', status: 'ready' }])
+  assert.equal(newest(bare, '直接标待发布').status, 'draft', '没排期没成稿的待发布自愈回草稿')
 })
 
 // 场景③:成稿只有一个口径——手写稿走 update_production 改的是同一份成稿产物,

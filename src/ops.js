@@ -156,10 +156,13 @@ const handlers = {
       const scale = 1 + (n % 6) * 0.2
       item.pos = { x: Math.round(Math.cos(n * 2.39996) * 580 * scale), y: Math.round(Math.sin(n * 2.39996) * 340 * scale), r: ((n % 5) - 2) * 1.2 }
     }
-    // 先落库再经 reducer 迁移状态元组(工单 #5):带排期的新灵感直接进排期流程,发布的记下时间
+    // 先落库再经 reducer 迁移状态元组(工单 #5):一律先落成灵感,再按参数走与
+    // schedule_item / set_status 完全同一批事件——同参数下先建后改的终态一致,自愈照常跑。
+    const { status, scheduledAt } = item
+    item.status = 'idea'
     state.items.unshift(item)
-    if (item.scheduledAt) reduce(state, { type: 'schedule', id: item.id, scheduledAt: item.scheduledAt, at: now })
-    if (item.status === 'published') reduce(state, { type: 'setStatus', id: item.id, status: 'published', at: now })
+    if (scheduledAt) reduce(state, { type: 'schedule', id: item.id, scheduledAt, at: now })
+    if (status && status !== 'idea') reduce(state, { type: 'setStatus', id: item.id, status, at: now })
     return { text: tr('记下灵感《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   update_item(state, op, now) {
@@ -208,13 +211,16 @@ const handlers = {
     return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
-  // 正文不是状态元组,直写 production.article;AI 原稿快照留给 learn 对比修改方向。
-  update_production(state, op) {
+  // 字段白名单与截断留在这里,落库经 reducer 的 editProduction 事件——清空正文等改动
+  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 learn 对比修改方向。
+  update_production(state, op, now) {
     const item = findById(state.items, op.id)
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
-    if (typeof op.title === 'string') item.production.title = op.title.slice(0, 200)
-    if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)
-    if (typeof op.article === 'string') item.production.article = op.article.slice(0, 200000)
+    const fields = {}
+    if (typeof op.title === 'string') fields.title = op.title.slice(0, 200)
+    if (typeof op.coverText === 'string') fields.coverText = op.coverText.slice(0, 40)
+    if (typeof op.article === 'string') fields.article = op.article.slice(0, 200000)
+    reduce(state, { type: 'editProduction', id: item.id, at: now, ...fields })
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
   },
   // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——

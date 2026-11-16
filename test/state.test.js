@@ -33,8 +33,8 @@ test('src/ 内不再有旧状态口径的残留', () => {
   }
 })
 
-test('状态机事件就是 spec 定下的九个', () => {
-  assert.deepEqual(EVENTS, ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish'])
+test('状态机事件:spec 定下的九个状态迁移事件,加上人工改稿的 editProduction', () => {
+  assert.deepEqual(EVENTS, ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish', 'editProduction'])
 })
 
 // 遗留草稿字段的存量清除(工单 #7):旧数据里读到就无害删键,不进任何判断。
@@ -158,6 +158,47 @@ test('重新成稿后又取消,上一篇正文还在', () => {
   assert.equal(wrote.production.status, 'cancelled')
   assert.equal(wrote.production.article, '上一篇正文')
   assert.equal(isDrafted(wrote), true)
+})
+
+// 人工改稿经 editProduction(update_production 的 reducer 事件):写完照常自愈,
+// 直写 production 不经 reducer 的旧缺口(改完不自愈)由此关闭。
+test('人工清空正文:不再算已成稿,状态由自愈按未成稿的事实裁决', () => {
+  // 已取消的成稿留有正文(白等一场不丢稿的那份),未排期:清空后不算已成稿,
+  // 手动标过的草稿被自愈尊重,面板口径退回灵感
+  const plain = item({ status: 'draft', production: { status: 'cancelled', article: '取消成稿留下的正文' } })
+  run(plain, { type: 'editProduction', article: '' })
+  assert.equal(plain.production.article, '')
+  assert.equal(isDrafted(plain), false)
+  assert.equal(plain.status, 'draft')
+  assert.equal(panelState(plain), 'idea')
+  // 排期里的:清空后排期还在,待发布按「已排期未成稿」的口径由自愈维持
+  const planned = item({ scheduledAt: '2026-12-01T10:00:00.000Z', status: 'ready', production: { status: 'cancelled', article: '取消成稿留下的正文' } })
+  run(planned, { type: 'editProduction', article: '' })
+  assert.equal(isDrafted(planned), false)
+  assert.equal(planned.status, 'ready')
+  assert.equal(panelState(planned), 'scheduled')
+})
+
+test('人工补写正文:自愈向前推进,排期里没写稿的大纲当场待发布', () => {
+  // 旧实现直写 production.article 不经 reducer,这条大纲会一直冒充「没写稿」
+  const outlined = item({ scheduledAt: '2026-12-01T10:00:00.000Z', status: 'outline', production: { status: 'cancelled', article: '' } })
+  run(outlined, { type: 'editProduction', article: '排期里补写的正文' })
+  assert.equal(isDrafted(outlined), true)
+  assert.equal(outlined.status, 'ready')
+  assert.equal(panelState(outlined), 'drafted')
+})
+
+test('人工改稿不动 AI 原稿快照:aiArticle 只由 articleWritten 产生', () => {
+  const wrote = item({ status: 'draft', production: { status: 'done', article: '改过的正文', aiArticle: 'AI 原稿', engine: 'deepseek' } })
+  run(wrote, { type: 'editProduction', title: '人工定的标题', coverText: '封面文案', article: '再改一次的正文' })
+  assert.equal(wrote.production.title, '人工定的标题')
+  assert.equal(wrote.production.coverText, '封面文案')
+  assert.equal(wrote.production.article, '再改一次的正文')
+  assert.equal(wrote.production.aiArticle, 'AI 原稿', '手改不许冲掉 AI 原稿快照')
+  // 没给的字段一个都不动;没有成稿产物的人工改稿直接报错
+  run(wrote, { type: 'editProduction' })
+  assert.equal(wrote.production.title, '人工定的标题')
+  assert.throws(() => run(item(), { type: 'editProduction', article: '正文' }), /还没有成稿/)
 })
 
 test('正文落盘即成稿:灵感推进成草稿,已排期的推进成待发布', () => {
