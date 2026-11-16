@@ -89,7 +89,7 @@ function Hero() {
     // 记下的同时，把提到同一件事的旧灵感拉到眼前
     const ids = relatedIdeas(roots, value)
     setDesk({ related: ids.length ? { query: value, ids, newId: null } : null })
-    await dispatchOps([{ op: 'add_item', kind: 'note', title: value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 60), body: value.length > 60 ? value : '' }], { label: t('记下灵感') })
+    await dispatchOps([{ op: 'add_item', kind: 'note', title: value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 60), body: value.length > 60 ? value : '', contentOrigin: 'user' }], { label: t('记下灵感') })
   }
   const now = new Date()
   return (

@@ -778,3 +778,41 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-version { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 14px 0 4px; color: var(--ink3); font-size: 12px; line-height: 18px; }
 .md-version a { color: var(--accent, #6b5cff); text-decoration: none; }
 .md-version a:hover { text-decoration: underline; }
+
+
+/* 编辑界面：标题与正文在同一个自带 Markdown 编辑器里改 */
+.md-editor .md-ed { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; width: min(1280px, 100%); margin: 0 auto; padding: 0 14px 14px; }
+.md-ed-bar { flex: none; display: flex; align-items: center; gap: 6px; padding: 2px 2px 6px; }
+.md-root .md-ed-title { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; font-family: var(--serif); font-size: 24px; line-height: 34px; font-weight: 600; color: var(--ink); }
+.md-ed-count { flex: none; color: var(--ink3); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.md-ed-meta { margin-left: 8px; color: var(--ink3); font-size: 12px; line-height: 20px; white-space: nowrap; }
+.md-ed-body { flex: 1; min-height: 0; display: flex; gap: 10px; }
+.md-ed-scroll { flex: 1; min-width: 0; overflow: auto; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+.md-ed-code { position: relative; min-height: 100%; }
+/* 高亮层垫底、透明正文叠在上面：两层共用同一套排版，层高由高亮层撑开，行号用 CSS 计数器跟行走 */
+.md-root .md-ed-text { display: block; width: 100%; margin: 0; padding: 18px 18px 18px 3.6em; border: 0; outline: 0; background: none; font: inherit; font-size: 14px; line-height: 26px; letter-spacing: normal; tab-size: 4; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+.md-ed-line { position: relative; counter-increment: line; }
+.md-ed-hl { counter-reset: line; }
+.md-ed-line::before { content: counter(line); position: absolute; left: -3.1em; width: 2.4em; text-align: right; color: var(--ink4); font-size: 11.5px; line-height: 26px; user-select: none; }
+.md-root .md-ed-input { position: absolute; inset: 0; height: 100%; resize: none; overflow: hidden; color: transparent; caret-color: var(--ink); }
+.md-root .md-ed-input::placeholder { color: var(--ink4); }
+.md-root .md-ed-input::selection { background: color-mix(in srgb, var(--accent, #6b5cff) 26%, transparent); }
+.md-ed-h-mark { color: var(--accent, #6b5cff); }
+.md-ed-h-heading { font-weight: 600; }
+.md-ed-h-quote { color: var(--ink2); font-style: italic; }
+.md-ed-h-code { background: var(--hover); border-radius: var(--r-xs); }
+.md-ed-h-strong { font-weight: 600; }
+.md-ed-h-em { font-style: italic; }
+.md-ed-h-link { color: var(--accent, #6b5cff); }
+.md-ed-h-url { color: var(--ink4); }
+.md-ed-find { flex: none; display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-md); background: var(--glass); box-shadow: inset 0 0 0 .5px var(--line-strong); backdrop-filter: blur(24px); }
+.md-root .md-ed-find input { width: 150px; padding: 3px 8px; border: 0; outline: 0; border-radius: var(--r-xs); background: var(--hover); font-size: 12.5px; line-height: 20px; color: var(--ink); }
+.md-root .md-ed-find input.md-ed-find-replace { width: 130px; }
+.md-ed-find-count { min-width: 34px; text-align: center; color: var(--ink3); font-size: 12px; line-height: 16px; white-space: nowrap; }
+.md-ed-find .md-link-btn { margin: 0; align-self: center; }
+.md-ed-find button[disabled] { opacity: .4; }
+.md-ed-preview { flex: 1; min-width: 0; overflow: auto; padding: 18px; border-radius: var(--r-lg); background: var(--card); box-shadow: var(--dsw-elevation-soft); }
+@media (max-width: 900px) {
+  .md-ed-body.is-preview { flex-direction: column; }
+  .md-ed-body.is-preview .md-ed-preview { flex: none; max-height: 42%; }
+}

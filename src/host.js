@@ -161,7 +161,8 @@ async function addFromUrl(ctx, store, body) {
   const url = String(body.url || '').trim()
   const info = await harvest(url)
   const op = {
-    op: 'add_item', kind: 'web', title: body.title || info.title || url, body: body.note || info.description || '', url: info.url, source: info.siteName, tags: Array.isArray(body.tags) ? body.tags : [],
+    op: 'add_item', kind: 'web', title: body.title || info.title || url, body: body.note || info.description || '', url: info.url,
+    source: body.source || info.siteName, tags: Array.isArray(body.tags) ? body.tags : [], contentOrigin: body.contentOrigin,
     media: info.image ? { src: info.image } : null,
   }
   return store.mutate(tr('收藏《{title}》', { title: op.title.slice(0, 12) }), (draft) => {

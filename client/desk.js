@@ -7,7 +7,7 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, query: '', kindFilter: 'all', related: null,
+  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, query: '', kindFilter: 'all', related: null,
   live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
@@ -91,6 +91,15 @@ export function openItem(id, origin = null) {
 
 export function closeItem() {
   setDesk({ focusId: null, sheetOrigin: null })
+}
+
+// 成稿工作区是显式动作：从编辑界面的「去成稿」进，点灵感不再直接到这里
+export function openProduce(id) {
+  setDesk({ focusId: null, produceId: id, sheetOrigin: null })
+}
+
+export function closeProduce() {
+  setDesk({ produceId: null })
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */

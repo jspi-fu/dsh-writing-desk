@@ -1,7 +1,7 @@
 // 点开灵感后的工作区：顶部是这条灵感和成稿入口，下面是一张稿面。格子一开始就排好，同时开工，一点点长满。
 import React from 'react'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeItem, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeProduce, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
@@ -245,7 +245,7 @@ function HeroTile({ item, live, onView }) {
         <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
         <IconButton icon="trash" label={t('删除这条灵感')} onClick={() => {
           dispatchOps([{ op: 'delete_item', id: item.id }], { label: t('删除《{title}》', { title: item.title.slice(0, 10) }) })
-          closeItem()
+          closeProduce()
         }} />
       </div>
     </section>
@@ -515,10 +515,11 @@ function Sheet({ item, live }) {
 }
 
 export function Studio() {
-  const id = useDesk(s => s.focusId)
-  const item = useDesk(s => s.state?.items.find(i => i.id === s.focusId))
+  // 只由「去成稿」等显式动作打开；点灵感进编辑界面，不再落回这里
+  const id = useDesk(s => s.produceId)
+  const item = useDesk(s => s.state?.items.find(i => i.id === s.produceId))
   const origin = useDesk(s => s.sheetOrigin)
-  const live = useDesk(s => s.live[s.focusId])
+  const live = useDesk(s => s.live[s.produceId])
   const ref = React.useRef(null)
   const production = item?.production
   const running = production?.status === 'running'
@@ -548,19 +549,19 @@ export function Studio() {
     if (!id) return undefined
     const onKey = (event) => {
       // 有格子放大或大图打开时，Esc 只收回它们
-      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('.md-tile.is-open,.md-viewer') && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) closeItem()
+      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('.md-tile.is-open,.md-viewer') && !/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) closeProduce()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [id])
 
   // 打开的这条被删掉或撤销掉时，退回灵感墙，不留空白页
-  React.useEffect(() => { if (id && !item) closeItem() }, [id, item])
+  React.useEffect(() => { if (id && !item) closeProduce() }, [id, item])
   if (!item) return null
   return (
     <div className="md-studio" ref={ref} role="dialog" aria-label={t('灵感')}>
       <header className="md-studio-head" data-window-drag="">
-        <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
+        <IconButton icon="chevL" label={t('返回灵感')} onClick={closeProduce} />
         <h2>{t('成稿')}</h2>
       </header>
       <Sheet key={item.id} item={item} live={live} />

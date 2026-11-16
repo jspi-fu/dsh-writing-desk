@@ -3,6 +3,7 @@ import React from 'react'
 import { HomeView } from './canvas.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
+import { Editor } from './editor.jsx'
 import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
@@ -29,28 +30,39 @@ const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, in
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
   const [tab, setTab] = React.useState('text')
+  const [title, setTitle] = React.useState('')
   const [text, setText] = React.useState('')
   const [url, setUrl] = React.useState('')
+  const [source, setSource] = React.useState('')
+  const [tags, setTags] = React.useState('')
+  const [origin, setOrigin] = React.useState('user')
   const [busy, setBusy] = React.useState(false)
   const fileInput = React.useRef(null)
   React.useEffect(() => {
     if (!capture) return
     setTab(capture.tab ?? 'text')
+    setTitle('')
     setText('')
     setUrl('')
+    setSource('')
+    setTags('')
+    setOrigin('user')
   }, [capture])
   if (!capture) return null
   const close = () => setDesk({ capture: null })
+  const tagList = tags.split(/[,，、\s]+/).filter(Boolean)
   const save = async (event) => {
     event.preventDefault()
     setBusy(true)
     if (tab === 'link' && url.trim()) {
-      const id = await captureUrl(url.trim())
+      const id = await captureUrl(url.trim(), { title: title.trim() || undefined, source: source.trim() || undefined, tags: tagList, contentOrigin: origin })
       if (id) close()
     } else if (tab === 'quote' || tab === 'text') {
       const value = text.trim()
       if (value) {
-        await dispatchOps([{ op: 'add_item', kind: tab === 'quote' ? 'quote' : 'note', title: tab === 'quote' ? value : value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40), body: tab === 'quote' ? '' : value }], { label: t('记下灵感') })
+        // 标题留空就沿用老规则自动取名；金句没有单独标题时正文照旧放在标题里显示
+        const autoTitle = tab === 'quote' ? value : value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40)
+        await dispatchOps([{ op: 'add_item', kind: tab === 'quote' ? 'quote' : 'note', title: title.trim() || autoTitle, body: tab === 'quote' && !title.trim() ? '' : value, source: source.trim() || undefined, tags: tagList, contentOrigin: origin }], { label: t('记下灵感') })
         close()
       }
     }
@@ -64,11 +76,17 @@ function CaptureDialog() {
       </div>
       <form className="md-form" onSubmit={save}>
         {tab === 'link' ? (
-          <label className="md-field">
-            <span>{t('链接')}</span>
-            <input type="url" required value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" />
-            <small>{t('会自动读取页面的标题、简介和封面。')}</small>
-          </label>
+          <>
+            <label className="md-field">
+              <span>{t('链接')}</span>
+              <input type="url" required value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" />
+              <small>{t('会自动读取页面的标题、简介和封面。')}</small>
+            </label>
+            <label className="md-field">
+              <span>{t('标题')}</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
+            </label>
+          </>
         ) : tab === 'file' ? (
           <button type="button" className="md-dropzone" onClick={() => fileInput.current?.click()}>
             <Icon name="upload" size={22} />
@@ -77,17 +95,43 @@ function CaptureDialog() {
             <input ref={fileInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" onChange={async (e) => { const files = [...e.target.files]; close(); await captureFiles(files) }} />
           </button>
         ) : (
-          <label className="md-field">
-            <span>{tab === 'quote' ? t('这句话') : t('想法')}</span>
-            <textarea rows={4} required value={text} onChange={e => setText(e.target.value)} placeholder={tab === 'quote' ? t('好的选题不是想出来的……') : t('想到什么就写什么。')} />
-          </label>
+          <>
+            <label className="md-field">
+              <span>{tab === 'quote' ? t('这句话') : t('想法')}</span>
+              <textarea rows={4} required value={text} onChange={e => setText(e.target.value)} placeholder={tab === 'quote' ? t('好的选题不是想出来的……') : t('想到什么就写什么。')} />
+            </label>
+            <label className="md-field">
+              <span>{t('标题')}</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
+            </label>
+          </>
         )}
         {tab === 'file' ? null : (
-          <div className="md-form-foot">
-            <span style={{ flex: 1 }} />
-            <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
-            <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? t('保存中…') : t('放到灵感墙')}</button>
-          </div>
+          <>
+            <div className="md-field-row">
+              <label className="md-field">
+                <span>{t('来源')}</span>
+                <input value={source} onChange={e => setSource(e.target.value)} placeholder={t('哪里看到的？')} />
+              </label>
+              <label className="md-field">
+                <span>{t('标签')}</span>
+                <input value={tags} onChange={e => setTags(e.target.value)} placeholder={t('用逗号分开')} />
+              </label>
+            </div>
+            <div className="md-field" role="radiogroup" aria-label={t('来源类型')}>
+              <span>{t('来源类型')}</span>
+              <div className="md-seg">
+                {[['user', t('我写的')], ['ai', t('AI 生成的')]].map(([value, label]) => (
+                  <button type="button" key={value} role="radio" aria-checked={origin === value} className={origin === value ? 'is-on' : ''} onClick={() => setOrigin(value)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="md-form-foot">
+              <span style={{ flex: 1 }} />
+              <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
+              <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? t('保存中…') : t('放到灵感墙')}</button>
+            </div>
+          </>
         )}
       </form>
     </Dialog>
@@ -174,6 +218,7 @@ function Desk() {
             <div className="md-page"><p className="md-muted">{t('工作台加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={loadDesk}>{t('重试')}</button></div>
           ) : ready ? <Active /> : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
         </main>
+        {ready ? <Editor /> : null}
         {ready ? <Studio /> : null}
       </div>
       {ready ? <CaptureDialog /> : null}
