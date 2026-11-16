@@ -1,5 +1,6 @@
 // 点开灵感后的工作区：顶部是这条灵感和成稿入口，下面是一张稿面。格子一开始就排好，同时开工，一点点长满。
 import React from 'react'
+import { panelState } from '../src/state.js'
 import { downloadCover } from './cover.js'
 import { cancelProduce, closeProduce, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
@@ -101,14 +102,16 @@ const FORMAT_OPTIONS = [
 /** 落点灵感的标题、体裁、风格与成稿入口;多来源时成稿把全部来源的素材一并交给流水线。 */
 function IdeaCard({ item, live, settings, sources }) {
   const production = item.production
-  const running = production?.status === 'running'
+  // 正在成稿与一键成稿入口走共享谓词(工单 #5),与其余面板同一口径
+  const running = panelState(item) === 'producing'
   const styles = useDesk(s => s.state.styles ?? [])
   const activeId = useDesk(s => s.state.activeStyleId)
   const [draw, setDraw] = React.useState(null)
   React.useEffect(() => setDraw(null), [item.id])
   // 单次选择优先，其次沿用这条成稿上次的选择，最后取设置里的默认值
   const withImages = draw ?? (production?.withImages !== undefined ? production.withImages : settings?.generateImages !== false)
-  const canStart = !production || !['running', 'done'].includes(production.status)
+  // 上一轮已成稿时不重复给入口,重新成稿走右上角的「重新成稿」
+  const canStart = !production || (!running && production.status !== 'done')
   const format = useDesk(s => s.state.draftFormat) === 'article' ? 'article' : 'script'
   return (
     <div className="md-idea-card">
@@ -177,7 +180,7 @@ function Stat({ icon, value, unit }) {
 function HeroTile({ item, live, onView, sources }) {
   const settings = useDesk(s => s.settings)
   const production = item.production
-  const running = production?.status === 'running'
+  const running = panelState(item) === 'producing'
   const liveTitle = production?.stage === 'brief' && live?.title ? unescapeJson(live.title) : null
   const title = liveTitle ?? production?.title ?? item.title
   const words = textLength(production?.article || live?.text || '')
@@ -287,7 +290,7 @@ function ArticleBody({ production, text, onView, proseClass = 'md-prose' }) {
 
 function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
   const production = item.production
-  const running = production?.status === 'running'
+  const running = panelState(item) === 'producing'
   const scroller = React.useRef(null)
   const [editing, setEditing] = React.useState(false)
   const article = production?.article ?? ''
@@ -349,8 +352,9 @@ function ShotsTile({ item, live, count, open, onToggle, onView }) {
   const imageReady = useDesk(s => s.settings?.imageReady)
   const shots = item.production?.shots ?? []
   const visuals = live?.visuals ?? []
+  const running = panelState(item) === 'producing'
   // 策划案还在写的时候，分镜说明已经一格一格出现了
-  const cells = shots.length ? shots : Array.from({ length: count }, (_, i) => ({ no: i + 1, visual: visuals[i] ? unescapeJson(visuals[i]) : '', status: item.production?.status === 'running' ? 'pending' : 'idle' }))
+  const cells = shots.length ? shots : Array.from({ length: count }, (_, i) => ({ no: i + 1, visual: visuals[i] ? unescapeJson(visuals[i]) : '', status: running ? 'pending' : 'idle' }))
   const copy = async () => {
     const table = shots.map((s, i) => t('{no}. {shot}｜{sec} 秒\n画面：{visual}\n口播：{voice}', { no: i + 1, shot: t(s.shot), sec: s.seconds, visual: s.visual, voice: s.voice })).join('\n\n')
     await navigator.clipboard.writeText(table)
@@ -525,7 +529,7 @@ export function ProduceView() {
   const sources = useDesk(s => s.produceSources)
   const live = useDesk(s => s.live[s.produceId])
   const production = item?.production
-  const running = production?.status === 'running'
+  const running = Boolean(item && panelState(item) === 'producing')
   const watching = running || [production?.cover, ...(production?.images ?? []), ...(production?.shots ?? [])].some(isBusy)
 
   React.useEffect(() => {

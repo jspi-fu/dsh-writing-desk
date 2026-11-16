@@ -1,5 +1,6 @@
 // 灵感卡片：散落、瀑布流复用同一张卡。
 import React from 'react'
+import { isDrafted, isScheduled, panelState } from '../src/state.js'
 import { setDesk } from './desk.js'
 import { t } from './i18n.js'
 import { Icon } from './ui.jsx'
@@ -36,7 +37,8 @@ function hostOf(url) {
 export function Card({ item: raw, onOpen, selected = false }) {
   const item = displayItem(raw)
   const inverted = item.pinned
-  const running = item.production?.status === 'running'
+  // 状态脚注走共享谓词(工单 #5):正在成稿 > 已成稿 > 已排期,口径与其余面板一致
+  const producing = panelState(item) === 'producing'
   const [hover, setHover] = React.useState(false)
   const hasMedia = Boolean(item.media) && ['image', 'video', 'web'].includes(item.kind)
   const lines = hash(item.id) % 2 === 0
@@ -80,7 +82,7 @@ export function Card({ item: raw, onOpen, selected = false }) {
       <footer className="md-card-foot">
         <span className={`md-dot status-${item.status}`} title={t(STATUS_LABEL[item.status])} />
         <span className="md-card-source">{item.kind === 'web' && item.url ? hostOf(item.url) : item.source || t(KIND_LABEL[item.kind])}</span>
-        <span className="md-card-time">{running ? <span className="md-shimmer">{t('正在成稿')}</span> : item.production?.status === 'done' ? t('已成稿') : item.scheduledAt && item.status !== 'published' ? relativeDay(item.scheduledAt) : ''}</span>
+        <span className="md-card-time">{producing ? <span className="md-shimmer">{t('正在成稿')}</span> : isDrafted(item) ? t('已成稿') : isScheduled(item) ? relativeDay(item.scheduledAt) : ''}</span>
       </footer>
     </article>
   )

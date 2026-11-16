@@ -42,3 +42,28 @@ test('desk.js：统一成稿入口与 Host 共用 produce-input 解析模块', (
   const source = readFileSync(new URL('./desk.js', DIR), 'utf8')
   assert.match(source, /import\s*\{[^}]*resolveProduceInput[^}]*\}\s*from\s*'\.\.\/src\/produce-input\.js'/)
 })
+
+// 状态权威迁移(工单 #5):四个面板的「已成稿 / 已排期 / 面板状态」判断统一走 src/state.js
+// 的共享谓词,不许再内联等价判断——四套字段各说各话正是历史不一致的根源。
+const PANELS = ['card.jsx', 'content.jsx', 'schedule.jsx', 'canvas.jsx']
+const SHARED_PREDICATE = /import\s*\{[^}]*\b(?:panelState|isDrafted|isScheduled)\b[^}]*\}\s*from\s*'\.\.\/src\/state\.js'/
+
+test('四个面板的状态口径统一走 src/state.js 共享谓词', () => {
+  for (const file of PANELS) {
+    const source = readFileSync(new URL(file, DIR), 'utf8')
+    assert.match(source, SHARED_PREDICATE, `${file} 要从 src/state.js 引共享谓词`)
+    for (const [pattern, what] of [
+      [/production\??\.status\s*===\s*'(running|done)'/, 'production.status 判断'],
+      [/drafts\??\.article/, 'drafts.article 遗留口径'],
+      [/status\s*!==\s*'published'/, '已排期判断'],
+    ]) {
+      assert.doesNotMatch(source, pattern, `${file} 内联了${what},改用共享谓词`)
+    }
+  }
+})
+
+// 成稿工作面(工单 #6 后的 produce 相关文件)里「正在成稿」的面板判断同样走共享谓词
+test('成稿工作面的成稿中判断走共享谓词', () => {
+  const source = readFileSync(new URL('studio.jsx', DIR), 'utf8')
+  assert.match(source, SHARED_PREDICATE, 'studio.jsx 要从 src/state.js 引共享谓词')
+})
