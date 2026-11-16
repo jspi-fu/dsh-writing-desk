@@ -116,6 +116,8 @@ export function migrateState(state) {
   // 无效结构，用完整的新版初始状态整体替换（buildSeed 产出全部字段），一步到位。
   if (!Array.isArray(state.items)) return buildSeed(new Date())
   if (state.activeStyleId === undefined) state.activeStyleId = null
+  // 胶囊是后来才有的实体:旧状态文件补一个空集合,避免读取方对着 undefined
+  if (!Array.isArray(state.capsules)) state.capsules = []
   // 加入英文之前的数据都是中文示例
   if (state.sampleLang === undefined) state.sampleLang = 'zh'
   if (state.sampleLang === 'en') stashChineseLeftovers(state)
@@ -204,6 +206,7 @@ export function buildSeed(now, lang = currentLang()) {
     sampleCleared: false,
     sampleLang: 'zh',
     items,
+    capsules: [],
     people: PEOPLE.map(([id, name, role, note, traits, tone]) => ({ id, name, role, note, traits, tone, sample: true })),
     angles: ANGLES.map(([id, name, hook, prompt]) => ({ id, name, hook, prompt, sample: true })),
     skills: SKILLS.map(([name, rule, evidence, status, confidence], index) => ({ id: `seed_s_${index + 1}`, name, rule, source: '示例', evidence, status, confidence, sample: true })),

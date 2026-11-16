@@ -1,12 +1,15 @@
 // 首页：一句话记一个灵感。灵感可以散落在空间里，也可以按时间排成信息流。
+// 几张卡片拖到一起就收成一个胶囊，标签在底部 dockbar 当选题资料架取用。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
-import { captureFiles, captureUrl, dispatchOps, openItem, setDesk, useDesk } from './desk.js'
+import { CapsuleCard } from './capsule.jsx'
+import { captureFiles, captureUrl, dispatchOps, getDesk, openCapsule, openItem, openRetag, setDesk, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
 import { cardSize, scatterLayout } from './layout.js'
 import { relatedIdeas, relatedLayout } from './related.js'
+import { tagShelf } from './tags.js'
 import { SPRING_SOFT, computeStreak, displayItem, hash, posterOf, reducedMotion, isIdea } from './util.js'
 
 function useCamera(stageRef, worldRef) {
@@ -147,6 +150,7 @@ function originOf(event) {
 
 function Scatter() {
   const items = useDesk(s => s.state.items)
+  const capsules = useDesk(s => s.state.capsules ?? [])
   const stageRef = React.useRef(null)
   const worldRef = React.useRef(null)
   const { cam, flyTo, halt } = useCamera(stageRef, worldRef)
@@ -156,9 +160,11 @@ function Scatter() {
   const suppressClick = React.useRef(false)
 
   const kind = useDesk(s => s.kindFilter)
+  const tag = useDesk(s => s.tagFilter)
   const related = useDesk(s => s.related)
   const roots = React.useMemo(() => items.filter(isIdea), [items])
-  const shown = React.useMemo(() => roots.filter(i => kind === 'all' || displayItem(i).kind === kind), [roots, kind])
+  const byTag = i => !tag || (i.tags ?? []).includes(tag)
+  const shown = React.useMemo(() => roots.filter(i => byTag(i) && (kind === 'all' || displayItem(i).kind === kind)), [roots, kind, tag])
   const rootKey = roots.map(i => `${i.id}:${i.pos ? `${i.pos.x},${i.pos.y}` : ''}:${i.production?.cover?.src ?? ''}`).join('|')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = React.useMemo(() => scatterLayout(roots), [rootKey])
@@ -180,6 +186,15 @@ function Scatter() {
     if (item.pos) return { d: 0, ...item.pos }
     return layout[item.id] ?? { x: 0, y: 0, r: 0, d: 0 }
   }, [layout, related, relatedSpots])
+
+  // 胶囊卡停在成员的质心:成员怎么挪,胶囊就跟着挪,不用再存一份坐标
+  const capsulePos = (capsule) => {
+    const pts = capsule.itemIds.map(memberId => items.find(i => i.id === memberId)).filter(Boolean).map(posOf)
+    if (!pts.length) return { x: 0, y: 0, r: 0, d: 0 }
+    const x = Math.round(pts.reduce((sum, p) => sum + p.x, 0) / pts.length)
+    const y = Math.round(pts.reduce((sum, p) => sum + p.y, 0) / pts.length)
+    return { x, y, r: 0, d: 0 }
+  }
 
   // 拉出相关卡片后，镜头缩放到能把它们和中间那句话一起装下
   React.useEffect(() => {
@@ -278,6 +293,12 @@ function Scatter() {
     if (cardEl) {
       const id = cardEl.dataset.node
       const origin = posOf(items.find(i => i.id === id))
+      // 拖到别的卡片或胶囊上会收进同一个胶囊:拖动途中盯着指针下面是哪张卡
+      let drop = null
+      const clearDrop = () => {
+        drop?.el.classList.remove('is-drop')
+        drop = null
+      }
       const onMove = (e) => {
         const dx = (e.clientX - startX) / c.s
         const dy = (e.clientY - startY) / c.s
@@ -285,20 +306,51 @@ function Scatter() {
         if (!moved) {
           moved = true
           cardEl.classList.add('is-dragging')
+          // 被拖的卡盖在指针下面,不关掉它的命中就永远探不到想落上去的卡片或胶囊
+          cardEl.style.pointerEvents = 'none'
           suppressClick.current = true
         }
         const next = { x: origin.x + dx, y: origin.y + dy, r: origin.r, d: 0 }
         dragPos.current[id] = next
         cardEl.style.left = `${next.x}px`
         cardEl.style.top = `${next.y}px`
+        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-node], [data-capsule]')
+        const targetEl = el && el.dataset.node !== id ? el : null
+        if (targetEl !== drop?.el) {
+          clearDrop()
+          if (targetEl) {
+            targetEl.classList.add('is-drop')
+            drop = { el: targetEl, kind: targetEl.dataset.capsule ? 'capsule' : 'item', id: targetEl.dataset.capsule || targetEl.dataset.node }
+          }
+        }
       }
       const onUp = async () => {
         window.removeEventListener('pointermove', onMove)
         window.removeEventListener('pointerup', onUp)
         cardEl.classList.remove('is-dragging')
+        cardEl.style.pointerEvents = ''
+        const target = drop
+        clearDrop()
         if (!moved) return
-        const next = dragPos.current[id]
         setTimeout(() => { suppressClick.current = false }, 0)
+        if (target?.kind === 'item') {
+          // 松手收进胶囊:建好立刻打开命名,名可以先不填
+          delete dragPos.current[id]
+          force()
+          const data = await dispatchOps([{ op: 'add_capsule', itemIds: [id, target.id] }], { label: t('聚合胶囊') })
+          if (data?.receipts?.[0]?.target) openCapsule(data.receipts[0].target)
+          return
+        }
+        if (target?.kind === 'capsule') {
+          const capsule = getDesk().state.capsules.find(row => row.id === target.id)
+          if (capsule && !capsule.itemIds.includes(id)) {
+            delete dragPos.current[id]
+            force()
+            await dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: [...capsule.itemIds, id] }], { label: t('收进胶囊') })
+            return
+          }
+        }
+        const next = dragPos.current[id]
         await dispatchOps([{ op: 'update_item', id, pos: { x: Math.round(next.x), y: Math.round(next.y), r: next.r } }], { undoable: false, silent: true })
         delete dragPos.current[id]
         force()
@@ -307,6 +359,8 @@ function Scatter() {
       window.addEventListener('pointerup', onUp)
       return
     }
+    // 点胶囊开对话框,不做画布平移
+    if (event.target.closest('[data-capsule]')) return
     const baseX = c.x
     const baseY = c.y
     let lastX = startX
@@ -399,6 +453,14 @@ function Scatter() {
       <div className="md-world" ref={worldRef}>
         <div className="md-hero-anchor"><Hero /></div>
         {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} />)}
+        {capsules.map(capsule => {
+          const pos = capsulePos(capsule)
+          return (
+            <div key={capsule.id} className="md-node is-capsule" style={{ left: pos.x, top: pos.y, width: 216, '--r': '0deg', '--d': 0 }}>
+              <div className="md-pop"><CapsuleCard capsule={capsule} items={items} onOpen={row => openCapsule(row.id)} /></div>
+            </div>
+          )
+        })}
       </div>
       <div className="md-toolrow md-toolrow-right" onPointerDown={e => e.stopPropagation()}>
         <IconButton icon="zoomOut" label={t('缩小')} onClick={() => zoomAt(0.8, ...center(), false)} />
@@ -409,14 +471,16 @@ function Scatter() {
   )
 }
 
-/** 信息流：原来的瀑布流卡片，按时间从新到旧排。 */
+/** 信息流：原来的瀑布流卡片，按时间从新到旧排。胶囊排成一条资料架横在最上面。 */
 function Feed() {
   const items = useDesk(s => s.state.items)
+  const capsules = useDesk(s => s.state.capsules ?? [])
   const kind = useDesk(s => s.kindFilter)
+  const tag = useDesk(s => s.tagFilter)
   const related = useDesk(s => s.related)
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
-    .filter(i => isIdea(i) && (kind === 'all' || displayItem(i).kind === kind))
+    .filter(i => isIdea(i) && (!tag || (i.tags ?? []).includes(tag)) && (kind === 'all' || displayItem(i).kind === kind))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     // 有相关的灵感时排在最前面，按相关程度
     .sort((a, b) => {
@@ -424,10 +488,15 @@ function Feed() {
       const rb = rank(b.id)
       return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [items, kind, related])
+    }), [items, kind, tag, related])
   return (
     <div className="md-wall-scroll">
       <div className="md-feed-hero"><Hero /></div>
+      {capsules.length ? (
+        <div className="md-capsule-strip">
+          {capsules.map(capsule => <CapsuleCard key={capsule.id} capsule={capsule} items={items} onOpen={row => openCapsule(row.id)} />)}
+        </div>
+      ) : null}
       <div className="md-wall">
         {sorted.map((item, index) => (
           <div key={item.id} className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`} style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}>
@@ -446,6 +515,11 @@ const KIND_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'image', label
 export function HomeView() {
   const mode = useDesk(s => s.mode)
   const kind = useDesk(s => s.kindFilter)
+  const tag = useDesk(s => s.tagFilter)
+  const items = useDesk(s => s.state.items)
+  // 标签就是选题资料架:挑一个标签,画布上只留这批灵感,还能顺手给它们批量改标签
+  const shelf = React.useMemo(() => tagShelf(items).slice(0, 9), [items])
+  const tagged = React.useMemo(() => items.filter(i => tag && (i.tags ?? []).includes(tag)).map(i => i.id), [items, tag])
   return (
     <div className="md-home">
       {mode === 'feed' ? <Feed /> : <Scatter />}
@@ -462,6 +536,22 @@ export function HomeView() {
             <button type="button" key={option.value} className={kind === option.value ? 'is-on' : ''} onClick={() => setDesk({ kindFilter: option.value })}>{t(option.label)}</button>
           ))}
         </div>
+        {shelf.length ? (
+          <>
+            <span className="md-dockbar-sep" />
+            <div className="md-chips">
+              {shelf.map(option => (
+                <button type="button" key={option.tag} title={t('{n} 条灵感', { n: option.count, s: plural(option.count, '', 's') })} className={tag === option.tag ? 'is-on' : ''} onClick={() => setDesk({ tagFilter: tag === option.tag ? null : option.tag })}>{`#${option.tag}`}</button>
+              ))}
+            </div>
+          </>
+        ) : null}
+        {tag ? (
+          <>
+            <IconButton icon="pen" label={t('给这批灵感改标签')} onClick={() => openRetag(tagged)} />
+            <IconButton icon="close" label={t('不看这个标签了')} onClick={() => setDesk({ tagFilter: null })} />
+          </>
+        ) : null}
         <span className="md-dockbar-sep" />
         <button type="button" className="md-round is-primary" aria-label={t('记下灵感')} title={t('记下灵感')} onClick={() => openCapture('text')}><Icon name="plus" size={18} /></button>
       </div>

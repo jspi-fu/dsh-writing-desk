@@ -173,6 +173,39 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
 .md-card.is-inverted .md-card-foot, .md-card.is-inverted .md-card-note p { color: color-mix(in srgb, var(--on-primary) 68%, transparent); }
 .md-card.is-published .md-card-media { filter: saturate(.92); }
 
+/* 胶囊：成员封面的合集卡。散落画布停在成员质心，信息流里排成一条资料架。 */
+.md-node .md-capsule { transform: rotate(calc(var(--r, 0deg) * .4)); transition: transform .5s cubic-bezier(.2, 1.3, .4, 1), box-shadow .3s var(--ease); }
+.md-node:hover .md-capsule { transform: translateY(-4px) scale(1.025); }
+.md-capsule { position: relative; display: block; border-radius: var(--r-xl); background: var(--card); box-shadow: var(--dsw-elevation-soft); overflow: hidden; cursor: pointer; user-select: none; }
+.md-capsule-covers { display: flex; height: 92px; background: var(--hover); }
+.md-capsule-covers img { flex: 1; min-width: 0; height: 100%; object-fit: cover; }
+.md-capsule-fallback { flex: 1; display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 36px; line-height: 1; color: var(--ink3); }
+.md-capsule-foot { display: flex; align-items: baseline; gap: 8px; padding: 10px 14px 12px; }
+.md-capsule-foot strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; line-height: 19px; font-weight: 600; }
+.md-capsule-foot span { flex: none; margin-left: auto; color: var(--ink3); font-size: 11.5px; line-height: 16px; }
+/* 拖着卡片悬到另一张卡或胶囊上：松手就收进同一个胶囊 */
+.md-node.is-drop .md-card, .md-node.is-drop .md-capsule, .md-capsule.is-drop { box-shadow: 0 0 0 2px var(--ink), 0 22px 54px -14px rgb(0 0 0 / .28); }
+.md-node.is-drop .md-card, .md-node.is-drop .md-capsule { transform: scale(1.04); }
+.md-capsule-strip { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; padding: 4px 4px 10px; }
+.md-capsule-strip .md-capsule { width: 176px; flex: none; }
+.md-capsule-dialog { display: flex; flex-direction: column; gap: 10px; }
+.md-capsule-members { display: flex; flex-direction: column; gap: 2px; max-height: 300px; overflow-y: auto; }
+.md-capsule-member { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--r-md); text-align: left; transition: background .15s; }
+.md-capsule-member:hover { background: var(--hover); }
+.md-capsule-member img { flex: none; width: 40px; height: 30px; border-radius: 8px; object-fit: cover; }
+.md-capsule-member span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+/* 批量改标签：改前→改后逐条过目 */
+.md-retag { display: flex; flex-direction: column; gap: 10px; }
+.md-retag-diff { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; }
+.md-retag-row { display: flex; align-items: baseline; gap: 10px; padding: 7px 10px; border-radius: var(--r-md); background: var(--hover); }
+.md-retag-row.is-same { opacity: .55; }
+.md-retag-title { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; line-height: 18px; font-weight: 600; }
+.md-retag-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-width: 0; }
+.md-retag-tags i { font-style: normal; padding: 0 8px; border-radius: 999px; corner-shape: round; font-size: 11px; line-height: 20px; }
+.md-retag-tags .is-before { background: color-mix(in srgb, #d13c35 12%, transparent); color: var(--ink2); text-decoration: line-through; }
+.md-retag-tags .is-after { background: color-mix(in srgb, #2fa36c 14%, transparent); color: var(--ink); }
+.md-retag-arrow { color: var(--ink3); font-size: 11px; font-weight: 400; }
+
 .md-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; corner-shape: round; background: var(--ink4); }
 .md-dot.status-outline { background: #d39a2c; }
 .md-dot.status-draft { background: #4176e6; }

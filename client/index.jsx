@@ -1,9 +1,11 @@
 // dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
+import { CapsuleDialog } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { Editor } from './editor.jsx'
+import { RetagDialog } from './retag.jsx'
 import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
@@ -223,6 +225,8 @@ function Desk() {
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
+      <CapsuleDialog />
+      <RetagDialog />
       {ready ? <SettingsDialog /> : null}
       <Toast />
     </div>

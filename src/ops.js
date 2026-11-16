@@ -18,6 +18,7 @@ const ITEM_FIELDS = {
   personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', pos: 'pos', score: 'num',
   contentOrigin: 'origin',
 }
+const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
 const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list', tone: 'num' }
 const ANGLE_FIELDS = { name: 'text', hook: 'text', prompt: 'text' }
 const STYLE_FIELDS = { name: 'text', icon: 'text', summary: 'text', tone: 'text', sentences: 'text', opening: 'text', structure: 'text', logic: 'text', story: 'text', flow: 'text', words: 'list', avoid: 'list', samples: 'list' }
@@ -50,6 +51,8 @@ function coerce(type, value) {
     case 'origin': return value === null || value === 'user' || value === 'ai' ? value : undefined
     case 'platform': return value === null || PLATFORMS.includes(value) ? value : undefined
     case 'list': return Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0, 24) : undefined
+    // 胶囊成员 ID:卡片墙一口气拖不了太多,上限给得比标签宽,存在性由 handler 对着 items 校验
+    case 'ids': return Array.isArray(value) ? value.filter(v => typeof v === 'string').slice(0, 200) : undefined
     case 'bool': return typeof value === 'boolean' ? value : undefined
     case 'num': return Number.isFinite(value) ? value : undefined
     case 'url': return value === null || value === '' ? null : isHttpUrl(value) ? value : undefined
@@ -120,7 +123,36 @@ function applySchedule(item, when) {
   else if (item.status === 'outline' && !produced) item.status = 'idea'
 }
 
+/** 胶囊成员:去重后逐个对着 items 校验,不存在的 ID 拒收,避免胶囊挂上空引用。 */
+function capsuleMembers(state, rawIds) {
+  const ids = [...new Set(coerce('ids', rawIds) ?? [])]
+  if (!ids.length) throw new Error(tr('胶囊至少要收进一条灵感'))
+  const known = new Set(state.items.map(row => row.id))
+  const missing = ids.filter(id => !known.has(id))
+  if (missing.length) throw new Error(tr('灵感 {ids} 不存在，收不进胶囊', { ids: missing.join('、') }))
+  return ids
+}
+
 const handlers = {
+  add_capsule(state, op, now) {
+    const itemIds = capsuleMembers(state, op.itemIds)
+    const name = typeof op.name === 'string' && op.name.trim() ? op.name.trim().slice(0, 60) : tr('新胶囊')
+    const capsule = { id: newId('cap'), name, itemIds, createdAt: now }
+    state.capsules.unshift(capsule)
+    return { text: tr('把 {n} 条灵感收进胶囊《{name}》', { n: itemIds.length, name }), target: capsule.id, kind: 'capsule' }
+  },
+  update_capsule(state, op) {
+    const capsule = findById(state.capsules ?? [], op.id)
+    if (op.itemIds !== undefined) capsule.itemIds = capsuleMembers(state, op.itemIds)
+    if (typeof op.name === 'string' && op.name.trim()) capsule.name = op.name.trim().slice(0, 60)
+    return { text: tr('更新胶囊《{name}》', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
+  },
+  // 解散只删集合关系:成员灵感原样保留,还能单独打开
+  delete_capsule(state, op) {
+    const capsule = findById(state.capsules ?? [], op.id)
+    state.capsules = state.capsules.filter(row => row.id !== op.id)
+    return { text: tr('解散胶囊《{name}》，{n} 条灵感仍在', { name: capsule.name, n: capsule.itemIds.length }), kind: 'capsule' }
+  },
   add_item(state, op, now) {
     const fields = pick(ITEM_FIELDS, op)
     const item = {
@@ -144,6 +176,8 @@ const handlers = {
     const item = findById(state.items, op.id)
     const { status, scheduledAt, ...fields } = pick(ITEM_FIELDS, op)
     Object.assign(item, fields)
+    // 标签是手动分类:每写一次就前进一版,批量改标签的乐观锁靠它发现"预览之后又手动改过"
+    if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
     if (scheduledAt !== undefined) applySchedule(item, scheduledAt)
     if (status !== undefined) applyStatus(item, status)
     const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])].filter(key => key !== 'pos')
@@ -154,6 +188,10 @@ const handlers = {
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
     state.metrics = state.metrics.filter(row => row.itemId !== op.id)
+    // 成员灵感删了就从胶囊里摘掉;删光的胶囊没有意义,顺手解散
+    state.capsules = (state.capsules ?? [])
+      .map(capsule => capsule.itemIds.includes(op.id) ? { ...capsule, itemIds: capsule.itemIds.filter(id => id !== op.id) } : capsule)
+      .filter(capsule => capsule.itemIds.length > 0)
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
   schedule_item(state, op) {
@@ -188,6 +226,25 @@ const handlers = {
     if (typeof op.coverText === 'string') item.production.coverText = op.coverText.slice(0, 40)
     if (typeof op.article === 'string') item.production.article = op.article.slice(0, 200000)
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  },
+  // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——
+  // Agent 的自动整理不许冲掉用户预览之后又手动改过的分类。
+  retag_items(state, op) {
+    const ids = [...new Set(coerce('ids', op.itemIds) ?? [])]
+    if (!ids.length) throw new Error(tr('没有要改标签的灵感'))
+    const tags = coerce('list', op.tags) ?? []
+    const targets = ids.map(id => findById(state.items, id))
+    for (const item of targets) {
+      const expected = op.revisions?.[item.id]
+      const current = item.revision ?? 0
+      if (typeof expected !== 'number') throw new Error(tr('《{title}》没带期望版本，先看一遍改前改后再应用', { title: short(item.title) }))
+      if (expected !== current) throw new Error(tr('《{title}》的标签刚被改过（期望第 {expected} 版，现在是第 {current} 版），重新预览后再应用', { title: short(item.title), expected, current }))
+    }
+    for (const item of targets) {
+      item.tags = tags
+      item.revision = (item.revision ?? 0) + 1
+    }
+    return { text: tr('给 {n} 条灵感改了标签', { n: targets.length }), kind: 'item' }
   },
   add_person(state, op, now) {
     const person = { id: newId('p'), name: '', role: tr('目标读者'), note: '', traits: [], tone: Math.floor(Math.random() * 6), createdAt: now, ...pick(PERSON_FIELDS, op) }
@@ -304,6 +361,10 @@ const handlers = {
     const ids = new Set(state.items.map(row => row.id))
     for (const row of state.items) if (row.parentId && !ids.has(row.parentId)) row.parentId = null
     state.metrics = state.metrics.filter(row => !row.itemId || ids.has(row.itemId))
+    // 胶囊里挂着的示例成员摘掉;空了的胶囊跟着清掉
+    state.capsules = (state.capsules ?? [])
+      .map(capsule => ({ ...capsule, itemIds: capsule.itemIds.filter(id => ids.has(id)) }))
+      .filter(capsule => capsule.itemIds.length > 0)
     state.sampleCleared = true
     return { text: tr('已清空全部示例数据') }
   },
