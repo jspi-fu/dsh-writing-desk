@@ -198,6 +198,16 @@ export const PAGES = {
   从数据中学习: 'Learn from data',
   '导出为 Skill': 'Export as skill',
   '点「从数据中学习」，就会从你的内容里提炼出规则；也可以导出成 Skill 给 DeepSeek Harness 用。': 'Click “Learn from data” to pull rules out of your content, or export them as a Skill for DeepSeek Harness.',
+  // 风格闭环（工单 #10）：成稿反馈沉淀的规则标着来源，导出成稿时也顺手沉淀
+  成稿反馈: 'Edit feedback',
+  '已把你的修改沉淀成 1 条规则，下次成稿自动套用': 'Distilled your edits into 1 rule. It applies from the next piece on.',
+  '已把你的修改沉淀成 {n} 条规则，下次成稿自动套用': 'Distilled your edits into {n} rules. They apply from the next piece on.',
+  '这次的修改还沉淀不出新规则，多改几篇再来': 'No new rule came out of these edits yet. Try again after a few more pieces.',
+  '{where}，并把你的修改沉淀成了规则': '{where}. Your editing habits were distilled into rules.',
+
+  // 数据面板是可选模块（工单 #10）：导航弱化标识与悬停说明
+  可选: 'optional',
+  '数据面板是可选模块，不进成稿主链路': 'The data panel is optional; producing and publishing never require it.',
 
   // 导入账号（connect.jsx）
   'monid keys add -k 你的密钥 -l main': 'monid keys add -k YOUR_KEY -l main',

@@ -132,6 +132,9 @@ export const STUDIO = {
   '秒': 's',
   '张图': ' image{s}',
   '复制脚本': 'Copy script',
+  // 风格闭环（工单 #10）：成稿工作面 done 动作区的反馈入口
+  '写进风格': 'Save to style',
+  '把这次对稿子的修改沉淀成规则，下次成稿自动套用': 'Distill your edits on this piece into a rule that applies from the next one on.',
   '下载封面': 'Download cover',
   '修改排期': 'Reschedule',
   '配图 {n}': 'Image {n}',

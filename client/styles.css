@@ -72,6 +72,8 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
 .md-nav button { height: 32px; padding: 0 13px; border-radius: var(--r-md); color: var(--ink2); font-size: 13px; line-height: 32px; transition: background .18s var(--ease), color .18s var(--ease); white-space: nowrap; }
 .md-nav button:hover { background: var(--hover); color: var(--ink); }
 .md-nav button.is-on { background: var(--primary); color: var(--on-primary); }
+/* 可选模块的弱化标识(工单 #10):数据面板不进主链路,导航上让用户一眼分清 */
+.md-nav .md-nav-optional { margin-left: 5px; font-size: 10px; line-height: 1; font-weight: 400; opacity: .6; }
 .md-sample { height: 28px; padding: 0 11px; border-radius: var(--r-sm); color: var(--ink3); font-size: 12px; line-height: 28px; background: var(--glass); backdrop-filter: blur(24px); box-shadow: var(--dsw-elevation-soft); white-space: nowrap; }
 .md-sample:hover { color: var(--ink); }
 
@@ -750,6 +752,7 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-rule { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: var(--r-md); }
 .md-rule > div { flex: 1; min-width: 0; }
 .md-rule strong { display: block; font-size: 13.5px; line-height: 20px; font-weight: 500; }
+.md-rule-source { display: block; color: var(--ink2); font-size: 11px; line-height: 16px; opacity: .75; }
 .md-rule p { color: var(--ink2); font-size: 12.5px; line-height: 19px; }
 .md-rule .md-icon-btn { width: 28px; height: 28px; opacity: 0; transition: opacity .15s; }
 .md-rule:hover .md-icon-btn, .md-rule .md-icon-btn:focus-visible { opacity: 1; }
