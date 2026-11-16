@@ -172,3 +172,45 @@ test('真实序列:只是资产卡住的已完成成稿,settle 只停资产不�
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
   }
 })
+
+// 场景④(User Story #30):手动改状态后,系统依据成稿产物与排期自动对齐。
+test('场景④ 真实序列:已成稿条目手动改回灵感,系统按成稿产物与排期自愈对齐', async () => {
+  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# 标题\n\n## 第一节\n正文', model: 'd' })
+  const { dir, store, producer } = await fixture({ callText, ready: false })
+  const runOps = ops => store.mutate('操作', draft => applyOps(draft, ops))
+  try {
+    const id = addItem(await store.read(), '手动改状态的灵感')
+    assert.equal(await producer.start(id, { withImages: false }), true)
+    await waitDone(producer, id)
+    // 手动把已成稿条目改回灵感:按成稿产物对齐回草稿,不是真的回灵感
+    await runOps([{ op: 'set_status', id, status: 'idea' }])
+    let item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.status, 'draft', '已成稿的不能标回灵感')
+    assert.equal(isDrafted(item), true)
+    // 排上日历再改回灵感:按排期与成稿产物对齐回待发布
+    await runOps([{ op: 'schedule_item', id, scheduledAt: '2026-12-01T12:00:00Z' }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.status, 'ready')
+    await runOps([{ op: 'set_status', id, status: 'idea' }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.status, 'ready', '已排期且已成稿的自愈回待发布')
+    assert.equal(isScheduled(item), true)
+    // 取消排期退回草稿;update_item 的状态写法同样自愈
+    await runOps([{ op: 'schedule_item', id, scheduledAt: null }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.status, 'draft')
+    await runOps([{ op: 'update_item', id, status: 'idea' }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.status, 'draft', 'update_item 改状态同样自愈')
+    // 手动发布再撤回:发布时间跟着进出(旧规则不回退)
+    await runOps([{ op: 'update_item', id, status: 'published' }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.ok(item.publishedAt, '发布要记发布时间')
+    await runOps([{ op: 'set_status', id, status: 'draft' }])
+    item = (await store.read()).items.find(row => row.id === id)
+    assert.equal(item.publishedAt, undefined, '离开已发布清掉发布时间')
+    assert.equal(item.status, 'draft')
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })
+  }
+})

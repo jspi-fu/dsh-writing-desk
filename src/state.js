@@ -110,6 +110,9 @@ const handlers = {
   },
   unschedule(item) {
     item.scheduledAt = null
+    // 退回排期前的老规矩(旧 applySchedule 的推演):没成稿的大纲算没进过排期流程,退回灵感;
+    // 其余交给自愈(已成稿留草稿,待发布退草稿)。
+    if (item.status === 'outline' && !isDrafted(item)) item.status = 'idea'
     heal(item)
   },
   // 允许手动改状态,但结果必须经过自愈对齐;进出已发布时维护发布时间(与旧 applyStatus 一致)。
