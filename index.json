@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "title": {
+    "en": "Writing Desk",
+    "zh": "图文创作台"
+  },
+  "description": {
+    "en": "The plugin index for Writing Desk: one URL, one-click install.",
+    "zh": "图文创作台的插件索引：一条地址，一键安装。"
+  },
+  "metadata": {
+    "categories": {
+      "content-creation": {
+        "title": {
+          "en": "Content creation",
+          "zh": "内容创作"
+        }
+      }
+    }
+  },
+  "plugins": [
+    {
+      "name": "dsh-writing-desk",
+      "title": {
+        "en": "Writing Desk",
+        "zh": "图文创作台"
+      },
+      "description": {
+        "en": "Capture an idea in one sentence, then draft the article, title, cover image and illustrations. An illustrated-writing workbench for DeepSeek Harness: idea wall, drafts, schedule, insights, and reusable style cards. Built for RedNote, WeChat Official Accounts and Zhihu.",
+        "zh": "一句话记灵感，一键做出图文正文、标题、封面首图和配图。DeepSeek Harness 上的图文创作工作台：灵感墙、成稿、排期、复盘和专属风格卡。以小红书、公众号、知乎为主。"
+      },
+      "author": "jspi-fu",
+      "homepage": "https://github.com/jspi-fu/dsh-writing-desk#readme",
+      "repository": {
+        "url": "https://github.com/jspi-fu/dsh-writing-desk"
+      },
+      "metadata": {
+        "category": "content-creation",
+        "keywords": [
+          "dsh",
+          "deepseek-harness",
+          "dsh-plugin",
+          "content-creation",
+          "writing",
+          "article",
+          "cover",
+          "illustration",
+          "xiaohongshu",
+          "wechat",
+          "zhihu",
+          "图文",
+          "小红书",
+          "公众号",
+          "知乎",
+          "正文",
+          "封面",
+          "配图"
+        ]
+      },
+      "versions": [
+        {
+          "version": "0.1.0",
+          "publishTimestamp": 1794850000,
+          "source": {
+            "type": "npm"
+          },
+          "engines": {
+            "dsh": ">=0.2.1-rc.5 <0.3.0"
+          }
+        }
+      ]
+    }
+  ]
+}

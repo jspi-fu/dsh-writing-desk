@@ -1,0 +1,60 @@
+{
+  "name": "dsh-writing-desk",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness 插件。一句话记灵感，一键做出图文正文、标题、封面首图和配图。",
+  "type": "module",
+  "main": "src/host.js",
+  "exports": {
+    ".": "./src/host.js",
+    "./client": "./dist/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.1-rc.5 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jspi-fu/dsh-writing-desk.git"
+  },
+  "homepage": "https://github.com/jspi-fu/dsh-writing-desk#readme",
+  "bugs": "https://github.com/jspi-fu/dsh-writing-desk/issues",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "test": "node --test test/*.test.js",
+    "assets": "python3 scripts/gen-assets.py",
+    "index": "node scripts/build-index.mjs",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-plugin-market-index": "^0.2.1-rc.2",
+    "esbuild": "^0.25.10"
+  },
+  "files": [
+    "src",
+    "dist",
+    "assets",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ]
+}
