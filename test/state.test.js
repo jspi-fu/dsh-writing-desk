@@ -1,14 +1,15 @@
 // 状态机 reducer 的模块层测试:共享谓词口径 + 四个历史不一致场景。
 // 与 host.test.js 同一层:只直接调用领域模块,不启 HTTP、不渲染 UI。
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
 import { EVENTS, isDrafted, isScheduled, panelState, reduce } from '../src/state.js'
+import { migrateState } from '../src/seed.js'
 
 const NOW = '2026-11-17T10:00:00.000Z'
 
 function item(overrides = {}) {
-  return { id: 'it_1', kind: 'note', title: '测试灵感', body: '', tags: [], status: 'idea', createdAt: NOW, drafts: {}, scheduledAt: null, ...overrides }
+  return { id: 'it_1', kind: 'note', title: '测试灵感', body: '', tags: [], status: 'idea', createdAt: NOW, scheduledAt: null, ...overrides }
 }
 
 // 事件时间一律显式携带,断言不依赖真实时钟。
@@ -21,19 +22,38 @@ test('state.js 零依赖,Host 与 Client(经 esbuild 打包)都能直接引用',
   assert.doesNotMatch(source, /^\s*(import\s|export\s+.+\sfrom\s|require\()/m)
 })
 
+// 遗留口径清理(工单 #7):双轨写法不许回来——手写稿 op 与旧的状态推演函数已下线,
+// 草稿字段的任何读写(取属性、赋值、键名、字面量)都算残留;文案里的「草稿」一词不算。
+test('src/ 内不再有旧状态口径的残留', () => {
+  for (const file of readdirSync(new URL('../src/', import.meta.url))) {
+    if (!file.endsWith('.js')) continue
+    const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(source, /save_draft|applyStatus|applySchedule/, `${file} 还有旧状态推演的残留`)
+    assert.doesNotMatch(source, /\bdrafts\s*(\??\.|\[)|\bdrafts\s*[:=]|['"]drafts\b/, `${file} 还有遗留草稿字段的残留`)
+  }
+})
+
 test('状态机事件就是 spec 定下的九个', () => {
   assert.deepEqual(EVENTS, ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish'])
 })
 
-test('手动写的稿与 AI 生成稿在谓词口径上一致', () => {
+// 遗留草稿字段的存量清除(工单 #7):旧数据里读到就无害删键,不进任何判断。
+test('migrateState 无害清除旧数据里的遗留草稿字段', () => {
+  const state = { items: [{ id: 'it_old', title: '旧数据', drafts: { article: { text: '旧手写稿', by: 'user' } } }] }
+  migrateState(state)
+  assert.equal(state.items[0].drafts, undefined)
+  assert.equal(state.items[0].title, '旧数据')
+})
+
+test('成稿口径只有一份:成稿产物算数,遗留草稿字段不再参与判断', () => {
   const aiDone = item({ status: 'draft', production: { status: 'done', article: '模型写的正文' } })
-  const manualArticle = item({ drafts: { article: { text: '我自己写的正文', by: 'user' } } })
-  const manualScript = item({ drafts: { script: { text: '我自己写的口播稿', by: 'user' } } })
-  for (const wrote of [aiDone, manualArticle, manualScript]) {
-    assert.equal(isDrafted(wrote), true)
-    assert.equal(panelState(wrote), 'drafted')
-    assert.equal(isScheduled(wrote), false)
-  }
+  assert.equal(isDrafted(aiDone), true)
+  assert.equal(panelState(aiDone), 'drafted')
+  assert.equal(isScheduled(aiDone), false)
+  // 旧的手写稿字段已下线(存量数据由 migrateState 清除):就算旧数据里还带着,也不算成稿
+  const legacy = item({ drafts: { article: { text: '我自己写的正文', by: 'user' } } })
+  assert.equal(isDrafted(legacy), false)
+  assert.equal(panelState(legacy), 'idea')
   const bare = item()
   assert.equal(isDrafted(bare), false)
   assert.equal(panelState(bare), 'idea')
@@ -47,11 +67,6 @@ test('已成稿的条目手动改回灵感,自愈对齐回草稿', () => {
 test('已排期且已成稿的条目手动改回灵感,自愈对齐回待发布', () => {
   const wrote = item({ scheduledAt: '2026-12-01T10:00:00.000Z', production: { status: 'done', article: '正文' } })
   assert.equal(run(wrote, { type: 'setStatus', status: 'idea' }).status, 'ready')
-})
-
-test('手动写的稿同样受自愈保护,不会被标回灵感', () => {
-  const manual = item({ drafts: { article: { text: '我自己写的正文', by: 'user' } } })
-  assert.equal(run(manual, { type: 'setStatus', status: 'idea' }).status, 'draft')
 })
 
 test('没成稿但已排期的条目标灵感,自愈对齐成大纲(已进排期流程)', () => {

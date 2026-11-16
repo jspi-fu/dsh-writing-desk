@@ -6,6 +6,7 @@ import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { callModel, extractJson } from './ai.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
+import { exportForCli } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
@@ -339,6 +340,20 @@ async function route(ctx, store, desk, req, res) {
         return draft
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
+    }
+    // 工单 #9(发布交接)路由段:只出文件与命令,绝不写已发布状态——是否已发布由用户确认(publish_item)。
+    case 'produce/export': {
+      const settings = await desk.settings.read()
+      const state = await store.read()
+      const item = state.items.find(row => row.id === body.id)
+      if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以导出的成稿') })
+      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const next = await store.mutate(tr('导出发布包'), (draft) => {
+        const target = draft.items.find(row => row.id === body.id)
+        if (target?.production) target.production.cliPath = exported.dir
+        return draft
+      }, { undoable: false })
+      return json(res, 200, { ...exported, state: next })
     }
     default: return json(res, 404, { error: tr('接口不存在') })
   }

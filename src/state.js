@@ -1,7 +1,7 @@
 // 状态机的唯一权威:统一定义状态迁移事件与共享谓词,面板不再各写一套「已成稿 / 已排期」。
 // 纯函数、零依赖:Host(src/)直接 import,Client(client/)经 esbuild 打包进浏览器半片,
 // 所以这里不能引 i18n.js(它依赖 node:async_hooks)或任何其他模块。
-// 对四套字段(status / scheduledAt / production / drafts)做裁决,不碰 Store、不做 IO。
+// 对状态元组(status / scheduledAt / production)做裁决,不碰 Store、不做 IO。
 
 export const EVENTS = ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish']
 
@@ -9,10 +9,9 @@ export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
 
 const hasText = value => typeof value === 'string' && value.trim().length > 0
 
-/** 已成稿:成稿产物里有正文(AI 生成,含成稿中被取消/中断的),或遗留草稿里有手动写的稿,都算同一个口径。 */
+/** 已成稿:成稿产物里有正文(AI 生成或用户改写,含成稿中被取消/中断的),只有一个口径。 */
 export function isDrafted(item) {
-  if (item.production?.status === 'done' || hasText(item.production?.article)) return true
-  return hasText(item.drafts?.article?.text) || hasText(item.drafts?.script?.text)
+  return item.production?.status === 'done' || hasText(item.production?.article)
 }
 
 /** 已排期:排上了日历且还没发布。 */
@@ -34,7 +33,7 @@ export function panelState(item) {
 
 /**
  * 自愈对齐:依据成稿产物与排期把状态拉回与事实一致——已成稿的不能标回灵感,
- * 待发布必须真的排了期,已排期的未成稿算大纲(沿用旧 applySchedule 的推演)。
+ * 待发布必须真的排了期,已排期的未成稿算大纲(沿用旧的排期推演)。
  * 已发布不动:发布与否由用户确认,自愈不得擅改。
  */
 function heal(item) {
@@ -110,12 +109,12 @@ const handlers = {
   },
   unschedule(item) {
     item.scheduledAt = null
-    // 退回排期前的老规矩(旧 applySchedule 的推演):没成稿的大纲算没进过排期流程,退回灵感;
+    // 退回排期前的老规矩(旧的排期推演):没成稿的大纲算没进过排期流程,退回灵感;
     // 其余交给自愈(已成稿留草稿,待发布退草稿)。
     if (item.status === 'outline' && !isDrafted(item)) item.status = 'idea'
     heal(item)
   },
-  // 允许手动改状态,但结果必须经过自愈对齐;进出已发布时维护发布时间(与旧 applyStatus 一致)。
+  // 允许手动改状态,但结果必须经过自愈对齐;进出已发布时维护发布时间(沿用旧规则)。
   setStatus(item, event, now) {
     if (!STATUSES.includes(event.status)) throw new Error('状态无效')
     item.status = event.status
