@@ -2,9 +2,9 @@
 import React from 'react'
 import { panelState } from '../src/state.js'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeProduce, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeProduce, dispatchOps, exportForPublish, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
-import { Icon, IconButton } from './ui.jsx'
+import { Dialog, Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
 
 const isBusy = asset => ['pending', 'running'].includes(asset?.status)
@@ -176,6 +176,58 @@ function Stat({ icon, value, unit }) {
   return <span className="md-hero-stat"><Icon name={icon} size={13} /><b>{value}</b>{unit}</span>
 }
 
+/**
+ * 发布确认(工单 #9):导出发布包之后问一句「是否视为已发布?」。
+ * Wechatsync 只同步到草稿箱且没有可靠的成功信号,所以默认是、可改成否,
+ * 只有勾着确认才会经 publish_item 写已发布;不确认什么也不写。
+ */
+function PublishDialog({ item, result, onClose }) {
+  const [marked, setMarked] = React.useState(true)
+  const copy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast(t('命令已复制'))
+    } catch (err) {
+      toast(err.message, { error: true })
+    }
+  }
+  const confirm = () => {
+    onClose()
+    if (marked) dispatchOps([{ op: 'publish_item', id: item.id }], { label: t('确认发布') })
+    else toast(t('已导出发布包,还没标记发布;之后可在内容页手动改状态'))
+  }
+  return (
+    <Dialog title={t('发布')} onClose={onClose}>
+      <div className="md-form">
+        <p className="md-muted">{t('发布包(article.md + images/):{dir}', { dir: result.dir })}</p>
+        <div className="md-field">
+          <span>{t('先用 --dry-run 预览')}</span>
+          <div className="md-cmd-row">
+            <code>{result.dryRunCommand}</code>
+            <IconButton icon="copy" label={t('复制预览命令')} onClick={() => copy(result.dryRunCommand)} />
+          </div>
+        </div>
+        <div className="md-field">
+          <span>{t('确认无误后同步')}</span>
+          <div className="md-cmd-row">
+            <code>{result.command}</code>
+            <IconButton icon="copy" label={t('复制同步命令')} onClick={() => copy(result.command)} />
+          </div>
+        </div>
+        <label className="md-check">
+          <input type="checkbox" checked={marked} onChange={e => setMarked(e.target.checked)} />
+          <span>{t('视为已发布(上传后只进草稿箱,状态由你确认)')}</span>
+        </label>
+        <div className="md-form-foot">
+          <span style={{ flex: 1 }} />
+          <button type="button" className="md-btn" onClick={onClose}>{t('取消')}</button>
+          <button type="button" className="md-btn is-primary" onClick={confirm}>{t('完成')}</button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 /** 主视觉：渐变底、大标题、数字，右边是视频封面和配图的拼贴。 */
 function HeroTile({ item, live, onView, sources }) {
   const settings = useDesk(s => s.settings)
@@ -191,6 +243,8 @@ function HeroTile({ item, live, onView, sources }) {
   const pictures = [production?.cover, ...images].filter(a => a?.src).length
   const showFigures = (settings?.imageReady && production?.withImages !== false) || images.some(a => a?.src)
   const [saving, setSaving] = React.useState(false)
+  const [publishing, setPublishing] = React.useState(false)
+  const [publish, setPublish] = React.useState(null)
   const copy = async () => {
     await navigator.clipboard.writeText(`# ${production.title}\n\n${production.article}`)
     toast(production.format === 'article' ? t('文章已复制') : t('脚本已复制'))
@@ -199,6 +253,13 @@ function HeroTile({ item, live, onView, sources }) {
     setSaving(true)
     await saveProduced(item.id)
     setSaving(false)
+  }
+  // 导出发布包 → 弹确认框问「是否视为已发布」;导出本身不写任何状态
+  const publishExport = async () => {
+    setPublishing(true)
+    const result = await exportForPublish(item.id)
+    setPublishing(false)
+    if (result) setPublish(result)
   }
   const again = () => setDesk({
     dialog: {
@@ -227,6 +288,7 @@ function HeroTile({ item, live, onView, sources }) {
           <div className="md-hero-actions">
             <button type="button" className="md-pill is-primary" onClick={copy}><Icon name="copy" size={14} />{production?.format === 'article' ? t('复制文章') : t('复制脚本')}</button>
             <button type="button" className="md-pill" onClick={save} disabled={saving}><Icon name="save" size={14} />{saving ? t('保存中…') : t('保存')}</button>
+            <button type="button" className="md-pill" onClick={publishExport} disabled={publishing}><Icon name="upRight" size={14} />{publishing ? t('导出中…') : t('发布')}</button>
             <button type="button" className="md-pill" onClick={() => downloadCover({ src: production.cover?.src, text: production.coverText || production.title }, production.title).catch(err => toast(err.message, { error: true }))}><Icon name="image" size={14} />{t('下载封面')}</button>
             <label className="md-pill md-date-pill">
               <Icon name="calendar" size={14} />{item.scheduledAt ? fmtWhen(item.scheduledAt) : t('排期')}
@@ -251,6 +313,7 @@ function HeroTile({ item, live, onView, sources }) {
           closeProduce()
         }} />
       </div>
+      {publish ? <PublishDialog item={item} result={publish} onClose={() => setPublish(null)} /> : null}
     </section>
   )
 }

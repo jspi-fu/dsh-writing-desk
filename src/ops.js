@@ -200,6 +200,13 @@ const handlers = {
     reduce(state, { type: 'setStatus', id: item.id, status, at: now })
     return { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
   },
+  // 发布由用户确认(发布交接:CLI 只到草稿箱、无可靠成功信号,系统不瞎猜)。
+  // 这是唯一经 reducer publish 事件写已发布状态的入口,导出与同步绝不自动调用它。
+  publish_item(state, op, now) {
+    const item = findById(state.items, op.id)
+    reduce(state, { type: 'publish', id: item.id, at: now })
+    return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
+  },
   save_draft(state, op, now) {
     const item = findById(state.items, op.id)
     const format = op.format === 'script' ? 'script' : 'article'

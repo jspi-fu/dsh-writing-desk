@@ -253,6 +253,18 @@ export async function revealSaved(id) {
   }
 }
 
+// 发布交接(工单 #9):导出 CLI 原生发布包。只出文件与命令,是否已发布由用户在确认框里决定。
+export async function exportForPublish(id) {
+  try {
+    const data = await request('produce/export', { id })
+    setDesk({ state: data.state })
+    return data
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
 export async function captureUrl(url, extra = {}) {
   try {
     const data = await request('capture-url', { url, ...extra })

@@ -8,8 +8,9 @@ const DIR = new URL('../client/', import.meta.url)
 
 // 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
 // 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
+// 工单 #9：发布交接——成稿工作面经 desk.js 的 exportForPublish 导出发布包
 const WIRED = [
-  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
   ['./studio.jsx', ['ProduceView'], name => `<${name}`],
