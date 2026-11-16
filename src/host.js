@@ -27,6 +27,8 @@ const MAX_JSON = 4_000_000
 const MAX_UPLOAD = 250_000_000
 const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' }
 const UPLOAD_EXT = Object.fromEntries(Object.entries(MIME).filter(([ext]) => ext !== '.jpeg').map(([ext, type]) => [type, ext]))
+// 保存 / 导出发布包 / 反馈三处共用的沉淀回执标签;tr 按请求语言现场翻译,所以只存中文原文
+const LEARN_EDITS_LABEL = '把成稿修改沉淀为规则'
 
 function json(res, status, body) {
   res.statusCode = status
@@ -311,7 +313,7 @@ async function route(ctx, store, desk, req, res) {
         return draft
       }, { undoable: false })
       // 导出成稿也算一次反馈(工单 #10):顺手把人工修改提炼成规则,去重后直接生效
-      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
       return json(res, 200, { ...saved, learned: learned?.added ?? 0, state: learned?.state ?? next })
     }
     case 'produce/reveal': {
@@ -374,12 +376,12 @@ async function route(ctx, store, desk, req, res) {
         return draft
       }, { undoable: false })
       // 导出发布包同样算「导出稿」(工单 #10):与 produce/save 走同一个提炼入口,去重后直接生效
-      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
       return json(res, 200, { ...exported, learned: learned?.added ?? 0, state: learned?.state ?? next })
     }
     // ---- 工单 #10 风格闭环路由段:对成稿做反馈时把人工修改提炼成规则,直接生效 ----
     case 'skills/feedback': {
-      const learned = await learnEditsInto(store, tr('把成稿修改沉淀为规则'))
+      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
       return json(res, 200, learned ?? { added: 0, state: await store.read() })
     }
     default: return json(res, 404, { error: tr('接口不存在') })

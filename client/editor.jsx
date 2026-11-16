@@ -4,11 +4,7 @@ import React from 'react'
 import { closeItem, dispatchOps, openProduce, setDesk, undo, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
-import { SPRING_SOFT, fmtDate, reducedMotion, renderMarkdown, textLength } from './util.js'
-
-function escapeHtml(text) {
-  return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
-}
+import { SPRING_SOFT, escapeHtml, fmtDate, reducedMotion, renderMarkdown, textLength } from './util.js'
 
 // 行内记号：先转义再包 span，跟 renderMarkdown 同一套顺序，模型或用户写的 HTML 不会执行
 function inlineHtml(text) {

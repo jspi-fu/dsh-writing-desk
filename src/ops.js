@@ -1,10 +1,11 @@
 // 工作台的唯一写入口：界面操作都走这里，统一校验字段并产出回执。
 // 模型输出也是不可信输入，所以这里只放行白名单字段。
 import { currentLang, platformName, tr } from './i18n.js'
-import { reduce } from './state.js'
+// 状态枚举以 state.js 为唯一来源;这里 re-export 保持既有引用不破
+import { reduce, STATUSES } from './state.js'
 import { draftFormat } from './style.js'
 
-export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
+export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
 export const KINDS = ['image', 'video', 'web', 'quote', 'note']
 export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']

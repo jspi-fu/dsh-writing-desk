@@ -2,24 +2,11 @@
 // CLI 只是本地 WebSocket 桥(默认 9527),发布发生在浏览器扩展里、只到草稿箱且没有可靠的成功信号
 // (失败也 exit(0)),所以这里只产出文件与命令字符串:不调用平台 API、不解析 CLI 输出,
 // 是否已发布由用户确认(见 ops.js 的 publish_item)。
-import { copyFile, mkdir, writeFile } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { byLang } from './i18n.js'
-import { freeFolder } from './export.js'
-
-/** 配图放回对应小标题那一节的末尾(与 saveProduction 的脚本导出同一套摆法)。 */
-function articleWithFigures(production, figures) {
-  const sections = String(production.article ?? '').split(/\n(?=##\s)/)
-  const unplaced = []
-  for (const { image, ref } of figures) {
-    if (!ref) continue
-    const line = `\n\n![${image.caption ?? ''}](${ref})`
-    const at = sections.findIndex(part => image.anchor && part.startsWith(`## ${image.anchor}`))
-    if (at >= 0) sections[at] = `${sections[at].trimEnd()}${line}\n`
-    else unplaced.push(line)
-  }
-  return `# ${production.title}\n\n${sections.join('\n')}${unplaced.join('')}\n`
-}
+// 素材复制与分节摆图与 saveProduction 同一套实现(工单 #9 与一键保存共用)
+import { articleWithFigures, copyAssetFile, freeFolder } from './export.js'
 
 /**
  * 导出发布包:成稿正文写成 article.md,封面与配图落进 images/,引用用相对路径。
@@ -36,10 +23,8 @@ export async function exportForCli(production, { filesDir, exportDir }) {
   const imagesDir = join(target, 'images')
   const imageFiles = []
   const copy = async (asset, name) => {
-    const match = /^writing-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
-    if (!match) return null
-    const file = `${name}${extname(match[1])}`
-    await copyFile(join(filesDir, match[1]), join(imagesDir, file))
+    const file = await copyAssetFile(asset, name, filesDir, imagesDir)
+    if (!file) return null
     const ref = `images/${file}`
     imageFiles.push(ref)
     return ref

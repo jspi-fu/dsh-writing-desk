@@ -11,7 +11,10 @@ import { cardSize, scatterLayout } from './layout.js'
 import { isScheduled, panelState } from '../src/state.js'
 import { relatedIdeas, relatedLayout } from './related.js'
 import { tagShelf } from './tags.js'
-import { SPRING_SOFT, computeStreak, displayItem, hash, posterOf, reducedMotion, isIdea } from './util.js'
+import { SPRING_SOFT, capsuleMembers, computeStreak, displayItem, hash, posterOf, reducedMotion, isIdea } from './util.js'
+
+// 标签过滤的同一个口径:画布散落、信息流和底部 dockbar 三处共用
+const matchesTag = (item, tag) => !tag || (item.tags ?? []).includes(tag)
 
 function useCamera(stageRef, worldRef) {
   const cam = React.useRef({ x: 0, y: 0, s: 1, vx: 0, vy: 0, vs: 0, tx: 0, ty: 0, ts: 1, raf: 0 })
@@ -174,8 +177,7 @@ function Scatter() {
   const pickedItems = React.useMemo(() => new Set(selection?.items ?? []), [selection])
   const pickedCapsules = React.useMemo(() => new Set(selection?.capsules ?? []), [selection])
   const roots = React.useMemo(() => items.filter(isIdea), [items])
-  const byTag = i => !tag || (i.tags ?? []).includes(tag)
-  const shown = React.useMemo(() => roots.filter(i => byTag(i) && (kind === 'all' || displayItem(i).kind === kind)), [roots, kind, tag])
+  const shown = React.useMemo(() => roots.filter(i => matchesTag(i, tag) && (kind === 'all' || displayItem(i).kind === kind)), [roots, kind, tag])
   const rootKey = roots.map(i => `${i.id}:${i.pos ? `${i.pos.x},${i.pos.y}` : ''}:${i.production?.cover?.src ?? ''}`).join('|')
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = React.useMemo(() => scatterLayout(roots), [rootKey])
@@ -200,7 +202,7 @@ function Scatter() {
 
   // 胶囊卡停在成员的质心:成员怎么挪,胶囊就跟着挪,不用再存一份坐标
   const capsulePos = (capsule) => {
-    const pts = capsule.itemIds.map(memberId => items.find(i => i.id === memberId)).filter(Boolean).map(posOf)
+    const pts = capsuleMembers(capsule, items).map(posOf)
     if (!pts.length) return { x: 0, y: 0, r: 0, d: 0 }
     const x = Math.round(pts.reduce((sum, p) => sum + p.x, 0) / pts.length)
     const y = Math.round(pts.reduce((sum, p) => sum + p.y, 0) / pts.length)
@@ -500,7 +502,7 @@ function Feed() {
   }
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
-    .filter(i => isIdea(i) && (!tag || (i.tags ?? []).includes(tag)) && (kind === 'all' || displayItem(i).kind === kind))
+    .filter(i => isIdea(i) && matchesTag(i, tag) && (kind === 'all' || displayItem(i).kind === kind))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     // 有相关的灵感时排在最前面，按相关程度
     .sort((a, b) => {
@@ -541,7 +543,7 @@ export function HomeView() {
   const picked = (selection?.items.length ?? 0) + (selection?.capsules.length ?? 0)
   // 标签就是选题资料架:挑一个标签,画布上只留这批灵感,还能顺手给它们批量改标签、一起成稿
   const shelf = React.useMemo(() => tagShelf(items).slice(0, 9), [items])
-  const tagged = React.useMemo(() => items.filter(i => tag && (i.tags ?? []).includes(tag)).map(i => i.id), [items, tag])
+  const tagged = React.useMemo(() => items.filter(i => tag && matchesTag(i, tag)).map(i => i.id), [items, tag])
   return (
     <div className="md-home">
       {mode === 'feed' ? <Feed /> : <Scatter />}

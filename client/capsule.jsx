@@ -4,11 +4,11 @@ import React from 'react'
 import { closeCapsule, dispatchOps, openItem, openProduce, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Dialog, Icon } from './ui.jsx'
-import { posterOf } from './util.js'
+import { capsuleMembers, posterOf } from './util.js'
 
 /** 散落画布和信息流复用同一张胶囊卡:封面叠一摞,名字加成员数。 */
 export function CapsuleCard({ capsule, items, onOpen, selected = false }) {
-  const members = capsule.itemIds.map(id => items.find(item => item.id === id)).filter(Boolean)
+  const members = capsuleMembers(capsule, items)
   const covers = members.map(posterOf).filter(Boolean).slice(0, 3)
   return (
     <article
@@ -43,7 +43,7 @@ export function CapsuleDialog() {
   // 正看着的胶囊被解散或撤销掉时,退回灵感墙
   React.useEffect(() => { if (id && !capsule) closeCapsule() }, [id, capsule])
   if (!id || !capsule) return null
-  const members = capsule.itemIds.map(itemId => items.find(item => item.id === itemId)).filter(Boolean)
+  const members = capsuleMembers(capsule, items)
   const rename = () => {
     const next = name.trim()
     if (next && next !== capsule.name) dispatchOps([{ op: 'update_capsule', id: capsule.id, name: next }], { label: t('重命名胶囊') })

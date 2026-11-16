@@ -13,7 +13,7 @@ const WIRED = [
   ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish', 'feedbackSkills'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
-  ['./studio.jsx', ['ProduceView'], name => `<${name}`],
+  ['./produce.jsx', ['ProduceView'], name => `<${name}`],
   ['./retag.jsx', ['RetagDialog'], name => `<${name}`],
 ]
 
@@ -65,8 +65,8 @@ test('四个面板的状态口径统一走 src/state.js 共享谓词', () => {
 
 // 成稿工作面(工单 #6 后的 produce 相关文件)里「正在成稿」的面板判断同样走共享谓词
 test('成稿工作面的成稿中判断走共享谓词', () => {
-  const source = readFileSync(new URL('studio.jsx', DIR), 'utf8')
-  assert.match(source, SHARED_PREDICATE, 'studio.jsx 要从 src/state.js 引共享谓词')
+  const source = readFileSync(new URL('produce.jsx', DIR), 'utf8')
+  assert.match(source, SHARED_PREDICATE, 'produce.jsx 要从 src/state.js 引共享谓词')
 })
 
 // 工单 #10:数据面板降级为可选模块——导航带「可选」标识,首页/主流程不出现数据采集入口

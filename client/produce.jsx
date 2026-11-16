@@ -1,4 +1,4 @@
-// 点开灵感后的工作区：顶部是这条灵感和成稿入口，下面是一张稿面。格子一开始就排好，同时开工，一点点长满。
+// 成稿工作面：点开灵感后进到这里，顶部是这条灵感和成稿入口，下面是成稿产物。格子一开始就排好，同时开工，一点点长满。
 import React from 'react'
 import { panelState } from '../src/state.js'
 import { downloadCover } from './cover.js'

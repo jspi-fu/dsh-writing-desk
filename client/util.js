@@ -1,8 +1,11 @@
 import { EN } from './en/index.js'
 import { lang, t } from './i18n.js'
+// 状态枚举与 Host 共用 src/state.js 的唯一定义(纯模块,经 esbuild 打包进浏览器半片)
+import { STATUSES } from '../src/state.js'
+
+export { STATUSES }
 
 // 这些表只放中文原文，显示时再用 t() 翻译
-export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
 export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记' }
 export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
@@ -153,7 +156,14 @@ export function posterOf(item) {
   return item.media.poster || (item.kind === 'video' ? null : item.media.src)
 }
 
-function escapeHtml(text) {
+/** 胶囊成员按 itemIds 顺序取回(成员可能已被删,缺的跳过);胶囊卡、胶囊对话框与画布共用。 */
+export function capsuleMembers(capsule, items) {
+  const byId = new Map(items.map(item => [item.id, item]))
+  return capsule.itemIds.map(id => byId.get(id)).filter(Boolean)
+}
+
+/** HTML 转义:renderMarkdown 与编辑器高亮同一份实现,模型或用户写的 HTML 不会执行。 */
+export function escapeHtml(text) {
   return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 }
 

@@ -47,6 +47,29 @@ function cell(text) {
   return String(text ?? '').replace(/\|/g, '｜').replace(/\n/g, ' ')
 }
 
+/** 成稿素材按 files/ 的落盘方式原样复制到目标文件夹,返回文件名;没画出来的(无 src)返回 null。 */
+export async function copyAssetFile(asset, name, filesDir, dir) {
+  const match = /^writing-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
+  if (!match) return null
+  const file = `${name}${extname(match[1])}`
+  await copyFile(join(filesDir, match[1]), join(dir, file))
+  return file
+}
+
+/** 配图放回对应小标题那一节的末尾;保存成稿与发布导出(工单 #9)共用同一套摆法。 */
+export function articleWithFigures(production, figures) {
+  const sections = String(production.article ?? '').split(/\n(?=##\s)/)
+  const unplaced = []
+  for (const { image, ref } of figures) {
+    if (!ref) continue
+    const line = `\n\n![${image.caption ?? ''}](${ref})`
+    const at = sections.findIndex(part => image.anchor && part.startsWith(`## ${image.anchor}`))
+    if (at >= 0) sections[at] = `${sections[at].trimEnd()}${line}\n`
+    else unplaced.push(line)
+  }
+  return `# ${production.title}\n\n${sections.join('\n')}${unplaced.join('')}\n`
+}
+
 /**
  * @param {object} production - 成稿。
  * @param {{filesDir: string, exportDir: string, videoCover?: Buffer}} options - 素材目录、保存位置和合成好的视频封面。
@@ -79,11 +102,8 @@ export async function saveProduction(production, { filesDir, exportDir, videoCov
   }
 
   const copy = async (asset, name) => {
-    const match = /^writing-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
-    if (!match) return null
-    const file = `${name}${extname(match[1])}`
-    await copyFile(join(filesDir, match[1]), join(target, file))
-    files.push(file)
+    const file = await copyAssetFile(asset, name, filesDir, target)
+    if (file) files.push(file)
     return file
   }
 
@@ -94,25 +114,14 @@ export async function saveProduction(production, { filesDir, exportDir, videoCov
   }
   const figures = []
   for (const [i, image] of (production.images ?? []).entries()) {
-    figures.push({ image, file: await copy(image, names.figure(i + 1)) })
+    figures.push({ image, ref: await copy(image, names.figure(i + 1)) })
   }
   const shots = []
   for (const [i, shot] of (production.shots ?? []).entries()) {
     shots.push({ shot, file: await copy(shot, names.shot(String(i + 1).padStart(2, '0'))) })
   }
 
-  // 配图放回对应小标题那一节的末尾
-  const sections = String(production.article ?? '').split(/\n(?=##\s)/)
-  const unplaced = []
-  for (const { image, file } of figures) {
-    if (!file) continue
-    const line = `\n\n![${image.caption ?? ''}](${file})`
-    const at = sections.findIndex(part => image.anchor && part.startsWith(`## ${image.anchor}`))
-    if (at >= 0) sections[at] = `${sections[at].trimEnd()}${line}\n`
-    else unplaced.push(line)
-  }
-  const article = `# ${production.title}\n\n${sections.join('\n')}${unplaced.join('')}\n`
-  await writeText(names.script, article)
+  await writeText(names.script, articleWithFigures(production, figures))
 
   if (shots.length) {
     const seconds = value => (value === undefined || value === null ? '' : en ? `${value}s` : `${value} 秒`)
