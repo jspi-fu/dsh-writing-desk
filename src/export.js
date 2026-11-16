@@ -19,13 +19,14 @@ export function resolveExportDir(value) {
   return dir.startsWith('~/') ? join(homedir(), dir.slice(2)) : dir
 }
 
-function folderName(title) {
+/** 标题清掉路径字符后当文件夹名;发布导出(工单 #9)与这里共用同一套命名。 */
+export function folderName(title) {
   const clean = String(title ?? '').replace(/[\\/:*?"<>|\n\r\t]/g, ' ').replace(/\s+/g, ' ').replace(/^[.\s]+|[.\s]+$/g, '').slice(0, 60)
   return clean || tr('未命名')
 }
 
 /** 第一次保存时找一个还没人用的文件夹，标题相同的两篇不会写到一起。 */
-function freeFolder(exportDir, title) {
+export function freeFolder(exportDir, title) {
   const base = folderName(title)
   for (let n = 1; ; n++) {
     const dir = join(exportDir, n === 1 ? base : `${base} ${n}`)

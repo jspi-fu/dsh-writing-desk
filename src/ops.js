@@ -200,6 +200,13 @@ const handlers = {
     reduce(state, { type: 'setStatus', id: item.id, status, at: now })
     return { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
   },
+  // 发布由用户确认(发布交接:CLI 只到草稿箱、无可靠成功信号,系统不瞎猜)。
+  // 这是唯一经 reducer publish 事件写已发布状态的入口,导出与同步绝不自动调用它。
+  publish_item(state, op, now) {
+    const item = findById(state.items, op.id)
+    reduce(state, { type: 'publish', id: item.id, at: now })
+    return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
+  },
   // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
   // 正文不是状态元组,直写 production.article;AI 原稿快照留给 learn 对比修改方向。
   update_production(state, op) {
