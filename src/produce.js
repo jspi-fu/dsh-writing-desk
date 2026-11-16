@@ -6,6 +6,7 @@ import { articlePrompts, extractJson, fallbackArticle, fallbackPlan, planPrompts
 import { tr } from './i18n.js'
 import { coverPrompt, figurePrompt, shotPrompt } from './images.js'
 import { newId } from './ops.js'
+import { reduce } from './state.js'
 import { imageReady } from './settings.js'
 import { draftFormat } from './style.js'
 
@@ -100,6 +101,24 @@ export class Producer {
     }, { undoable: false })
   }
 
+  // 状态元组(item.status / production.status / scheduledAt / 正文保留)的迁移一律经 reducer
+  // (工单 #5):同一份裁决,Store 只负责持久化,不再有第二条状态写路径。
+  // 策划案与图片资产等非状态元组字段仍走 patch。
+  commit(label, event) {
+    return this.store.mutate(label, (state) => {
+      reduce(state, event)
+      return state
+    }, { undoable: false })
+  }
+
+  // 收尾(取消 / 失败 / 中断自愈):落点灵感可能已在这轮里被删掉,删除要赢过流水线,找不到就当无事发生。
+  async finish(id, event) {
+    await this.store.mutate('成稿', (state) => {
+      if (state.items.some(row => row.id === id)) reduce(state, { id, ...event })
+      return state
+    }, { undoable: false })
+  }
+
   async start(id, { withImages, sourceIds } = {}) {
     if (this.jobs.has(id)) return false
     const state = await this.store.read()
@@ -112,11 +131,10 @@ export class Producer {
     const sources = [...new Set([id, ...(Array.isArray(sourceIds) ? sourceIds : [])])].filter(sid => state.items.some(row => row.id === sid))
     const job = { stage: 'brief', text: '', planText: '', controller: new AbortController(), withImages: draw, sources }
     this.jobs.set(id, job)
+    // 开新的一轮走 reducer 的 start 事件(工单 #5):上一轮写好的正文与它的来历保留(重新成稿
+    // 不清空、重试不毁稿),导出仍存回原来的文件夹;画面清零等这一轮重画。
     await this.store.mutate('开始成稿', (draft) => {
-      const target = draft.items.find(row => row.id === id)
-      // 重新成稿后还存回原来的文件夹，不会每做一次多出一个
-      const { savedPath, savedHashes } = target.production ?? {}
-      target.production = { status: 'running', stage: 'brief', withImages: draw, startedAt: new Date().toISOString(), format: draftFormat(draft.draftFormat), title: target.title, article: '', cover: null, images: [], shots: [], ...(savedPath ? { savedPath, savedHashes } : {}) }
+      reduce(draft, { type: 'start', id, withImages: draw, format: draftFormat(draft.draftFormat) })
       return draft
     }, { undoable: false })
     // 不等待：浏览器靠轮询拿进度
@@ -191,12 +209,9 @@ export class Producer {
           notice = tr('没有连上文字模型，先给你一份结构草稿。可以到 DeepSeek Harness 设置里检查模型。')
         }
         const { article } = splitTitle(markdown, plan.title)
-        await this.patch(id, (production) => {
-          production.article = article
-          production.aiArticle = article
-          production.engine = engine
-          production.notice = notice
-        })
+        // 写完这一刻就经 articleWritten 落盘(工单 #5):正文带着 AI 原稿快照与引擎一起落库,
+        // 灵感当场推进;之后就算取消或中断,已写好的正文也留下(白等一场不丢稿)。
+        await this.commit('成稿', { type: 'articleWritten', id, article, aiArticle: article, engine, notice })
       }
 
       const tasks = [writeArticle()]
@@ -215,25 +230,13 @@ export class Producer {
       await Promise.all(tasks)
       if (signal.aborted) throw new Error('cancelled')
 
-      await this.store.mutate('完成成稿', (draft) => {
-        const target = draft.items.find(row => row.id === id)
-        if (!target?.production) return draft
-        target.production.status = 'done'
-        target.production.stage = 'done'
-        target.production.finishedAt = new Date().toISOString()
-        if (['idea', 'outline'].includes(target.status)) target.status = target.scheduledAt ? 'ready' : 'draft'
-        return draft
-      }, { undoable: false })
+      // 完成走 reducer 的 done 事件:产物定稿并按事实自愈对齐(已排期的直接待发布)。
+      await this.commit('完成成稿', { type: 'done', id })
     } catch (err) {
+      // 取消 / 失败走 reducer 的 cancel / fail 事件:只停这一轮,已落盘的正文与已生成的图
+      // 原样保留,没跑完的资产停回待命,状态照常自愈(有正文的灵感不会被留在灵感档)。
       const cancelled = signal.aborted
-      await this.patch(id, (production) => {
-        production.status = cancelled ? 'cancelled' : 'failed'
-        production.stage = 'done'
-        production.error = cancelled ? null : err.message
-        for (const asset of [production.cover, ...production.images ?? [], ...production.shots ?? []]) {
-          if (asset && ['pending', 'running'].includes(asset.status)) asset.status = 'idle'
-        }
-      })
+      await this.finish(id, { type: cancelled ? 'cancel' : 'fail', error: cancelled ? null : err.message })
     }
   }
 
@@ -312,12 +315,13 @@ export class Producer {
     if (!production || this.jobs.has(id)) return
     const stuck = !this.anyAssetActive(id) && [production.cover, ...production.images ?? [], ...production.shots ?? []].some(asset => asset?.status === 'running')
     if (production.status !== 'running' && !stuck) return
+    if (production.status === 'running') {
+      // 成稿卡住走 reducer 的 fail 事件:标失败、资产停回待命、状态照常自愈。
+      await this.finish(id, { type: 'fail', error: tr('上次成稿被中断了，可以重新开始') })
+      return
+    }
+    // 只是单张重画被中断:成稿状态本身没卡,把资产停回待命就行。
     await this.patch(id, (next) => {
-      if (next.status === 'running') {
-        next.status = 'failed'
-        next.stage = 'done'
-        next.error = tr('上次成稿被中断了，可以重新开始')
-      }
       for (const asset of [next.cover, ...next.images ?? [], ...next.shots ?? []]) {
         if (asset && ['pending', 'running'].includes(asset.status)) asset.status = 'idle'
       }

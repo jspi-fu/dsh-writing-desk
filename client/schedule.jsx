@@ -1,5 +1,6 @@
 // 排期：发布排期和灵感日历是同一张日历。每天一张灵感邮票，发布的内容从右边拖上来。
 import React from 'react'
+import { isDrafted, isScheduled, panelState } from '../src/state.js'
 import { dispatchOps, openItem, useDesk } from './desk.js'
 import { lang, t, useLang } from './i18n.js'
 import { Stamp, useDayMap } from './stamps.jsx'
@@ -135,11 +136,13 @@ function TrayCard({ item }) {
 
 function Rail({ items }) {
   const [over, setOver] = React.useState(false)
-  const upcoming = items.filter(i => i.scheduledAt && i.status !== 'published' && new Date(i.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
+  // 待排期区的分组走共享谓词(工单 #5):已成稿组按 isDrafted,手动稿与生成稿都算,不再出现
+  // 「内容页算成了、排期页算灵感」;已发布的自动让位。
+  const upcoming = items.filter(i => isScheduled(i) && new Date(i.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
   const next = upcoming[0]
-  const waiting = items.filter(i => !i.scheduledAt && !i.parentId && i.status !== 'published')
-  const ready = waiting.filter(i => i.production?.status === 'done').sort((a, b) => Date.parse(b.production.finishedAt ?? b.createdAt) - Date.parse(a.production.finishedAt ?? a.createdAt))
-  const ideas = waiting.filter(i => i.production?.status !== 'done')
+  const waiting = items.filter(i => !i.parentId && !isScheduled(i) && panelState(i) !== 'published')
+  const ready = waiting.filter(isDrafted).sort((a, b) => Date.parse(b.production.finishedAt ?? b.createdAt) - Date.parse(a.production.finishedAt ?? a.createdAt))
+  const ideas = waiting.filter(i => !isDrafted(i))
   return (
     <aside className="md-rail-col">
       {next ? (

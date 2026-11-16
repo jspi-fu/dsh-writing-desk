@@ -1,5 +1,6 @@
 // 内容管理：看板和表格是同一份数据的两种看法。
 import React from 'react'
+import { isDrafted, isScheduled } from '../src/state.js'
 import { dispatchOps, openItem, setDesk, useDesk } from './desk.js'
 import { Empty, Icon, Segmented } from './ui.jsx'
 import { plural, t, useLang } from './i18n.js'
@@ -36,8 +37,9 @@ function BoardCard({ item: raw }) {
       <strong>{item.title}</strong>
       <span className="md-board-meta">
         {item.platform ? <span>{t(item.platform)}</span> : null}
-        {item.scheduledAt && item.status !== 'published' ? <span className="is-time">{relativeDay(item.scheduledAt)}</span> : null}
-        {raw.production?.status === 'done' || item.drafts?.article ? <Icon name="pen" size={12} /> : null}
+        {isScheduled(item) ? <span className="is-time">{relativeDay(item.scheduledAt)}</span> : null}
+        {/* 已成稿走共享谓词:手动稿与生成稿同一个口径;胶片只标记遗留口播稿(清理见工单 #7) */}
+        {isDrafted(item) ? <Icon name="pen" size={12} /> : null}
         {item.drafts?.script ? <Icon name="film" size={12} /> : null}
       </span>
     </button>
@@ -147,7 +149,7 @@ export function ContentView() {
   const items = useContentItems()
   const query = useDesk(s => s.query)
   const counts = STATUSES.map(s => items.filter(i => i.status === s && !(i.parentId && s === 'idea')).length)
-  const drafts = items.filter(i => i.production?.status === 'done' || i.drafts?.article || i.drafts?.script).length
+  const drafted = items.filter(isDrafted).length
   return (
     <div className="md-page">
       <header className="md-page-head">
@@ -156,7 +158,7 @@ export function ContentView() {
           <p className="md-page-sub">{[
             t(plural(items.length, '共 1 条', '共 {n} 条'), { n: items.length }),
             t(plural(counts[0], '1 个灵感待推进', '{n} 个灵感待推进'), { n: counts[0] }),
-            t('{n} 篇已成稿', { n: drafts }),
+            t('{n} 篇已成稿', { n: drafted }),
             t('{n} 篇已发布', { n: counts[4] }),
           ].join(' · ')}</p>
         </div>

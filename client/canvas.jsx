@@ -8,6 +8,7 @@ import { plural, t } from './i18n.js'
 import { Icon, IconButton, Segmented } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
 import { cardSize, scatterLayout } from './layout.js'
+import { isScheduled, panelState } from '../src/state.js'
 import { relatedIdeas, relatedLayout } from './related.js'
 import { tagShelf } from './tags.js'
 import { SPRING_SOFT, computeStreak, displayItem, hash, posterOf, reducedMotion, isIdea } from './util.js'
@@ -75,10 +76,11 @@ function Inline({ src }) {
 function Hero() {
   const items = useDesk(s => s.state.items)
   const roots = items.filter(isIdea)
-  const pending = roots.filter(i => i.status === 'idea' && !i.production)
+  // 首屏计数走共享谓词(工单 #5):「等你成稿」= 面板口径里的灵感,写了一半或排了期的不算
+  const pending = roots.filter(i => panelState(i) === 'idea')
   const week = new Date()
   week.setDate(week.getDate() + 7)
-  const upcoming = items.filter(i => i.scheduledAt && i.status !== 'published' && new Date(i.scheduledAt) >= new Date() && new Date(i.scheduledAt) <= week)
+  const upcoming = items.filter(i => isScheduled(i) && new Date(i.scheduledAt) >= new Date() && new Date(i.scheduledAt) <= week)
   const streak = computeStreak(items)
   const pic = list => list.map(posterOf).find(Boolean)
   const related = useDesk(s => s.related)

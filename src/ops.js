@@ -1,6 +1,7 @@
 // 工作台的唯一写入口：界面操作都走这里，统一校验字段并产出回执。
 // 模型输出也是不可信输入，所以这里只放行白名单字段。
 import { currentLang, platformName, tr } from './i18n.js'
+import { reduce } from './state.js'
 import { draftFormat } from './style.js'
 
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
@@ -106,22 +107,10 @@ function fmtShort(iso) {
   return currentLang() === 'en' ? `${MONTHS_EN[d.getMonth()]} ${d.getDate()}` : `${d.getMonth() + 1}月${d.getDate()}日`
 }
 
-/** 改状态时一并维护发布时间：进入已发布记下时间，离开已发布清掉。 */
-function applyStatus(item, status) {
-  item.status = status
-  if (status === 'published' && !item.publishedAt) item.publishedAt = new Date().toISOString()
-  if (status !== 'published') delete item.publishedAt
-}
-
-/** 排上日历就是待发布（还没成稿的算大纲）；取消排期退回去。已发布的不动。 */
-function applySchedule(item, when) {
-  item.scheduledAt = when
-  if (item.status === 'published') return
-  const produced = item.production?.status === 'done'
-  if (when) item.status = produced || ['draft', 'ready'].includes(item.status) ? 'ready' : 'outline'
-  else if (item.status === 'ready') item.status = 'draft'
-  else if (item.status === 'outline' && !produced) item.status = 'idea'
-}
+// 状态元组(item.status / scheduledAt)的迁移一律经 reducer(工单 #5):
+// 推演与自愈(已成稿不回灵感、待发布必须真排了期)由 state.js 统一裁决,
+// 这里只保留 ops 自己的校验、回执与白名单。各 handler 里显式构造事件,
+// 时间戳统一取 applyOps 传进来的 now。
 
 /** 胶囊成员:去重后逐个对着 items 校验,不存在的 ID 拒收,避免胶囊挂上空引用。 */
 function capsuleMembers(state, rawIds) {
@@ -167,19 +156,20 @@ const handlers = {
       const scale = 1 + (n % 6) * 0.2
       item.pos = { x: Math.round(Math.cos(n * 2.39996) * 580 * scale), y: Math.round(Math.sin(n * 2.39996) * 340 * scale), r: ((n % 5) - 2) * 1.2 }
     }
-    if (item.scheduledAt) applySchedule(item, item.scheduledAt)
-    if (item.status === 'published') applyStatus(item, 'published')
+    // 先落库再经 reducer 迁移状态元组(工单 #5):带排期的新灵感直接进排期流程,发布的记下时间
     state.items.unshift(item)
+    if (item.scheduledAt) reduce(state, { type: 'schedule', id: item.id, scheduledAt: item.scheduledAt, at: now })
+    if (item.status === 'published') reduce(state, { type: 'setStatus', id: item.id, status: 'published', at: now })
     return { text: tr('记下灵感《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
-  update_item(state, op) {
+  update_item(state, op, now) {
     const item = findById(state.items, op.id)
     const { status, scheduledAt, ...fields } = pick(ITEM_FIELDS, op)
     Object.assign(item, fields)
     // 标签是手动分类:每写一次就前进一版,批量改标签的乐观锁靠它发现"预览之后又手动改过"
     if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
-    if (scheduledAt !== undefined) applySchedule(item, scheduledAt)
-    if (status !== undefined) applyStatus(item, status)
+    if (scheduledAt !== undefined) reduce(state, scheduledAt ? { type: 'schedule', id: item.id, scheduledAt, at: now } : { type: 'unschedule', id: item.id, at: now })
+    if (status !== undefined) reduce(state, { type: 'setStatus', id: item.id, status, at: now })
     const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])].filter(key => key !== 'pos')
     return names.length ? { text: tr('更新《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' } : null
   },
@@ -194,20 +184,20 @@ const handlers = {
       .filter(capsule => capsule.itemIds.length > 0)
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
-  schedule_item(state, op) {
+  schedule_item(state, op, now) {
     const item = findById(state.items, op.id)
     const when = coerce('date', op.scheduledAt)
     if (when === undefined) throw new Error(tr('排期时间无效'))
     const platform = coerce('platform', op.platform)
     if (platform !== undefined) item.platform = platform
-    applySchedule(item, when)
+    reduce(state, when ? { type: 'schedule', id: item.id, scheduledAt: when, at: now } : { type: 'unschedule', id: item.id, at: now })
     return { text: when ? tr('把《{title}》排到 {when}', { title: short(item.title), when: fmtWhen(when) }) + (item.platform ? ` · ${platformName(item.platform)}` : '') : tr('取消《{title}》的排期', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
-  set_status(state, op) {
+  set_status(state, op, now) {
     const item = findById(state.items, op.id)
     const status = coerce('status', op.status)
     if (!status) throw new Error(tr('状态无效'))
-    applyStatus(item, status)
+    reduce(state, { type: 'setStatus', id: item.id, status, at: now })
     return { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
   },
   save_draft(state, op, now) {
@@ -216,7 +206,8 @@ const handlers = {
     if (typeof op.text !== 'string') throw new Error(tr('草稿内容无效'))
     const previous = item.drafts?.[format]
     item.drafts = { ...item.drafts, [format]: { text: op.text.slice(0, 200000), by: op.by === 'ai' ? 'ai' : 'user', engine: typeof op.engine === 'string' ? op.engine : undefined, at: now, aiText: op.by === 'ai' ? op.text : previous?.aiText } }
-    if (['idea', 'outline'].includes(item.status)) item.status = 'draft'
+    // 写了稿就不再是灵感档:状态推进同样经 reducer,排期里的照事实对齐回待发布
+    if (['idea', 'outline'].includes(item.status)) reduce(state, { type: 'setStatus', id: item.id, status: 'draft', at: now })
     return { text: tr(format === 'script' ? '保存《{title}》的脚本' : '保存《{title}》的文章', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   update_production(state, op) {

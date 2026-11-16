@@ -187,6 +187,17 @@ test('没成稿的排上日历算大纲,不会冒充待发布', () => {
   assert.equal(isScheduled(plain), true)
 })
 
+test('取消排期:没成稿的大纲退回灵感(沿用旧 applySchedule 的推演)', () => {
+  const planned = item({ status: 'outline', scheduledAt: '2026-12-01T10:00:00.000Z' })
+  run(planned, { type: 'unschedule' })
+  assert.equal(planned.scheduledAt, null)
+  assert.equal(planned.status, 'idea')
+  // 已成稿的取消排期留草稿,不退灵感
+  const wrote = item({ status: 'ready', scheduledAt: '2026-12-01T10:00:00.000Z', production: { status: 'done', article: '正文' } })
+  run(wrote, { type: 'unschedule' })
+  assert.equal(wrote.status, 'draft')
+})
+
 test('发布:记下发布时间,已排期谓词让位,面板说已发布', () => {
   const wrote = item({ status: 'ready', scheduledAt: '2026-12-01T10:00:00.000Z', production: { status: 'done', article: '正文' } })
   run(wrote, { type: 'publish' })
