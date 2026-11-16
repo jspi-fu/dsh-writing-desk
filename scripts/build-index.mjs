@@ -1,5 +1,5 @@
 // 生成 index.json：插件市场索引，地址是
-// https://raw.githubusercontent.com/woniuniuniu/dsh-media-desk/main/index.json
+// https://raw.githubusercontent.com/jspi-fu/dsh-writing-desk/main/index.json
 //
 // 展示文案沿用 index.json 里已经写好的部分，只把列出的版本和发布时间换成 npm 上的最新发布。
 // 写文件前用 DSH 自己的校验器过一遍：不合规就报错退出，不让坏索引发出去。
@@ -10,7 +10,7 @@ import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { parseMarketIndex } from '@deepseek-ai/dsh-plugin-market-index'
 import { latestMarketVersion, reconcileDistTags } from './index-entry.mjs'
 
-const INDEX_URL = 'https://raw.githubusercontent.com/woniuniuniu/dsh-media-desk/main/index.json'
+const INDEX_URL = 'https://raw.githubusercontent.com/jspi-fu/dsh-writing-desk/main/index.json'
 const root = new URL('..', import.meta.url)
 const indexPath = new URL('index.json', root)
 const manifest = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'))

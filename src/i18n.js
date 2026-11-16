@@ -34,7 +34,7 @@ export function tr(zh, vars) {
 export const ENGLISH_DIRECTIVE = [
   '',
   '## Output language',
-  'The user works in English. Write every human-readable value (titles, cover text, scripts, outlines, captions, storyboard lines, voice-over, style cards, rules, chat replies) in natural, fluent English, even if the instructions above or the material are in Chinese.',
+  'The user works in English. Write every human-readable value (titles, cover text, scripts, outlines, captions, storyboard lines, voice-over, style cards, rules) in natural, fluent English, even if the instructions above or the material are in Chinese.',
   'Keep JSON keys, op names, ids, enum values and platform names exactly as specified above.',
   'Where a length limit is given in Chinese characters (字), treat it as about half as many English words.',
 ].join('\n')

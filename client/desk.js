@@ -3,12 +3,12 @@ import React from 'react'
 import { coverDataUrl } from './cover.js'
 import { lang, plural, setLanguagePreference, t } from './i18n.js'
 
-const BASE = 'media-desk/'
+const BASE = 'writing-desk/'
 
 let snapshot = {
-  state: null, model: null, modelOk: null, modelError: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, dockOpen: true, studioDock: false, chatQuote: null, query: '', kindFilter: 'all', related: null,
-  live: {}, settings: null, settingsOpen: false, modelPickOpen: false, thinking: false, toast: null, capture: null, dialog: null,
+  state: null, canUndo: false, error: null,
+  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, query: '', kindFilter: 'all', related: null,
+  live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
 const listeners = new Set()
 
@@ -31,8 +31,8 @@ export function useDesk(selector) {
 }
 
 async function request(path, body) {
-  const res = await fetch(BASE + path, body === undefined ? { headers: { 'x-media-desk-lang': lang() } } : {
-    method: 'POST', headers: { 'content-type': 'application/json', 'x-media-desk-lang': lang() }, body: JSON.stringify(body),
+  const res = await fetch(BASE + path, body === undefined ? { headers: { 'x-writing-desk-lang': lang() } } : {
+    method: 'POST', headers: { 'content-type': 'application/json', 'x-writing-desk-lang': lang() }, body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || t('请求失败（{status}）', { status: res.status }))
@@ -56,7 +56,7 @@ export async function loadDesk() {
     const settings = await request('settings')
     setLanguagePreference(settings.language)
     const data = await request('state')
-    setDesk({ settings, state: data.state, model: data.model, modelOk: data.modelOk, modelError: data.modelError, canUndo: data.canUndo, error: null })
+    setDesk({ settings, state: data.state, canUndo: data.canUndo, error: null })
   } catch (err) {
     setDesk({ error: err.message })
   }
@@ -90,7 +90,7 @@ export function openItem(id, origin = null) {
 }
 
 export function closeItem() {
-  setDesk({ focusId: null, sheetOrigin: null, studioDock: false, chatQuote: null })
+  setDesk({ focusId: null, sheetOrigin: null })
 }
 
 /** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度。 */
@@ -157,23 +157,6 @@ export async function saveSettings(payload) {
   }
 }
 
-export async function fetchModels() {
-  return request('models')
-}
-
-/** 切换助手模型；两个字段都空表示跟随默认。 */
-export async function saveAssistant(assistant) {
-  try {
-    const settings = await request('settings', { assistant })
-    setDesk({ settings, model: settings.assistantEffective ?? snapshot.model })
-    toast(t('助手模型已切换'))
-    return true
-  } catch (err) {
-    report(err)
-    return false
-  }
-}
-
 export async function testImage(payload) {
   try {
     const settings = await request('settings', payload)
@@ -184,38 +167,6 @@ export async function testImage(payload) {
   } catch (err) {
     report(err)
     return null
-  }
-}
-
-function runActions(actions) {
-  for (const action of actions) {
-    if (action.type === 'produce' && action.id) {
-      openItem(action.id)
-      runProduce(action.id)
-    }
-    if (action.type === 'open' && action.id) openItem(action.id)
-    if (action.type === 'nav' && action.view) setDesk({ view: action.view })
-  }
-}
-
-export async function sendChat(text) {
-  const { chatQuote: quote, focusId } = snapshot
-  // 选中的段落或某一镜，随消息一起交给模型
-  const message = quote ? (quote.text ? t('关于{label}「{quote}」：{text}', { label: quote.label, quote: quote.text, text }) : t('关于{label}：{text}', { label: quote.label, text })) : text
-  setDesk(s => ({
-    thinking: true,
-    chatQuote: null,
-    state: { ...s.state, chat: [...s.state.chat, { id: `tmp_${Date.now()}`, role: 'user', text: message, itemId: focusId ?? undefined }] },
-  }))
-  try {
-    const data = await request('chat', { message, focusId: focusId ?? undefined })
-    setDesk({ state: data.state, canUndo: true, modelOk: data.modelOk, modelError: data.modelError })
-    runActions(data.actions || [])
-  } catch (err) {
-    report(err)
-    await loadDesk()
-  } finally {
-    setDesk({ thinking: false })
   }
 }
 
@@ -240,15 +191,6 @@ export async function revealSaved(id) {
   }
 }
 
-export async function clearChat() {
-  try {
-    const data = await request('chat/clear', {})
-    setDesk({ state: data.state })
-  } catch (err) {
-    report(err)
-  }
-}
-
 export async function captureUrl(url, extra = {}) {
   try {
     const data = await request('capture-url', { url, ...extra })
@@ -262,7 +204,7 @@ export async function captureUrl(url, extra = {}) {
 }
 
 export async function uploadFile(file) {
-  const res = await fetch(`${BASE}upload`, { method: 'POST', headers: { 'content-type': file.type, 'x-media-desk-lang': lang() }, body: file })
+  const res = await fetch(`${BASE}upload`, { method: 'POST', headers: { 'content-type': file.type, 'x-writing-desk-lang': lang() }, body: file })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || t('上传失败'))
   return data

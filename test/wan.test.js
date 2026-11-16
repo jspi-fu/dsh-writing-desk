@@ -72,7 +72,7 @@ test('万相：任务失败、过期、缺少 task_id 都有明确提示', async
 })
 
 test('设置：protocol 支持 wan，完整提交地址归一，无效协议拒绝', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-wan-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-wan-'))
   try {
     const settings = new Settings(dir)
     const saved = await settings.update({ image: { protocol: 'wan', baseUrl: `${SUBMIT}/`, model: 'wan2.5-t2i-preview', apiKey: KEY } })

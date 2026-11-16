@@ -60,81 +60,6 @@ function fullPrompt(production, target, asset) {
   return shotPrompt(asset.prompt || asset.visual, production.characters)
 }
 
-/**
- * 把对话里的修改落到成稿上。模型输出不可信：只认这几个字段，序号越界的直接丢弃。
- * @param {object} production - 成稿，会被就地修改。
- * @param {object} revise - 模型给出的修改。
- * @param {{canDraw?: boolean}} [options] - 没接生图时，回执只说更新了画面描述。
- * @returns {{receipts: string[], errors: string[], targets: string[]}} 回执和需要重画的图。
- */
-export function applyRevision(production, revise, { canDraw = true } = {}) {
-  const receipts = []
-  const errors = []
-  const targets = []
-  const redraw = what => (canDraw ? tr('重画{what}', { what }) : tr('更新了画面描述：{what}（接入生图模型后才会重画）', { what }))
-  const text = (value, max) => (typeof value === 'string' ? value.trim().slice(0, max) : '')
-  const title = text(revise?.title, 80)
-  if (title && title !== production.title) {
-    production.title = title
-    receipts.push(tr('标题改成《{title}》', { title }))
-  }
-  const coverText = text(revise?.coverText, 24)
-  if (coverText && coverText !== production.coverText) {
-    production.coverText = coverText
-    receipts.push(tr('封面大字改成「{text}」', { text: coverText }))
-  }
-  if (typeof revise?.article === 'string' && revise.article.trim()) {
-    production.article = revise.article.replace(/^\s*#\s+.*\n?/, '').trim().slice(0, 200000)
-    receipts.push(tr('重写了脚本'))
-  } else if (Array.isArray(revise?.edits)) {
-    let changed = 0
-    for (const edit of revise.edits.slice(0, 20)) {
-      if (typeof edit?.find !== 'string' || typeof edit?.replace !== 'string' || !edit.find) continue
-      if (production.article.includes(edit.find)) {
-        production.article = production.article.replace(edit.find, () => edit.replace)
-        changed += 1
-      } else {
-        errors.push(tr('脚本里没找到「{text}」', { text: edit.find.slice(0, 16) }))
-      }
-    }
-    if (changed) receipts.push(tr(changed === 1 ? '改了脚本的 1 处' : '改了脚本的 {n} 处', { n: changed }))
-  }
-  const coverPrompt = text(revise?.cover?.prompt, 1200)
-  if (coverPrompt && production.cover) {
-    production.cover.prompt = coverPrompt
-    targets.push('cover')
-    receipts.push(redraw(tr('封面')))
-  }
-  for (const row of Array.isArray(revise?.images) ? revise.images.slice(0, 8) : []) {
-    const image = production.images?.[Number(row?.no) - 1]
-    if (!image) continue
-    const caption = text(row.caption, 40)
-    if (caption) image.caption = caption
-    const prompt = text(row.prompt, 1200)
-    if (prompt) {
-      image.prompt = prompt
-      targets.push(`image:${Number(row.no) - 1}`)
-    }
-    receipts.push(prompt ? redraw(tr('配图 {no}', { no: row.no })) : tr('改了配图 {no} 的图注', { no: row.no }))
-  }
-  for (const row of Array.isArray(revise?.shots) ? revise.shots.slice(0, 24) : []) {
-    const shot = production.shots?.[Number(row?.no) - 1]
-    if (!shot) continue
-    for (const [key, max] of [['shot', 12], ['visual', 200], ['voice', 200]]) {
-      const value = text(row[key], max)
-      if (value) shot[key] = value
-    }
-    if (Number.isFinite(row.seconds)) shot.seconds = Math.max(1, Math.min(60, Math.round(row.seconds)))
-    const prompt = text(row.prompt, 1200)
-    if (prompt) {
-      shot.prompt = prompt
-      targets.push(`shot:${Number(row.no) - 1}`)
-    }
-    receipts.push(prompt ? redraw(tr('第 {no} 镜', { no: row.no })) : tr('改了第 {no} 镜的文案', { no: row.no }))
-  }
-  return { receipts, errors, targets }
-}
-
 export class Producer {
   /**
    * @param {{store: object, settings: object, callText: Function, generate: Function, ready?: Function}} deps - 存储、设置、文本模型和生图函数。
@@ -342,7 +267,7 @@ export class Producer {
         const asset = assetAt(production, target)
         if (!asset) return
         asset.status = 'done'
-        asset.src = `media-desk/files/${name}`
+        asset.src = `writing-desk/files/${name}`
       })
     } catch (err) {
       if (signal?.aborted) return

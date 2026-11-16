@@ -17,23 +17,6 @@ function answer(system, user) {
   if (system.includes('策划案')) {
     return JSON.stringify({ title: '慢一点，也算到达', coverText: '慢，也算到达', facts: ['差点迟到 3 分钟'], outline: ['第一部分', '结尾'], cover: 'A lone commuter on an empty subway platform at dawn, soft golden light', characters: 'a young man in a grey jacket with a canvas backpack', images: [{ anchor: '第一部分', caption: '站台上的早晨', prompt: 'Morning light on a subway platform, one figure waiting' }, { anchor: '结尾', caption: '抬头那一刻', prompt: 'A person looks up at a billboard with quiet wonder' }], shots: [['特写', '广告牌上的一行字', '慢一点也算到达。', 'Close-up of a blank billboard corner'], ['中景', '他停下脚步抬头', '那天我差点迟到。', 'Medium shot from behind, man stops and looks up'], ['全景', '人潮从他身边涌过', '所有人都在赶路。', 'Wide shot, crowd rushing past a still man'], ['近景', '他笑了一下', '我忽然不急了。', 'Close shot of the man smiling faintly'], ['俯拍', '站台上的人流', '慢下来才看见路。', 'Top-down view of commuters on a platform'], ['中景', '他走上楼梯进入阳光', '你今天慢下来了吗？', 'Medium shot, man climbing stairs into sunlight']].map(([shot, visual, voice, prompt]) => ({ shot, visual, voice, seconds: 5, prompt })) })
   }
-  if (system.includes('只输出一个 JSON 对象')) {
-    const said = user.slice(user.lastIndexOf('用户说：') + 4)
-    const focus = /focusId: (\S+)/.exec(user)?.[1]
-    if (user.includes('<production>')) {
-      return JSON.stringify({ reply: '标题改短了，第一个要点也换了说法，第 3 镜重画成俯拍。', ops: [], revise: { title: '慢一点，也算到', edits: [{ find: '要点一', replace: '第一点：先停下来' }], shots: [{ no: 3, shot: '俯拍', voice: '所有人都在赶路，只有他停住了。', prompt: 'Top-down view of a crowd flowing around one still man' }] } })
-    }
-    if (said.includes('排查错误')) return '这不是 JSON'
-    if (said.includes('写成脚本') && focus !== 'null') return JSON.stringify({ reply: '开始写脚本。', ops: [], actions: [{ type: 'draft', id: focus, format: 'script' }] })
-    return JSON.stringify({
-      reply: '已经帮你补全成一个选题，并放进灵感墙。',
-      ops: [
-        { op: 'add_item', kind: 'note', title: `补全后的选题：${said.slice(0, 16)}`, body: '模型补全的说明。', tags: ['模拟'], status: 'idea' },
-        { op: 'add_skill', name: '模拟规则', rule: '标题不超过 20 字', source: '对话', status: 'proposed', confidence: 0.6 },
-        { op: 'delete_item', id: 'not-a-real-id' },
-      ],
-    })
-  }
   return '# 模型写的标题\n\n那天早上我差点迟到，3 分钟后的地铁，我却停在了一块广告牌前。\n\n## 第一部分\n\n广告牌上只有一句话。这是流式写出的正文，用来验证打字效果，正式内容由真实模型生成。\n\n- 要点一\n- 要点二\n\n<script>window.__xss = 1</script>\n\n## 结尾\n\n只留一个行动：今天慢下来一次。\n'
 }
 

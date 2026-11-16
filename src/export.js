@@ -7,10 +7,10 @@ import { extname, join } from 'node:path'
 import { currentLang, tr } from './i18n.js'
 
 export function defaultExportDir() {
-  // 已经有中文文件夹的老用户切到英文后继续用原来的文件夹
-  const zh = join(homedir(), 'Documents', '自媒体工作台')
+  // 已经有中文文件夹的用户切到英文后继续用原来的文件夹
+  const zh = join(homedir(), 'Documents', '图文创作台')
   if (currentLang() !== 'en' || existsSync(zh)) return zh
-  return join(homedir(), 'Documents', 'Media Desk')
+  return join(homedir(), 'Documents', 'Writing Desk')
 }
 
 export function resolveExportDir(value) {
@@ -78,7 +78,7 @@ export async function saveProduction(production, { filesDir, exportDir, videoCov
   }
 
   const copy = async (asset, name) => {
-    const match = /^media-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
+    const match = /^writing-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
     if (!match) return null
     const file = `${name}${extname(match[1])}`
     await copyFile(join(filesDir, match[1]), join(target, file))

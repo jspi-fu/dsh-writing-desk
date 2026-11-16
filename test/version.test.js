@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createVersionCheck, currentVersion, isNewerRelease, parseVersion } from '../src/version.js'
 
-const NPM = 'https://registry.npmjs.org/dsh-media-desk/latest'
-const MIRROR = 'https://registry.npmmirror.com/dsh-media-desk/latest'
+const NPM = 'https://registry.npmjs.org/dsh-writing-desk/latest'
+const MIRROR = 'https://registry.npmmirror.com/dsh-writing-desk/latest'
 
 function fakeFetch(answers) {
   const calls = []

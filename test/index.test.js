@@ -4,26 +4,26 @@ import { test } from 'node:test'
 import { marketInstallTarget, parseMarketIndex } from '@deepseek-ai/dsh-plugin-market-index'
 import { latestMarketVersion, reconcileDistTags } from '../scripts/index-entry.mjs'
 
-const INDEX_URL = 'https://raw.githubusercontent.com/woniuniuniu/dsh-media-desk/main/index.json'
+const INDEX_URL = 'https://raw.githubusercontent.com/jspi-fu/dsh-writing-desk/main/index.json'
 
 const doc = (overrides = {}) => ({
   'dist-tags': { latest: '2.6.2' },
   time: { '2.6.2': '2026-11-08T04:13:33.815Z' },
   versions: {
-    '2.6.2': { name: 'dsh-media-desk', version: '2.6.2', engines: { dsh: '>=0.2.1-rc.5 <0.3.0' } },
+    '2.6.2': { name: 'dsh-writing-desk', version: '2.6.2', engines: { dsh: '>=0.2.1-rc.5 <0.3.0' } },
   },
   ...overrides,
 })
 
-test('index.json：官方校验器接受，安装地址指向 npm 上的 dsh-media-desk', () => {
+test('index.json：官方校验器接受，安装地址指向 npm 上的 dsh-writing-desk', () => {
   const index = JSON.parse(readFileSync(new URL('../index.json', import.meta.url), 'utf8'))
   const parsed = parseMarketIndex(index, INDEX_URL)
   assert.equal(parsed.plugins.length, 1)
   const [plugin] = parsed.plugins
-  assert.equal(plugin.name, 'dsh-media-desk')
+  assert.equal(plugin.name, 'dsh-writing-desk')
   const [version] = plugin.versions
   // 版本号每次发版都会变，这里只认格式
-  assert.match(marketInstallTarget(plugin.name, version).spec, /^dsh-media-desk@\d+\.\d+\.\d+$/)
+  assert.match(marketInstallTarget(plugin.name, version).spec, /^dsh-writing-desk@\d+\.\d+\.\d+$/)
 })
 
 test('index.json：列表里的版本和 engines 与 package.json 一致', () => {
@@ -52,7 +52,7 @@ test('latestMarketVersion：最新版不在 versions 里就报错', () => {
 })
 
 test('latestMarketVersion：发布版没有 engines.dsh 就报错', () => {
-  const broken = doc({ versions: { '2.6.2': { name: 'dsh-media-desk', version: '2.6.2' } } })
+  const broken = doc({ versions: { '2.6.2': { name: 'dsh-writing-desk', version: '2.6.2' } } })
   assert.throws(() => latestMarketVersion(broken), /engines\.dsh/)
 })
 
@@ -64,10 +64,10 @@ test('latestMarketVersion：发布时间缺失或读不出就报错', () => {
 test('官方校验器：engines.dsh 不是 SemVer 区间时整份索引被拒', () => {
   const index = {
     format: 1,
-    title: { en: 'Media Desk', zh: '自媒体工作台' },
+    title: { en: 'Writing Desk', zh: '图文创作台' },
     metadata: {},
     plugins: [{
-      name: 'dsh-media-desk',
+      name: 'dsh-writing-desk',
       metadata: {},
       versions: [{ version: '2.6.2', publishTimestamp: 1794111213, source: { type: 'npm' }, engines: { dsh: 'not a range at all' } }],
     }],
@@ -78,10 +78,10 @@ test('官方校验器：engines.dsh 不是 SemVer 区间时整份索引被拒', 
 test('官方校验器：分类没在 metadata 里声明时整份索引被拒', () => {
   const index = {
     format: 1,
-    title: 'Media Desk',
+    title: 'Writing Desk',
     metadata: {},
     plugins: [{
-      name: 'dsh-media-desk',
+      name: 'dsh-writing-desk',
       metadata: { category: 'content-creation' },
       versions: [{ version: '2.6.2', publishTimestamp: 1794111213, source: { type: 'npm' }, engines: { dsh: '>=0.2.1-rc.5 <0.3.0' } }],
     }],

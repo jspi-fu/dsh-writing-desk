@@ -1,4 +1,4 @@
-// 持久化：$DSH_HOME/media-desk/state.json。桌面端和 Web 端读同一份数据。
+// 持久化：$DSH_HOME/writing-desk/state.json。桌面端和 Web 端读同一份数据。
 // 两个 Host 进程可能同时运行，所以每次写入前都按 mtime 判断是否需要重读。
 import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -30,7 +30,7 @@ function revertList(before, after, current) {
 
 /**
  * 三方合并式撤销：只撤回这一步改过、之后又没被别的操作改动的部分。
- * 撤销「切换风格」不会抹掉之后生成的成稿；撤销「对话改标题」不会把之后画好的图退回去。
+ * 撤销「切换风格」不会抹掉之后生成的成稿；撤销「改标题」不会把之后画好的图退回去。
  * @param {*} before - 这一步之前的值。
  * @param {*} after - 这一步之后的值。
  * @param {*} current - 现在的值。
@@ -61,7 +61,7 @@ export function dshHome(env = process.env) {
 }
 
 export class Store {
-  constructor(root = join(dshHome(), 'media-desk')) {
+  constructor(root = join(dshHome(), 'writing-desk')) {
     this.root = root
     this.file = join(root, 'state.json')
     this.filesDir = join(root, 'files')

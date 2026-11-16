@@ -9,15 +9,13 @@ import { activeStyle, normalizeStyle, stylePrompts, styleToVoice } from '../src/
 import { articlePrompts, planPrompts } from '../src/ai.js'
 import { migrateState } from '../src/seed.js'
 import { requestRejection } from '../src/host.js'
-import { localIntent, parseWhen } from '../src/intents.js'
 import { computeInsights, exportSkill, proposeRules } from '../src/learn.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import { generateImage } from '../src/images.js'
-import { applyRevision, normalizePlan, Producer } from '../src/produce.js'
+import { normalizePlan, Producer } from '../src/produce.js'
 import { saveProduction, resolveExportDir } from '../src/export.js'
-import { chatPrompts } from '../src/ai.js'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { publicSettings, Settings } from '../src/settings.js'
 import { stat } from 'node:fs/promises'
@@ -27,49 +25,6 @@ const NOW = new Date('2026-10-31T15:00:00+08:00') // 周六
 function seed() {
   return buildSeed(NOW)
 }
-
-test('parseWhen 解析常见中文时间', () => {
-  const at = (text) => {
-    const d = parseWhen(text, NOW)
-    return d && [d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]
-  }
-  assert.deepEqual(at('明晚8点'), [11, 1, 20, 0])
-  assert.deepEqual(at('后天上午九点半'), [11, 2, 9, 30])
-  assert.deepEqual(at('11月3日 20:00'), [11, 3, 20, 0])
-  assert.deepEqual(at('下周三'), [11, 4, 20, 0])
-  assert.equal(parseWhen('没有时间的一句话', NOW), null)
-})
-
-test('localIntent 记灵感', () => {
-  const plan = localIntent(seed(), '记一下：地铁上看到的广告牌文案很好', { now: NOW })
-  assert.equal(plan.ops[0].op, 'add_item')
-  assert.match(plan.ops[0].body, /^地铁/)
-  assert.match(plan.ops[0].title, /^地铁/)
-  for (const said of ['记下：同一句话', '记：同一句话', '灵感：同一句话', '加个灵感：同一句话']) {
-    assert.equal(localIntent(seed(), said, { now: NOW }).ops[0].body, '同一句话', said)
-  }
-})
-
-test('localIntent 用书名号定位并排期', () => {
-  const state = seed()
-  const plan = localIntent(state, '把《慢写》排到明晚8点 小红书', { now: NOW })
-  const op = plan.ops[0]
-  assert.equal(op.op, 'schedule_item')
-  assert.equal(op.platform, '小红书')
-  assert.equal(state.items.find(i => i.id === op.id).title.startsWith('慢写'), true)
-})
-
-test('localIntent 找不到对象时不乱改', () => {
-  const plan = localIntent(seed(), '把《完全不存在的内容abc》排到明晚8点', { now: NOW })
-  assert.equal(plan.ops.length, 0)
-})
-
-test('localIntent 成文、脚本、分镜都走一键成稿，这篇指向当前选中', () => {
-  const state = seed()
-  for (const said of ['把这篇写成脚本', '把这篇成稿', '给这篇画分镜']) {
-    assert.deepEqual(localIntent(state, said, { now: NOW, focusId: 'seed_2' }).actions, [{ type: 'produce', id: 'seed_2' }], said)
-  }
-})
 
 test('applyOps 拒绝未知操作和原型链上的名字', () => {
   const state = seed()
@@ -109,7 +64,7 @@ test('clear_samples 清空示例但保留用户内容', () => {
 })
 
 test('Store 持久化、撤销，并能感知另一进程的写入', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-'))
   try {
     const a = new Store(dir)
     const before = (await a.read()).items.length
@@ -173,7 +128,7 @@ test('requestRejection 没有鉴权服务时拒绝，有服务时听它的', () 
 })
 
 test('exportSkill 不导出示例规则和示例人物', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-skill-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-skill-'))
   try {
     const state = seed()
     await assert.rejects(exportSkill(state, dir), /示例规则和模板不会被导出/)
@@ -181,7 +136,7 @@ test('exportSkill 不导出示例规则和示例人物', async () => {
     const result = await exportSkill(state, dir)
     assert.equal(result.rules, 1)
     const body = await readFile(result.path, 'utf8')
-    assert.match(body, /^---\nname: media-desk-voice\n/)
+    assert.match(body, /^---\nname: writing-desk-voice\n/)
     assert.match(body, /我的规则/)
     assert.doesNotMatch(body, /开头先给数字/)
     assert.doesNotMatch(body, /想入门的小林/)
@@ -251,11 +206,12 @@ test('generateImage 遇到 5xx 重试一次', async () => {
 })
 
 test('Settings 权限 600，密钥不外泄，空密钥不覆盖', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-set-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-set-'))
   try {
     const settings = new Settings(dir)
     await settings.update({ image: { baseUrl: 'https://x.example/v1/images/generations/', model: 'm', apiKey: 'sk-abcdefgh1234' }, imageCount: 99 })
-    assert.equal((await stat(join(dir, 'settings.json'))).mode & 0o777, 0o600)
+    // Windows 不暴露 Unix 权限位，chmod 后就不再校验 mode
+    if (process.platform !== 'win32') assert.equal((await stat(join(dir, 'settings.json'))).mode & 0o777, 0o600)
     const open = publicSettings(await settings.read())
     assert.equal(open.image.baseUrl, 'https://x.example/v1')
     assert.equal(open.image.keyHint, '1234')
@@ -283,7 +239,7 @@ test('normalizePlan 丢弃多余字段并按设置截断', () => {
 })
 
 async function producerFixture({ callText, generate, ready = true }) {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-prod-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-prod-'))
   const store = new Store(dir)
   await store.read()
   const settings = new Settings(dir)
@@ -323,7 +279,7 @@ test('Producer 跑完整条线：文章、规划、全部图片，语气进入�
     assert.match(p.article, /## 第一节/)
     assert.doesNotMatch(p.article, /模型标题/)
     assert.equal(p.cover.status, 'done')
-    assert.match(p.cover.src, /^media-desk\/files\/g_.+\.png$/)
+    assert.match(p.cover.src, /^writing-desk\/files\/g_.+\.png$/)
     assert.equal(p.shots.length, 2)
     assert.ok(p.shots.every(s => s.status === 'done'))
     assert.equal(item.status, 'draft')
@@ -525,47 +481,8 @@ function revisable() {
   }
 }
 
-test('applyRevision 改标题、局部替换、只重画改了画面的图', () => {
-  const p = revisable()
-  const { receipts, errors, targets } = applyRevision(p, {
-    title: '新标题', edits: [{ find: '这里要改', replace: '$& 改好了' }, { find: '不存在的句子', replace: 'x' }],
-    cover: { prompt: 'night' }, images: [{ no: 1, caption: '新图注' }], shots: [{ no: 1, voice: '新口播', prompt: 'top' }, { no: 9, prompt: '越界' }],
-  })
-  assert.equal(p.title, '新标题')
-  // replace 里的 $& 不能被当成替换语法
-  assert.match(p.article, /\$& 改好了/)
-  assert.equal(p.images[0].caption, '新图注')
-  assert.equal(p.images[0].prompt, 'i')
-  assert.equal(p.shots[0].voice, '新口播')
-  assert.deepEqual(targets, ['cover', 'shot:0'])
-  assert.equal(errors.length, 1)
-  assert.ok(receipts.length >= 4)
-})
-
-test('applyRevision 忽略垃圾输入，整篇重写时去掉一级标题', () => {
-  const p = revisable()
-  const before = JSON.stringify(p)
-  assert.deepEqual(applyRevision(p, null), { receipts: [], errors: [], targets: [] })
-  applyRevision(p, { images: 'x', shots: [null, 3], edits: [1, { find: 2 }], title: 5 })
-  assert.equal(JSON.stringify(p), before)
-  applyRevision(p, { article: '# 标题\n\n新的正文' })
-  assert.equal(p.article, '新的正文')
-})
-
-test('chatPrompts 只有成稿完成时才把成稿交给模型', () => {
-  const state = seed()
-  const item = state.items[0]
-  assert.doesNotMatch(chatPrompts(state, 'x', { focusId: item.id }).user, /<production>/)
-  item.production = { ...revisable(), article: '独特正文' }
-  const prompts = chatPrompts(state, 'x', { focusId: item.id })
-  assert.match(prompts.user, /<production>.*独特正文/)
-  assert.match(prompts.system, /revise/)
-  item.production.status = 'running'
-  assert.doesNotMatch(chatPrompts(state, 'x', { focusId: item.id }).user, /<production>/)
-})
-
 test('saveProduction 写出文章、脚本和素材，标题里的路径字符被清掉', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-save-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-save-'))
   try {
     const filesDir = join(dir, 'files')
     await mkdir(filesDir)
@@ -573,9 +490,9 @@ test('saveProduction 写出文章、脚本和素材，标题里的路径字符�
     await writeFile(join(filesDir, 'b.jpg'), PNG)
     const p = revisable()
     p.title = '../危险/标题: 测试'
-    p.cover.src = 'media-desk/files/a.jpg'
-    p.images[0].src = 'media-desk/files/b.jpg'
-    p.shots[0].src = 'media-desk/assets/../../secret.jpg'
+    p.cover.src = 'writing-desk/files/a.jpg'
+    p.images[0].src = 'writing-desk/files/b.jpg'
+    p.shots[0].src = 'writing-desk/assets/../../secret.jpg'
     p.shots[0].voice = '带|竖线'
     const saved = await saveProduction(p, { filesDir, exportDir: join(dir, 'out'), videoCover: Buffer.from([0xff, 0xd8, 0xff]) })
     assert.equal(saved.path, join(dir, 'out', '危险 标题 测试'))
@@ -594,7 +511,7 @@ test('saveProduction 写出文章、脚本和素材，标题里的路径字符�
 })
 
 test('resolveExportDir 展开 ~，空值用默认位置', () => {
-  assert.match(resolveExportDir(''), /Documents\/自媒体工作台$/)
+  assert.match(resolveExportDir('').replace(/\\/g, '/'), /Documents\/图文创作台$/)
   assert.ok(!resolveExportDir('~/x').startsWith('~'))
   assert.equal(resolveExportDir('/tmp/x'), '/tmp/x')
 })
@@ -680,13 +597,6 @@ test('harvestText 抽出正文，去掉脚本和导航', async () => {
   assert.match(text, /第二段&正文/)
   assert.doesNotMatch(text, /导航|var a/)
   await assert.rejects(harvestText('http://127.0.0.1/x'), /本机|内网/)
-})
-
-test('applyRevision 能改封面大字', () => {
-  const p = revisable()
-  const { receipts } = applyRevision(p, { coverText: '新大字' })
-  assert.equal(p.coverText, '新大字')
-  assert.match(receipts[0], /新大字/)
 })
 
 test('提炼风格时，用户起的名字优先于模型起的名字', async () => {
@@ -870,10 +780,10 @@ test('Monid：封面存到本地，内网地址、非图片和已有封面都跳
     { id: 'none', cover: null },
     { id: 'known', cover: 'https://93.184.216.34/known.png' },
   ]
-  const state = { items: [{ externalId: '抖音:known', media: { src: 'media-desk/files/x.png' } }] }
+  const state = { items: [{ externalId: '抖音:known', media: { src: 'writing-desk/files/x.png' } }] }
   const saved = await saveCovers(posts, '抖音', state, dir, fake)
   assert.deepEqual([...saved.keys()], ['ok'])
-  assert.match(saved.get('ok'), /^media-desk\/files\/c_[\w]+\.png$/)
+  assert.match(saved.get('ok'), /^writing-desk\/files\/c_[\w]+\.png$/)
   assert.equal(requested.some(url => url.includes('127.0.0.1') || url.includes('known')), false)
   assert.equal((await readdir(dir)).length, 1)
   await rm(dir, { recursive: true })
@@ -891,7 +801,7 @@ test('排期：排上日历就是待发布，取消排期退回草稿，已发�
   assert.equal(done.status, 'draft')
   applyOps(state, [{ op: 'update_item', id: doneR.target, status: 'published' }, { op: 'schedule_item', id: doneR.target, scheduledAt: null }])
   assert.equal(done.status, 'published')
-  const [media] = applyOps(state, [{ op: 'add_item', kind: 'image', media: { src: 'media-desk/files/x.png' } }]).receipts
+  const [media] = applyOps(state, [{ op: 'add_item', kind: 'image', media: { src: 'writing-desk/files/x.png' } }]).receipts
   assert.match(state.items.find(row => row.id === media.target).title, /的图片$/)
 })
 

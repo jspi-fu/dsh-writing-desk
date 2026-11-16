@@ -171,7 +171,7 @@ export function StyleView() {
           <ul>
             {proposed.map(rule)}
             {rules.map(rule)}
-            {!proposed.length && !rules.length ? <li className="md-muted md-rule-empty">{t('在对话里说「以后标题都不要超过 20 个字」，这里就会多一条。')}</li> : null}
+            {!proposed.length && !rules.length ? <li className="md-muted md-rule-empty">{t('点「从数据中学习」，就会从你的内容里提炼出规则；也可以导出成 Skill 给 DeepSeek Harness 用。')}</li> : null}
           </ul>
         </section>
       </div>

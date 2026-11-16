@@ -1,6 +1,5 @@
-// 点开灵感后的工作区：左边对话，右边是一张稿面。稿面的格子一开始就排好，同时开工，一点点长满。
+// 点开灵感后的工作区：顶部是这条灵感和成稿入口，下面是一张稿面。格子一开始就排好，同时开工，一点点长满。
 import React from 'react'
-import { ChatPanel } from './chat.jsx'
 import { downloadCover } from './cover.js'
 import { cancelProduce, closeItem, dispatchOps, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
@@ -33,10 +32,6 @@ function AutoText({ value, onCommit, className, label, disabled }) {
   )
 }
 
-function askAbout(label, text = '') {
-  setDesk({ chatQuote: { label, text }, studioDock: true })
-}
-
 /** 一张图。空的时候只有底色和淡淡的记号，不放文字。 */
 function Plate({ asset, paper = false, mark = null, alt = '', onOpen, onRetry }) {
   const status = asset?.status ?? 'idle'
@@ -51,7 +46,7 @@ function Plate({ asset, paper = false, mark = null, alt = '', onOpen, onRetry })
   )
 }
 
-/** 进度：放在对话栏里，像助手在汇报。 */
+/** 进度：成稿时逐步显示已经完成的步骤。 */
 function ProgressCard({ production, live, settings }) {
   const running = production.status === 'running'
   const ready = settings?.imageReady && production.withImages !== false
@@ -103,7 +98,7 @@ const FORMAT_OPTIONS = [
   { id: 'article', label: '文章', hint: '文章：一个一个自然段' },
 ]
 
-/** 对话栏顶部：这条灵感，以及唯一的入口。 */
+/** 这条灵感的标题、体裁、风格与成稿入口。 */
 function IdeaCard({ item, live, settings }) {
   const production = item.production
   const running = production?.status === 'running'
@@ -295,7 +290,6 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
   const running = production?.status === 'running'
   const scroller = React.useRef(null)
   const [editing, setEditing] = React.useState(false)
-  const [picked, setPicked] = React.useState(null)
   const article = production?.article ?? ''
   const [draft, setDraft] = React.useState(article)
   React.useEffect(() => setDraft(article), [article])
@@ -315,18 +309,6 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
   const copy = async () => {
     await navigator.clipboard.writeText(`# ${production?.title || item.title}\n\n${article}`)
     toast(production?.format === 'article' ? t('文章已复制') : t('脚本已复制'))
-  }
-  // 选中一段，交给助手改
-  const onMouseUp = () => {
-    const selection = window.getSelection()
-    const value = selection?.toString().trim()
-    if (!value || value.length < 4 || !article || !scroller.current?.contains(selection.anchorNode)) {
-      setPicked(null)
-      return
-    }
-    const rect = selection.getRangeAt(0).getBoundingClientRect()
-    const box = tileRef.current.getBoundingClientRect()
-    setPicked({ text: value, x: Math.max(70, Math.min(rect.left - box.left + rect.width / 2, box.width - 70)), y: rect.top - box.top })
   }
   const words = textLength(text)
   // 正在写和写好的稿子看它自己的体裁；还没写的看当前选的
@@ -351,20 +333,13 @@ function ArticleTile({ item, live, open, onToggle, onView, tileRef }) {
       {editing ? (
         <textarea className="md-article-edit" aria-label={name} value={draft} onChange={e => setDraft(e.target.value)} onBlur={save} />
       ) : text ? (
-        <div className="md-article-scroll" ref={scroller} onMouseUp={onMouseUp} onScroll={() => setPicked(null)}>
+        <div className="md-article-scroll" ref={scroller}>
           <h1 className="md-article-title">{heading}</h1>
           {open ? <ArticleBody production={production} text={text} onView={onView} proseClass={proseClass} /> : <div className={proseClass} dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />}
         </div>
       ) : (
         <div className={`md-skeleton ${running ? '' : 'is-still'}`} aria-hidden="true">{Array.from({ length: 12 }, (_, i) => <i key={i} />)}</div>
       )}
-      {picked ? (
-        <button type="button" className="md-pick" style={{ left: picked.x, top: picked.y }} onMouseDown={e => e.preventDefault()} onClick={() => {
-          askAbout(t('这段'), picked.text)
-          setPicked(null)
-          window.getSelection()?.removeAllRanges()
-        }}><Icon name="chat" size={12} />{t('让助手改这段')}</button>
-      ) : null}
       {words && streaming ? <span className="md-tile-foot">{t('{n} 字', { n: words, s: plural(words, '', 's') })}</span> : null}
     </>
   )
@@ -418,7 +393,7 @@ function assetList(production) {
   ]
 }
 
-/** 查看大图：左右键切换，可以重画、下载，或者让助手改。 */
+/** 查看大图：左右键切换，可以重画、下载。 */
 function Viewer({ item, target, onChange, onClose }) {
   const imageReady = useDesk(s => s.settings?.imageReady)
   const list = assetList(item.production).filter(row => row.asset?.src || isBusy(row.asset))
@@ -453,7 +428,6 @@ function Viewer({ item, target, onChange, onClose }) {
           <div className="md-viewer-text"><b>{current.label}</b>{current.note ? <span>{current.note}</span> : null}</div>
           <IconButton icon="chevL" label={t('上一张')} disabled={!list[index - 1]} onClick={() => list[index - 1] && onChange(list[index - 1].target)} />
           <IconButton icon="chevR" label={t('下一张')} disabled={!list[index + 1]} onClick={() => list[index + 1] && onChange(list[index + 1].target)} />
-          <button type="button" className="md-pill" onClick={() => { askAbout(current.label); onClose() }}><Icon name="chat" size={13} />{t('让助手改')}</button>
           {imageReady ? <button type="button" className="md-pill" disabled={isBusy(current.asset)} onClick={() => regenAsset(item.id, current.target)}><Icon name="refresh" size={13} />{t('重画')}</button> : null}
           {current.asset.src ? <a className="md-pill" href={current.asset.src} download><Icon name="save" size={13} />{t('下载')}</a> : null}
           <IconButton icon="close" label={t('关闭')} onClick={onClose} />
@@ -526,6 +500,7 @@ function Sheet({ item, live }) {
   return (
     <div className="md-sheet">
       <div className={`md-bento ${open ? 'has-open' : ''}`} ref={bento}>
+        <section className="md-tile md-tile-idea"><IdeaCard item={item} live={live} settings={settings} /></section>
         <HeroTile item={item} live={live} onView={setViewing} />
         <section {...tile('article')}>
           <ArticleTile item={item} live={live} open={open === 'article'} onToggle={() => toggle('article')} onView={setViewing} tileRef={articleRef} />
@@ -539,15 +514,11 @@ function Sheet({ item, live }) {
   )
 }
 
-const DONE_SUGGESTIONS = ['标题再短一点', '语气轻松一点', '开场再抓人一点', '封面大字更有冲击力']
-
 export function Studio() {
   const id = useDesk(s => s.focusId)
   const item = useDesk(s => s.state?.items.find(i => i.id === s.focusId))
   const origin = useDesk(s => s.sheetOrigin)
   const live = useDesk(s => s.live[s.focusId])
-  const settings = useDesk(s => s.settings)
-  const chatOpen = useDesk(s => s.studioDock)
   const ref = React.useRef(null)
   const production = item?.production
   const running = production?.status === 'running'
@@ -587,24 +558,11 @@ export function Studio() {
   React.useEffect(() => { if (id && !item) closeItem() }, [id, item])
   if (!item) return null
   return (
-    <div className={`md-studio ${chatOpen ? 'chat-open' : ''}`} ref={ref} role="dialog" aria-label={t('灵感')}>
-      <div className="md-studio-chat">
-        <ChatPanel
-          itemId={item.id}
-          head={(
-            <>
-              <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
-              <h2>{t('成稿')}</h2>
-            </>
-          )}
-          top={<IdeaCard item={item} live={live} settings={settings} />}
-          suggestions={production?.status === 'done' ? DONE_SUGGESTIONS.map(row => t(row)) : []}
-          placeholder={running ? t('正在成稿，马上就好') : production?.status === 'done' ? t('想怎么改，直接说') : t('补充点想法，或者直接说要什么')}
-          disabled={running}
-          intro={false}
-        />
-      </div>
-      <button type="button" className="md-chat-toggle" aria-label={t('打开对话')} onClick={() => setDesk(s => ({ studioDock: !s.studioDock }))}><Icon name="chat" size={16} /></button>
+    <div className="md-studio" ref={ref} role="dialog" aria-label={t('灵感')}>
+      <header className="md-studio-head" data-window-drag="">
+        <IconButton icon="chevL" label={t('返回灵感')} onClick={closeItem} />
+        <h2>{t('成稿')}</h2>
+      </header>
       <Sheet key={item.id} item={item} live={live} />
     </div>
   )

@@ -1,13 +1,11 @@
-// dsh-media-desk 浏览器半片：侧栏入口 + main 全局面板。
+// dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
-import { ChatDock } from './chat.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
-import { ModelButton, ModelPicker } from './modelpick.jsx'
 import { SettingsDialog } from './settings.jsx'
 import { Studio } from './studio.jsx'
 import css from './styles.css'
@@ -15,7 +13,7 @@ import { lang, subscribeLang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
 import { Dialog, FormDialog, Icon, IconButton, Toast } from './ui.jsx'
 
-const PANEL_ID = 'media-desk'
+const PANEL_ID = 'writing-desk'
 
 // navKey：同一个中文在别处意思不同（单数的“灵感”“风格”），英文导航另查一条
 const NAV = [
@@ -81,7 +79,7 @@ function CaptureDialog() {
         ) : (
           <label className="md-field">
             <span>{tab === 'quote' ? t('这句话') : t('想法')}</span>
-            <textarea rows={4} required value={text} onChange={e => setText(e.target.value)} placeholder={tab === 'quote' ? t('好的选题不是想出来的……') : t('想到什么就写什么，之后再让助手补全。')} />
+            <textarea rows={4} required value={text} onChange={e => setText(e.target.value)} placeholder={tab === 'quote' ? t('好的选题不是想出来的……') : t('想到什么就写什么。')} />
           </label>
         )}
         {tab === 'file' ? null : (
@@ -128,17 +126,12 @@ function Desk() {
   const ready = useDesk(s => Boolean(s.state))
   const error = useDesk(s => s.error)
   const view = useDesk(s => s.view)
-  const dockOpen = useDesk(s => s.dockOpen)
   const canUndo = useDesk(s => s.canUndo)
   const rootRef = React.useRef(null)
   const [width, setWidth] = React.useState(1600)
   const narrow = width < 1020
 
   React.useEffect(() => { loadDesk() }, [])
-  // 窗口窄的时候对话栏会盖住内容，默认收起，需要时再打开
-  React.useEffect(() => {
-    if (narrow) setDesk({ dockOpen: false })
-  }, [narrow])
   React.useEffect(() => {
     const el = rootRef.current
     if (!el) return undefined
@@ -158,12 +151,9 @@ function Desk() {
     return () => window.removeEventListener('keydown', onKey)
   }, [canUndo])
 
-  // 工作区有自己的对话栏
-  const focused = useDesk(s => Boolean(s.focusId))
-  const showDock = dockOpen && !focused
   const Active = VIEWS[view] ?? HomeView
   return (
-    <div className={`md-root ${narrow ? 'is-narrow' : ''} ${width < 780 ? 'is-compact' : ''} ${showDock ? 'has-dock' : ''}`} ref={rootRef}>
+    <div className={`md-root ${narrow ? 'is-narrow' : ''} ${width < 780 ? 'is-compact' : ''}`} ref={rootRef}>
       <style>{css}</style>
       <div className="md-ambient" aria-hidden="true"><i /><i /><i /></div>
       <div className="md-main">
@@ -176,10 +166,8 @@ function Desk() {
           <span style={{ flex: 1 }} />
           {ready ? <SampleBadge /> : null}
           {canUndo ? <IconButton icon="undo" label={t('撤销上一步')} onClick={undo} /> : null}
-          {ready ? <ModelButton /> : null}
           {ready ? <UpdateBadge /> : null}
           <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
-          {showDock ? null : <button type="button" className="md-open-dock" onClick={() => setDesk({ dockOpen: true })}><Icon name="chat" size={15} />{t('助手')}</button>}
         </header>
         <main className="md-content" key={view}>
           {error ? (
@@ -188,11 +176,9 @@ function Desk() {
         </main>
         {ready ? <Studio /> : null}
       </div>
-      {ready && showDock ? <ChatDock /> : null}
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
       {ready ? <SettingsDialog /> : null}
-      {ready ? <ModelPicker /> : null}
       <Toast />
     </div>
   )
@@ -215,13 +201,13 @@ export function apply(ctx) {
         name: 'sidebar.panellist',
         id: PANEL_ID,
         order: 5,
-        label: () => t('自媒体工作台'),
+        label: () => t('图文创作台'),
       }, PanelIcon))
     }
     mount()
     const off = subscribeLang(mount)
     return () => { off(); release?.() }
-  }, 'dsh-media-desk: sidebar entry')
+  }, 'dsh-writing-desk: sidebar entry')
   mountBetterSidebar(ctx)
 }
 
@@ -235,19 +221,19 @@ function mountBetterSidebar(ctx) {
     if (typeof sidebar?.registerTab !== 'function') return
     inner.effect(() => sidebar.registerTab({
       id: `${PANEL_ID}:workbench`,
-      title: () => t('自媒体工作台'),
+      title: () => t('图文创作台'),
       description: () => t('灵感、内容、排期、复盘、风格'),
       icon: size => <PanelIcon size={size} />,
       order: 60,
       single: true,
       component: Desk,
-    }), 'dsh-media-desk: better-sidebar tab')
+    }), 'dsh-writing-desk: better-sidebar tab')
   }
   try {
     // 服务晚于我们就绪、或者中途被卸掉再装回，子作用域都会跟着重来
     if (typeof ctx.inject === 'function') ctx.inject(['betterSidebar'], register)
     else register(ctx)
   } catch (error) {
-    console.warn('[dsh-media-desk] better-sidebar tab skipped:', error)
+    console.warn('[dsh-writing-desk] better-sidebar tab skipped:', error)
   }
 }

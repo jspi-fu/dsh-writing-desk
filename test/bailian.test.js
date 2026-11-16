@@ -58,7 +58,7 @@ test('百炼：错误信息脱敏，200 里的业务错误码也报出来，缺�
 })
 
 test('设置：protocol 默认 openai，切百炼时完整端点归一，无效协议拒绝', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'media-desk-bailian-'))
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-bailian-'))
   try {
     const settings = new Settings(dir)
     assert.equal((await settings.read()).image.protocol, 'openai')

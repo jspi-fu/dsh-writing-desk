@@ -1,4 +1,4 @@
-// 工作台的唯一写入口：对话、界面操作都走这里，统一校验字段并产出回执。
+// 工作台的唯一写入口：界面操作都走这里，统一校验字段并产出回执。
 // 模型输出也是不可信输入，所以这里只放行白名单字段。
 import { currentLang, platformName, tr } from './i18n.js'
 import { draftFormat } from './style.js'
@@ -56,9 +56,9 @@ function coerce(type, value) {
       if (value === null) return null
       if (!value || typeof value.src !== 'string') return undefined
       // 媒体只允许插件自己的相对路径或 http(s) 地址
-      const local = /^media-desk\/(assets|files)\/[\w.-]+$/.test(value.src)
+      const local = /^writing-desk\/(assets|files)\/[\w.-]+$/.test(value.src)
       if (!local && !isHttpUrl(value.src)) return undefined
-      const poster = typeof value.poster === 'string' && (/^media-desk\/(assets|files)\/[\w.-]+$/.test(value.poster) || isHttpUrl(value.poster)) ? value.poster : undefined
+      const poster = typeof value.poster === 'string' && (/^writing-desk\/(assets|files)\/[\w.-]+$/.test(value.poster) || isHttpUrl(value.poster)) ? value.poster : undefined
       return { src: value.src, ...(poster ? { poster } : {}), ...(Number.isFinite(value.w) ? { w: value.w } : {}), ...(Number.isFinite(value.h) ? { h: value.h } : {}) }
     }
     default: return undefined
@@ -251,7 +251,7 @@ const handlers = {
     return { text: state.draftFormat === 'article' ? tr('之后写成文章') : tr('之后写成口播脚本') }
   },
   add_skill(state, op, now) {
-    const skill = { id: newId('s'), name: '', rule: '', source: tr('对话'), status: 'proposed', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }
+    const skill = { id: newId('s'), name: '', rule: '', source: tr('手动'), status: 'proposed', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }
     if (!skill.name || !skill.rule) throw new Error(tr('Skill 需要名字和规则'))
     state.skills.unshift(skill)
     return { text: tr('沉淀规则「{name}」', { name: skill.name }), target: skill.id, kind: 'skill' }

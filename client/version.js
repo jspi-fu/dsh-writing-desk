@@ -1,7 +1,7 @@
 // 版本提示：问 Host 有没有新版本，有就在顶栏和设置里显出来。
 import React from 'react'
 
-const NPM_URL = 'https://www.npmjs.com/package/dsh-media-desk'
+const NPM_URL = 'https://www.npmjs.com/package/dsh-writing-desk'
 const CACHE_TTL_MS = 60 * 60 * 1000
 const RETRY_MS = 30 * 1000
 const RETRY_MAX = 5
@@ -15,7 +15,7 @@ function fresh() {
 }
 
 async function fetchVersion() {
-  const res = await fetch('media-desk/version', { headers: { 'x-media-desk-lang': document.documentElement.lang || 'zh' } })
+  const res = await fetch('writing-desk/version', { headers: { 'x-writing-desk-lang': document.documentElement.lang || 'zh' } })
   if (!res.ok) throw new Error(`version ${res.status}`)
   return res.json()
 }
