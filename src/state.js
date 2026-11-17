@@ -3,17 +3,19 @@
 // 所以这里不能引 i18n.js(它依赖 node:async_hooks)或任何其他模块。
 // 对状态元组(status / scheduledAt / production)做裁决,不碰 Store、不做 IO。
 
-// editProduction 是人工改稿事件(工单 #7 之后补):spec 定下的九个状态迁移事件之外,
-// 成稿产物的人工可编辑字段(标题/正文/封面文案)也要经 reducer 落库,状态才能照常自愈。
-export const EVENTS = ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish', 'editProduction']
+// 成稿迁移到 harness 会话(ADR 0006)后,事件只剩两类:
+// - 写回与人工编辑:submit(会话经工具写回,含快照与 rev)/ editProduction(校样浮层就地改)
+// - 排期与发布: schedule / unschedule / setStatus / publish
+// 内部流水线的 start/articleWritten/done/fail/cancel 随流水线一起退役。
+export const EVENTS = ['submit', 'editProduction', 'schedule', 'unschedule', 'setStatus', 'publish']
 
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
 
 const hasText = value => typeof value === 'string' && value.trim().length > 0
 
-/** 已成稿:成稿产物里有正文(AI 生成或用户改写,含成稿中被取消/中断的),只有一个口径。 */
+/** 已成稿:成稿产物里有正文(会话写回或人工改写),按事实算,一个口径。 */
 export function isDrafted(item) {
-  return item.production?.status === 'done' || hasText(item.production?.article)
+  return hasText(item.production?.article)
 }
 
 /** 已排期:排上了日历且还没发布。 */
@@ -22,15 +24,29 @@ export function isScheduled(item) {
 }
 
 /**
- * 面板状态:把四套字段收敛成一个显示口径,优先级为成稿中 > 已发布 > 已成稿 > 已排期 > 灵感。
+ * 面板状态:把四套字段收敛成一个显示口径,优先级为已发布 > 已成稿 > 已排期 > 灵感。
  * 'idea' 表示这些信息都没有,更细的区分(大纲 / 草稿)由面板自己读 item.status。
  */
 export function panelState(item) {
-  if (item.production?.status === 'running') return 'producing'
   if (item.status === 'published') return 'published'
   if (isDrafted(item)) return 'drafted'
   if (isScheduled(item)) return 'scheduled'
   return 'idea'
+}
+
+/** 写回与编辑共用的字段白名单:只能落回这几样,工具与面板各走各的入口。 */
+const WRITE_FIELDS = ['title', 'coverText', 'article']
+
+/** 每次产物变化都落一份内容快照,校样浮层据此做版本列表与回退;留最近 10 份。 */
+function pushSnapshot(production, by, at, note) {
+  const entry = {
+    at, by,
+    title: production.title ?? '',
+    coverText: production.coverText ?? '',
+    article: production.article ?? '',
+    ...(note ? { note } : {}),
+  }
+  production.snapshots = [...(production.snapshots ?? []).slice(-9), entry]
 }
 
 /**
@@ -50,71 +66,51 @@ function heal(item) {
   }
 }
 
-// 取消 / 失败都只是把这一轮停掉:已落盘的正文与已生成的图原样保留(白等一场不丢稿),
-// 没跑完的资产停回待命,然后照常自愈(有正文的灵感不会被留在灵感档)。
-function finishAs(item, status, error) {
-  const production = item.production
-  if (!production) throw new Error('这条灵感还没有成稿')
-  production.status = status
-  production.stage = 'done'
-  production.error = error
-  for (const asset of [production.cover, ...(production.images ?? []), ...(production.shots ?? [])]) {
-    if (asset && ['pending', 'running'].includes(asset.status)) asset.status = 'idle'
-  }
-  heal(item)
-}
-
 const handlers = {
-  // 开始成稿:开新的一轮,画面清零等这一轮重画,但保留上一轮写好的正文与其来历
-  // (重新成稿不清空,重试不毁稿),导出仍存回原来的文件夹。
-  start(item, event, now) {
+  // 会话写回(ADR 0006):分阶段粗粒度、按字段落回。没有产物就建一份,有就按字段覆盖;
+  // 正文写回时刷新 AI 快照(那是会话刚写的版本,人工改动已在前一份快照里)。
+  // 每次写回 rev 前进一格并落快照;素材交会话的登记(sentToSession)随之清掉。
+  submit(item, event, now) {
     const previous = item.production ?? {}
-    item.production = {
-      status: 'running', stage: 'brief',
-      withImages: event.withImages ?? true,
-      startedAt: now,
-      format: event.format ?? previous.format ?? 'script',
-      title: item.title,
-      article: previous.article ?? '',
-      ...(previous.aiArticle ? { aiArticle: previous.aiArticle } : {}),
-      ...(previous.engine ? { engine: previous.engine } : {}),
-      ...(previous.savedPath ? { savedPath: previous.savedPath, savedHashes: previous.savedHashes } : {}),
-      cover: null, images: [], shots: [],
-    }
-    heal(item)
-  },
-  // 正文落盘:AI 原稿快照与引擎一起记下,然后照常自愈——有正文就算草稿,灵感档留不住它。
-  articleWritten(item, event) {
-    const production = item.production
-    if (!production) throw new Error('这条灵感还没有成稿')
-    if (typeof event.article !== 'string') throw new Error('正文无效')
-    production.article = event.article
-    production.aiArticle = event.aiArticle ?? event.article
-    production.engine = event.engine ?? 'local'
-    production.notice = event.notice ?? null
-    heal(item)
-  },
-  // 人工改稿(手写稿的唯一通道,ops 的 update_production 走这里):标题/封面文案/正文
-  // 直接改在成稿产物上,写完照常自愈——清空正文就不再算已成稿,状态按事实拉回。
-  // AI 原稿快照不动:它只由 articleWritten 产生,learn 靠它对比修改方向,手改不许冲掉。
-  editProduction(item, event) {
-    const production = item.production
-    if (!production) throw new Error('这条灵感还没有成稿')
-    for (const field of ['title', 'coverText', 'article']) {
-      if (typeof event[field] === 'string') production[field] = event[field]
-    }
-    heal(item)
-  },
-  // 完成:产物定稿,状态照常自愈(已排期的直接待发布)。
-  done(item, event, now) {
-    const production = item.production
-    if (!production) throw new Error('这条灵感还没有成稿')
+    const production = { ...previous }
     production.status = 'done'
     production.stage = 'done'
     production.finishedAt = now
+    production.startedAt = previous.startedAt ?? now
+    production.engine = event.engine ?? 'harness'
+    for (const field of WRITE_FIELDS) {
+      if (typeof event[field] === 'string') production[field] = event[field]
+    }
+    if (typeof event.article === 'string') production.aiArticle = event.aiArticle ?? event.article
+    if (event.cover && typeof event.cover.src === 'string') production.cover = { src: event.cover.src, ...(typeof event.cover.caption === 'string' ? { caption: event.cover.caption } : {}), status: 'done' }
+    if (Array.isArray(event.images)) {
+      production.images = event.images
+        .filter(row => row && typeof row.src === 'string')
+        .map(row => ({ src: row.src, ...(typeof row.caption === 'string' ? { caption: row.caption } : {}), ...(typeof row.anchor === 'string' ? { anchor: row.anchor } : {}), status: 'done' }))
+    }
+    if (event.intent && typeof event.intent === 'object') production.intent = { ...event.intent }
+    if (event.review && typeof event.review === 'object') production.review = { ...event.review }
+    production.rev = (previous.rev ?? 0) + 1
+    delete production.pendingWrite
+    pushSnapshot(production, 'session', now, event.note)
+    item.production = production
+    delete item.sentToSession
     heal(item)
   },
-  // 排期与取消排期:时间规整成 ISO(与旧 coerce('date') 一致),状态照常自愈。
+  // 人工改稿(校样浮层的就地编辑,ops 的 update_production 走这里):标题/封面文案/正文
+  // 直接改在成稿产物上,写完照常自愈——清空正文就不再算已成稿,状态按事实拉回。
+  // AI 原稿快照不动:它是会话写回时的版本,改稿对比靠它;rev 前进并落用户快照。
+  editProduction(item, event, now) {
+    const production = item.production
+    if (!production) throw new Error('这条灵感还没有成稿')
+    for (const field of WRITE_FIELDS) {
+      if (typeof event[field] === 'string') production[field] = event[field]
+    }
+    production.rev = (production.rev ?? 0) + 1
+    pushSnapshot(production, 'user', now)
+    heal(item)
+  },
+  // 排期与取消排期:时间规整成 ISO,状态照常自愈。
   schedule(item, event) {
     if (typeof event.scheduledAt !== 'string' || Number.isNaN(Date.parse(event.scheduledAt))) throw new Error('排期时间无效')
     item.scheduledAt = new Date(event.scheduledAt).toISOString()
@@ -134,13 +130,6 @@ const handlers = {
     if (event.status === 'published' && !item.publishedAt) item.publishedAt = now
     if (event.status !== 'published') delete item.publishedAt
     heal(item)
-  },
-  // 用户主动停,不算错误。
-  cancel(item) {
-    finishAs(item, 'cancelled', null)
-  },
-  fail(item, event) {
-    finishAs(item, 'failed', event.error ?? null)
   },
   // 发布由用户确认(发布交接默认问一句、可手动改),记下发布时间;排期谓词随即让位。
   publish(item, event, now) {

@@ -3,7 +3,7 @@
 import { currentLang, platformName, tr } from './i18n.js'
 // 状态枚举以 state.js 为唯一来源;这里 re-export 保持既有引用不破
 import { reduce, STATUSES } from './state.js'
-import { draftFormat } from './style.js'
+import { resolveProduceInput } from './produce-input.js'
 
 export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
@@ -262,6 +262,56 @@ const handlers = {
     reduce(state, { type: 'editProduction', id: item.id, at: now, ...fields })
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
   },
+  // 素材交会话(ADR 0006 相位):登记 sentToSession,内容页呈现「审读中」;
+  // 会话写回(submit)时自动清掉。输入与成稿同一套归一(produce-input)。
+  send_to_session(state, op, now) {
+    const { sourceIds } = resolveProduceInput(state, op)
+    for (const id of sourceIds) findById(state.items, id).sentToSession = { at: now }
+    return { text: tr('把 {n} 条灵感交给了创作会话', { n: sourceIds.length }), target: sourceIds[0], kind: 'item' }
+  },
+  // 会话写回入口:rev 基线不符且未带 force 时,写回被拦下、暂存为 pendingWrite,
+  // 由校样浮层的冲突横幅裁决(apply_write / discard_write),绝不静默覆盖人工修改。
+  write_production(state, op, now) {
+    const item = findById(state.items, op.targetId)
+    const rev = item.production?.rev ?? 0
+    const base = typeof op.rev === 'number' ? op.rev : rev
+    if (base !== rev && op.force !== true) {
+      if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
+      const fields = {}
+      for (const key of ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review', 'note']) {
+        if (op[key] !== undefined) fields[key] = op[key]
+      }
+      item.production.pendingWrite = { ...fields, baseRev: base, at: now }
+      throw Object.assign(new Error(tr('会话写回与你的修改冲突,已暂存到校样浮层等你裁决')), { status: 409 })
+    }
+    const event = { type: 'submit', id: item.id, at: now }
+    if (typeof op.title === 'string') event.title = op.title.slice(0, 200)
+    if (typeof op.coverText === 'string') event.coverText = op.coverText.slice(0, 40)
+    if (typeof op.article === 'string') event.article = op.article.slice(0, 200000)
+    if (op.cover && typeof op.cover.src === 'string') event.cover = { src: op.cover.src, ...(typeof op.cover.caption === 'string' ? { caption: op.cover.caption.slice(0, 60) } : {}) }
+    if (Array.isArray(op.images)) event.images = op.images
+    if (op.intent && typeof op.intent === 'object') event.intent = op.intent
+    if (op.review && typeof op.review === 'object') event.review = op.review
+    if (typeof op.note === 'string') event.note = op.note.slice(0, 200)
+    reduce(state, event)
+    return { text: tr('会话写回了《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  },
+  // 冲突裁决:接受暂存的写回(force 语义),或丢弃它保留人工版本。都清 pendingWrite。
+  apply_write(state, op, now) {
+    const item = findById(state.items, op.targetId)
+    const pending = item.production?.pendingWrite
+    if (!pending) throw new Error(tr('没有待裁决的写回'))
+    const { baseRev, at, ...fields } = pending
+    item.production.pendingWrite = undefined
+    reduce(state, { type: 'submit', id: item.id, at: now, ...fields, forceHint: true })
+    return { text: tr('已接受会话的写回'), target: item.id, kind: 'item' }
+  },
+  discard_write(state, op) {
+    const item = findById(state.items, op.targetId)
+    if (!item.production?.pendingWrite) throw new Error(tr('没有待裁决的写回'))
+    item.production.pendingWrite = undefined
+    return { text: tr('已保留你的修改,会话那版没有写入'), target: item.id, kind: 'item' }
+  },
   // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——
   // Agent 的自动整理不许冲掉用户预览之后又手动改过的分类。
   retag_items(state, op) {
@@ -340,10 +390,6 @@ const handlers = {
     const style = findById(state.styles ?? [], op.id)
     state.activeStyleId = style.id
     return { text: tr('之后按「{name}」的风格写', { name: style.name }) }
-  },
-  set_format(state, op) {
-    state.draftFormat = draftFormat(op.format)
-    return { text: state.draftFormat === 'article' ? tr('之后写成文章') : tr('之后写成口播脚本') }
   },
   add_skill(state, op, now) {
     const skill = { id: newId('s'), name: '', rule: '', source: tr('手动'), status: 'proposed', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }

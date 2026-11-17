@@ -3,10 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { callModel, planPrompts } from '../src/ai.js'
-import { currentLang, ENGLISH_DIRECTIVE, tr, withLang } from '../src/i18n.js'
+import { currentLang, tr, withLang } from '../src/i18n.js'
 import { applyOps } from '../src/ops.js'
-import { normalizePlan } from '../src/produce.js'
 import { buildSeed, localizeSamples, migrateState, samplesNeedLocale } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import plugin from '../src/host.js'
@@ -130,49 +128,6 @@ test('localizeSamples：清空示例后只换内置预设；旧数据没有 samp
   assert.equal(legacy.sampleLang, 'zh')
   localizeSamples(legacy, 'en')
   assert.ok(legacy.styles.length > 0 && legacy.styles.every(row => !CJK.test(row.name)))
-})
-
-test('英文界面下，系统提示词末尾追加英文要求，原来的中文提示词保留', async () => {
-  const seen = []
-  const ctx = {
-    get(name) {
-      if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'p', model: 'm' }) }
-      if (name === 'llm') {
-        return {
-          prepareCall: async () => ({
-            config: {},
-            async* stream(request) {
-              seen.push(request.system)
-              yield { type: 'text-delta', text: 'ok' }
-            },
-          }),
-        }
-      }
-      return undefined
-    },
-  }
-  await callModel(ctx, { system: '你是文风分析师。', user: 'x' })
-  await withLang('en', () => callModel(ctx, { system: '你是文风分析师。', user: 'x' }))
-  assert.equal(seen[0], '你是文风分析师。')
-  assert.ok(seen[1].startsWith('你是文风分析师。'))
-  assert.ok(seen[1].endsWith(ENGLISH_DIRECTIVE))
-
-  // 模拟模型靠中文关键词识别提示词，英文界面下这些词还在
-  const state = buildSeed(NOW, 'zh')
-  const settings = { imageCount: 2, shotCount: 6, voice: '' }
-  const en = withLang('en', () => planPrompts(state, state.items[0], settings).system)
-  assert.match(en, /策划案/)
-  assert.doesNotMatch(en, /中文图注/)
-  assert.match(planPrompts(state, state.items[0], settings).system, /中文图注/)
-})
-
-test('英文成稿：默认景别和封面大字兜底都是英文，长度上限不变', () => {
-  withLang('en', () => {
-    const plan = normalizePlan({ shots: [{ prompt: 'x' }] }, { imageCount: 0, shotCount: 1 }, 'Why your first AI side project never makes a dollar')
-    assert.equal(plan.shots[0].shot, 'Medium shot')
-    assert.equal(plan.coverText, 'Why your first AI side')
-    assert.ok(plan.coverText.length <= 24)
-  })
 })
 
 test('GET state 按请求头的语言换示例文字', async () => {

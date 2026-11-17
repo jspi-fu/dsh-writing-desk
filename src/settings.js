@@ -1,22 +1,10 @@
-// 工作台设置。密钥和内容数据分开存放，文件权限 600，也不会返回给浏览器。
+// 工作台设置。写作与生图都发生在创作会话侧(ADR 0006),插件只剩界面语言与导出位置。
+// 语言偏好独立存放,文件权限 600,也不会返回给浏览器之外的地方。
 import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tr } from './i18n.js'
 
-const DEFAULTS = {
-  image: { source: 'http', protocol: 'openai', baseUrl: '', model: '', apiKey: '', size: '1536x1024', quality: '', toolSize: '1536x1024', toolQuality: '', extra: '' },
-  voice: '',
-  exportDir: '',
-  generateImages: true,
-  imageCount: 2,
-  shotCount: 6,
-  language: 'auto',
-}
-
-function clamp(value, min, max, fallback) {
-  const n = Number(value)
-  return Number.isFinite(n) ? Math.min(max, Math.max(min, Math.round(n))) : fallback
-}
+const DEFAULTS = { language: 'auto', exportDir: '' }
 
 export class Settings {
   constructor(root) {
@@ -28,7 +16,11 @@ export class Settings {
     // 每次都读文件：桌面版和 Web 版可能同时运行
     try {
       const saved = JSON.parse(await readFile(this.file, 'utf8'))
-      this.value = { ...DEFAULTS, ...saved, image: { ...DEFAULTS.image, ...saved.image } }
+      // 旧设置里的生图/分镜等字段随流水线退役,读取时直接丢掉
+      this.value = {
+        language: ['auto', 'zh', 'en'].includes(saved.language) ? saved.language : 'auto',
+        exportDir: typeof saved.exportDir === 'string' ? saved.exportDir : '',
+      }
     } catch (err) {
       if (err.code !== 'ENOENT') throw err
       this.value = structuredClone(DEFAULTS)
@@ -36,65 +28,13 @@ export class Settings {
     return this.value
   }
 
-  /** 空密钥表示不修改，clearKey 才会删除。 */
   async update(patch) {
-    const current = await this.read()
-    const next = structuredClone(current)
-    const image = patch.image ?? {}
-    if (image.source !== undefined) {
-      if (!['http', 'tool'].includes(image.source)) throw Object.assign(new Error(tr('生图来源无效')), { status: 400 })
-      next.image.source = image.source
+    const next = await this.read()
+    if (patch.exportDir !== undefined) {
+      if (typeof patch.exportDir !== 'string') throw Object.assign(new Error(tr('导出位置无效')), { status: 400 })
+      next.exportDir = patch.exportDir.trim().slice(0, 500)
     }
-    if (image.protocol !== undefined) {
-      if (!['openai', 'bailian', 'wan'].includes(image.protocol)) throw Object.assign(new Error(tr('生图协议无效')), { status: 400 })
-      next.image.protocol = image.protocol
-    }
-    for (const key of ['model', 'size', 'quality']) {
-      if (typeof image[key] === 'string') next.image[key] = image[key].trim().slice(0, 200)
-    }
-    for (const [key, values, message] of [
-      ['toolSize', ['', '1024x1024', '1024x1536', '1536x1024', 'auto'], '订阅生图工具不支持这个尺寸'],
-      ['toolQuality', ['', 'low', 'medium', 'high', 'auto'], '订阅生图工具不支持这个质量'],
-    ]) {
-      if (image[key] !== undefined) {
-        if (typeof image[key] !== 'string' || !values.includes(image[key].trim())) throw Object.assign(new Error(tr(message)), { status: 400 })
-        next.image[key] = image[key].trim()
-      }
-    }
-    if (typeof image.baseUrl === 'string') {
-      let url = image.baseUrl.trim().replace(/\/+$/, '')
-      if (next.image.protocol === 'bailian') {
-        // 百炼可能被贴成完整端点或带 /api/v1，统一存域名
-        url = url.replace(/\/api\/v1\/services\/aigc\/multimodal-generation\/generation$/i, '').replace(/\/api\/v1$/i, '')
-      } else if (next.image.protocol === 'wan') {
-        url = url.replace(/\/api\/v1\/(?:services\/aigc\/text2image\/image-synthesis|tasks\/[^/]+)$/i, '').replace(/\/api\/v1$/i, '')
-      } else {
-        url = url.replace(/\/images\/generations$/, '')
-      }
-      if (url && !/^https?:\/\/[^\s]+$/i.test(url)) throw Object.assign(new Error(tr('接口地址要以 http:// 或 https:// 开头')), { status: 400 })
-      next.image.baseUrl = url
-    }
-    if (typeof image.extra === 'string') {
-      const extra = image.extra.trim()
-      if (extra) {
-        let parsed
-        try {
-          parsed = JSON.parse(extra)
-        } catch {
-          parsed = null
-        }
-        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Object.assign(new Error(tr('附加参数要是一个 JSON 对象')), { status: 400 })
-      }
-      next.image.extra = extra
-    }
-    if (typeof image.apiKey === 'string' && image.apiKey.trim()) next.image.apiKey = image.apiKey.trim()
-    if (image.clearKey === true) next.image.apiKey = ''
-    if (typeof patch.voice === 'string') next.voice = patch.voice.slice(0, 8000)
-    if (typeof patch.exportDir === 'string') next.exportDir = patch.exportDir.trim().slice(0, 500)
-    if (typeof patch.generateImages === 'boolean') next.generateImages = patch.generateImages
-    if (patch.imageCount !== undefined) next.imageCount = clamp(patch.imageCount, 0, 4, current.imageCount)
     if (['auto', 'zh', 'en'].includes(patch.language)) next.language = patch.language
-    if (patch.shotCount !== undefined) next.shotCount = clamp(patch.shotCount, 0, 12, current.shotCount)
     const tmp = `${this.file}.${process.pid}.tmp`
     await writeFile(tmp, JSON.stringify(next, null, 2), { mode: 0o600 })
     await chmod(tmp, 0o600)
@@ -104,13 +44,7 @@ export class Settings {
   }
 }
 
-export function imageReady(settings, toolAvailable = false) {
-  if (settings.image.source === 'tool') return toolAvailable
-  return Boolean(settings.image.baseUrl && settings.image.model && settings.image.apiKey)
-}
-
-/** 发给浏览器的版本：只告诉它有没有密钥和末四位。 */
-export function publicSettings(settings, toolAvailable = false) {
-  const { apiKey, ...image } = settings.image
-  return { ...settings, image: { ...image, hasKey: Boolean(apiKey), keyHint: apiKey ? apiKey.slice(-4) : '' }, imageToolAvailable: toolAvailable, imageReady: imageReady(settings, toolAvailable) }
+/** 发给浏览器的版本。 */
+export function publicSettings(settings) {
+  return { language: settings.language, exportDir: settings.exportDir }
 }
