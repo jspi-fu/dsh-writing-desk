@@ -1,6 +1,6 @@
-// 创作模式 scope 隔离骨架(工单 #8):preset 声明、tool provider、skill provider 的静态
-// 结构断言与模块行为测试。与 client-wiring.test.js 同一形态:读文件/读模块做纯文本与
-// 行为断言;真实 scope 可见性(cordis_inspect_query)属于实机验证阶段,不在自动化范围。
+// 创作模式 scope 隔离骨架(工单 #8 / ADR 0006):preset 声明、四个 harness 工具、
+// 两个 skill provider 的静态结构断言与模块行为测试。与 client-wiring.test.js 同一形态:
+// 读文件/读模块做纯文本与行为断言;真实 scope 可见性(cordis_inspect_query)属于实机验证阶段。
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -8,11 +8,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { applyOps } from '../src/ops.js'
-import * as produceTool from '../src/preset-tool.js'
-import * as rulesSkill from '../src/preset-skill.js'
-import { Producer } from '../src/produce.js'
+import * as tools from '../src/preset-tool.js'
+import * as skills from '../src/preset-skill.js'
 import hostPlugin from '../src/host.js'
-import { Settings } from '../src/settings.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
 
@@ -49,7 +47,7 @@ function blockOf(blocks, id) {
 
 test('patch 同时插入全局工作台行与创作模式 preset 行,互不混淆', () => {
   const blocks = patchBlocks(PATCH)
-  // 全局 UI 行(工单 #8:工作台侧栏仍全局注册,不在本单改动范围)
+  // 全局 UI 行:工作台侧栏全局注册,不带创作模式的 provider
   const desk = blockOf(blocks, 'writing-desk')
   assert.match(desk.text, /name: '?dsh-writing-desk'?/, '全局行必须挂 dsh-writing-desk 包')
   assert.doesNotMatch(desk.text, /preset-tool|preset-skill|agent-preset/, '全局行不得夹带创作模式的 tool/skill provider')
@@ -58,7 +56,7 @@ test('patch 同时插入全局工作台行与创作模式 preset 行,互不混�
   const preset = blockOf(blocks, 'preset-writing')
   assert.match(preset.text, /name: '?@deepseek-ai\/dsh-agent-preset'?/, 'preset 行挂官方 dsh-agent-preset 声明插件')
   assert.match(preset.text, /config:/, 'preset 行带 config(id/name/plugins)')
-  assert.match(preset.text, /id: writing\b/, 'config.id 是会话保存的模式标识(写作模式)')
+  assert.match(preset.text, /id: writing\b/, 'config.id 是会话保存的模式标识(创作模式)')
   assert.match(preset.text, /plugins:/, 'preset 必须带 plugins 子列表')
 })
 
@@ -101,118 +99,107 @@ function toolContext(desk) {
   return { ctx, registered }
 }
 
-const SIGNAL = new AbortController().signal
-
-test('tool provider 挂到 ctx.tools,只注册一个 writing_desk_produce', () => {
-  const { ctx, registered } = toolContext({ store: {}, producer: {} })
-  produceTool.apply(ctx)
-  assert.equal(registered.length, 1)
-  const tool = registered[0]
-  assert.equal(tool.name, 'writing_desk_produce')
-  assert.ok(typeof tool.description === 'string' && tool.description, '模型要能看到用途描述')
-  // 参数 schema:成稿输入 ID 集合与选项(与 produce 路由同一种输入)
-  assert.deepEqual(Object.keys(tool.parameters.properties), ['itemIds', 'capsuleIds', 'withImages'])
-  assert.deepEqual(tool.parameters.required, [])
-  // 注册契约(dsh-tools register 的硬校验):output { schema, render }
-  assert.ok(tool.output && tool.output.schema && typeof tool.output.render === 'function')
-  assert.equal(typeof tool.execute, 'function')
+test('tool provider 挂到 ctx.tools,注册读写与沉淀四个工具', () => {
+  const { ctx, registered } = toolContext({ store: {} })
+  tools.apply(ctx)
+  assert.deepEqual(registered.map(row => row.name), ['writing_desk_read', 'writing_desk_write', 'writing_desk_add_rule', 'writing_desk_add_style'])
+  for (const tool of registered) {
+    assert.ok(typeof tool.description === 'string' && tool.description, '模型要能看到用途描述')
+    assert.ok(tool.output && tool.output.schema && typeof tool.output.render === 'function', '注册契约:output { schema, render }')
+    assert.equal(typeof tool.execute, 'function')
+    assert.ok(tool.parameters && typeof tool.parameters === 'object')
+  }
   // 插件本体是 preset 子项:inject 依赖 tools 与 writingDesk 服务,名字与 patch 子项 id 一致
-  assert.deepEqual(produceTool.inject, ['tools', 'writingDesk'])
-  assert.equal(produceTool.name, 'writing-desk-produce-tool')
+  assert.deepEqual(tools.inject, ['tools', 'writingDesk'])
+  assert.equal(tools.name, 'writing-desk-tools')
+  // 旧的一键成稿工具不回来了:成稿发生在会话里,不再触发插件内置流水线
+  assert.ok(!registered.some(row => row.name === 'writing_desk_produce'))
 })
 
-test('execute 把输入归一成 {sourceIds, targetId},成稿写回同一份状态机', async () => {
-  // 真实 Store + Producer(假模型):断言落点灵感的最终状态,不盯 mock 的调用参数——
-  // 输入归一、落点取舍与产物落库都由状态本身说话(与 host.js produce 路由同一条链)。
-  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-preset-'))
+test('writing_desk_read:按 ID 与胶囊取全文,按 query 找相关,输出有界', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-tools-'))
   try {
     const store = new Store(dir)
     await store.read()
-    // 空库自带种子灵感;胶囊要自己收一份,胶囊输入才有东西可展开
-    await store.mutate('预置选题堆', draft => { applyOps(draft, [{ op: 'add_capsule', name: '选题堆', itemIds: ['seed_1', 'seed_2'] }]); return draft })
-    const settings = new Settings(dir)
-    // 不配生图服务(assets 停在 skipped),withImages 的两种取值都能从状态上分辨出来
-    await settings.update({ imageCount: 1, shotCount: 2 })
-    const PLAN = JSON.stringify({ title: '归一成稿标题', cover: 'c', characters: '', images: [{ anchor: '一', caption: '图', prompt: 'p' }], shots: [] })
-    const callText = async ({ system, onText }) => {
-      if (system.includes('策划案')) { onText(PLAN); return { text: PLAN, model: 'd' } }
-      onText('# 归一成稿标题\n\n正文')
-      return { text: '# 归一成稿标题\n\n正文', model: 'd' }
-    }
-    const producer = new Producer({ store, settings, callText, generate: async () => ({ buffer: Buffer.alloc(8), ext: '.png' }) })
-    const desk = { store, producer }
-    const { ctx, registered } = toolContext(desk)
-    produceTool.apply(ctx)
-    const tool = registered[0]
-    // 多灵感输入:落点取首个,产物只落在落点灵感;显式 withImages: false 时不画图
-    const result = await tool.execute({ itemIds: ['seed_1', 'seed_2'], withImages: false }, { signal: SIGNAL })
-    assert.deepEqual(result, { started: true, targetId: 'seed_1', sourceIds: ['seed_1', 'seed_2'] })
-    for (let i = 0; i < 200 && producer.isRunning(result.targetId); i += 1) await new Promise(resolve => setTimeout(resolve, 5))
-    let state = await store.read()
-    const target = state.items.find(row => row.id === result.targetId)
-    assert.equal(target.production.status, 'done')
-    assert.equal(target.production.article, '正文')
-    assert.equal(target.production.withImages, false, '显式 withImages: false 不画图')
-    assert.equal(state.items.find(row => row.id === 'seed_2').production, undefined, '其余来源只出素材,不成稿')
-
-    // 胶囊展开归一成同一批 sourceIds;withImages 缺省时按工作台设置(默认画图)
-    const capsule = (await store.read()).capsules.find(row => row.name === '选题堆')
-    const again = await tool.execute({ capsuleIds: [capsule.id] }, { signal: SIGNAL })
-    assert.deepEqual(again, { started: true, targetId: 'seed_1', sourceIds: ['seed_1', 'seed_2'] })
-    for (let i = 0; i < 200 && producer.isRunning(again.targetId); i += 1) await new Promise(resolve => setTimeout(resolve, 5))
-    state = await store.read()
-    const rewritten = state.items.find(row => row.id === again.targetId)
-    assert.equal(rewritten.production.status, 'done')
-    assert.equal(rewritten.production.article, '正文')
-    assert.equal(rewritten.production.withImages, true, '缺省时按设置画图')
-    assert.equal(rewritten.production.images.length, (await settings.read()).imageCount, '配图数量按工作台设置')
+    await store.mutate('预置', draft => { applyOps(draft, [{ op: 'add_capsule', name: '选题堆', itemIds: ['seed_1', 'seed_2'] }]); return draft })
+    const { ctx, registered } = toolContext({ store })
+    tools.apply(ctx)
+    const read = registered.find(row => row.name === 'writing_desk_read')
+    // 按 ID 读全文,胶囊展开并带成员数;seed_1 已在胶囊里,归一去重后是两条
+    const full = await read.execute({ itemIds: ['seed_1'], capsuleIds: [(await store.read()).capsules[0].id] })
+    assert.equal(full.total, 2)
+    assert.equal(full.items[0].id, 'seed_1')
+    assert.ok(full.items[0].title)
+    assert.deepEqual(full.capsules, [{ id: full.capsules[0].id, name: '选题堆', memberCount: 2 }])
+    // query 模式:按标题找,带摘要
+    const found = await read.execute({ query: 'AI' })
+    assert.ok(found.total >= 1)
+    assert.ok(found.items.every(row => row.id))
+    // 空输入直接报错
+    await assert.rejects(read.execute({}), /给 itemIds/)
+    await assert.rejects(read.execute({ itemIds: ['missing'] }), /没有可用的灵感/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('execute 报告已运行,空输入与不可用灵感报错', async () => {
-  const desk = {
-    store: { read: async () => seedState() },
-    producer: { start: async () => false },
-  }
-  const { ctx, registered } = toolContext(desk)
-  produceTool.apply(ctx)
-  const tool = registered[0]
-  const result = await tool.execute({ itemIds: ['seed_1'] }, { signal: SIGNAL })
-  assert.deepEqual(result, { started: false, targetId: 'seed_1', sourceIds: ['seed_1'] })
-  await assert.rejects(tool.execute({}, { signal: SIGNAL }), /没有可用的灵感/)
-  await assert.rejects(tool.execute({ itemIds: ['missing'] }, { signal: SIGNAL }), /没有可用的灵感/)
-})
-
-test('execute 用与 produce 路由同一个 Producer 启动成稿,写回同一份状态机', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-preset-'))
+test('writing_desk_write:字段写回落库,rev 前进;冲突被拦下时错误里说清裁决去处', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-tools-'))
   try {
     const store = new Store(dir)
     await store.read()
-    const settings = new Settings(dir)
-    await settings.update({ imageCount: 1, shotCount: 2, generateImages: false })
-    // 假模型:与 produce-input.test.js 同一形态,流水线跑完不依赖网络
-    const PLAN = JSON.stringify({ title: '工具成稿标题', cover: 'c', characters: '', images: [{ anchor: '一', caption: '图', prompt: 'p' }], shots: [] })
-    const callText = async ({ system, onText }) => {
-      if (system.includes('策划案')) { onText(PLAN); return { text: PLAN, model: 'd' } }
-      onText('# 工具成稿标题\n\n正文')
-      return { text: '# 工具成稿标题\n\n正文', model: 'd' }
-    }
-    const producer = new Producer({ store, settings, callText, generate: async () => ({ buffer: Buffer.alloc(8), ext: '.png' }) })
-    const desk = { store, producer }
-    const { ctx, registered } = toolContext(desk)
-    produceTool.apply(ctx)
-    const tool = registered[0]
-    const result = await tool.execute({ itemIds: ['seed_1', 'seed_2'] }, { signal: SIGNAL })
-    assert.equal(result.started, true)
-    for (let i = 0; i < 200 && producer.isRunning(result.targetId); i += 1) await new Promise(resolve => setTimeout(resolve, 5))
-    const state = await store.read()
-    const target = state.items.find(row => row.id === result.targetId)
-    // 同一 Producer 实例、同一 reducer:产物落在落点灵感,另一来源只出素材
-    assert.equal(target.production.status, 'done')
-    assert.equal(target.production.article, '正文')
-    assert.equal(state.items.find(row => row.id === 'seed_2').production, undefined)
+    const { ctx, registered } = toolContext({ store })
+    tools.apply(ctx)
+    const write = registered.find(row => row.name === 'writing_desk_write')
+    const read = registered.find(row => row.name === 'writing_desk_read')
+    // 首次写回:rev 缺省视为一致,建产物、清交会话登记
+    await store.mutate('交会话', draft => { applyOps(draft, [{ op: 'send_to_session', itemIds: ['seed_1'] }]); return draft })
+    const first = await write.execute({ targetId: 'seed_1', title: '初稿标题', article: '# 初稿\n\n正文', note: '初稿' })
+    assert.equal(first.written, true)
+    assert.equal(first.rev, 1)
+    let state = await store.read()
+    let target = state.items.find(row => row.id === 'seed_1')
+    assert.equal(target.production.article, '# 初稿\n\n正文')
+    assert.equal(target.sentToSession, undefined)
+    assert.equal(target.status, 'draft')
+    // 拿着旧 rev 再写回:409,错误说清去校样浮层裁决;pendingWrite 已暂存
+    await assert.rejects(write.execute({ targetId: 'seed_1', rev: 0, article: '会话新版' }), /冲突.*校样浮层/s)
+    state = await store.read()
+    assert.equal(state.items.find(row => row.id === 'seed_1').production.pendingWrite.article, '会话新版')
+    // 读一次拿到新 rev,再写回就通过
+    const fresh = await read.execute({ itemIds: ['seed_1'] })
+    assert.equal(fresh.items[0].existingDraft.text, '# 初稿\n\n正文')
+    const second = await write.execute({ targetId: 'seed_1', rev: first.rev, article: '定稿正文', note: '润色' })
+    assert.equal(second.rev, 2)
+    // 没有字段直接报错
+    await assert.rejects(write.execute({ targetId: 'seed_1' }), /至少给一个/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('writing_desk_add_rule 以 proposed 落库等确认;add_style 写卡并设为当前', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-tools-'))
+  try {
+    const store = new Store(dir)
+    await store.read()
+    const { ctx, registered } = toolContext({ store })
+    tools.apply(ctx)
+    const addRule = registered.find(row => row.name === 'writing_desk_add_rule')
+    const addStyle = registered.find(row => row.name === 'writing_desk_add_style')
+    await addRule.execute({ name: '初稿写短些', rule: '你通常把初稿删到六成,以后控制得更紧凑。', evidence: '来自 3 次改稿' })
+    let state = await store.read()
+    const skill = state.skills.find(row => row.name === '初稿写短些')
+    assert.equal(skill.status, 'proposed', '提案等用户确认,不直接生效')
+    assert.equal(skill.source, '创作会话')
+    // 名字与正文缺一不可
+    await assert.rejects(addRule.execute({ name: '只有名字' }), /名字和正文/)
+    await addStyle.execute({ name: '测试腔', summary: '短句、说人话', tone: '克制', words: ['那天', 3] })
+    state = await store.read()
+    const style = state.styles.find(row => row.name === '测试腔')
+    assert.deepEqual(style.words, ['那天'])
+    assert.equal(state.activeStyleId, style.id, '写完设为当前风格')
+    await assert.rejects(addStyle.execute({}), /风格需要名字/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -225,12 +212,12 @@ function skillContext(desk) {
   const providers = []
   const ctx = {
     get: name => (name === 'writingDesk' ? desk : undefined),
-    skills: { registerProvider: create => providers.push(create({ signal: SIGNAL, invalidate() {} })) },
+    skills: { registerProvider: create => providers.push(create({ signal: new AbortController().signal, invalidate() {} })) },
   }
   return { ctx, providers }
 }
 
-/** 带风格卡与两条规则的领域状态:一条生效、一条示例、一条提议(只有生效的进 skill)。 */
+/** 带风格卡与规则的领域状态:一条生效、一条示例、一条提议(只有生效的进 skill)。 */
 function styledState() {
   const state = seedState()
   applyOps(state, [{ op: 'add_style', name: '测试腔', summary: '短句、说人话', tone: '克制', avoid: ['陈词滥调'] }])
@@ -246,62 +233,81 @@ function styledState() {
   return state
 }
 
-test('skill provider 经 ctx.skills.registerProvider 注册,导出形态与官方 provider 一致', () => {
+test('skill provider 注册一次,给出 rules 与 craft 两个候选', async () => {
   const { ctx, providers } = skillContext({ store: { read: async () => seedState() } })
-  rulesSkill.apply(ctx)
+  skills.apply(ctx)
   assert.equal(providers.length, 1)
   const provider = providers[0]
   assert.equal(provider.name, 'writing-desk')
   assert.equal(typeof provider.list, 'function')
   assert.equal(typeof provider.get, 'function')
-  assert.deepEqual(rulesSkill.inject, ['skills', 'writingDesk'])
-  assert.equal(rulesSkill.name, 'writing-desk-rules-skill')
+  assert.deepEqual(skills.inject, ['skills', 'writingDesk'])
+  assert.equal(skills.name, 'writing-desk-rules')
+  const candidates = await provider.list({})
+  assert.deepEqual(candidates.map(row => row.name), ['writing-desk-rules', 'writing-desk-craft'])
+  for (const candidate of candidates) {
+    assert.ok(candidate.description)
+    assert.deepEqual(candidate.invocation, { modelInvocable: true, userInvocable: true })
+    assert.equal(candidate.source, 'custom')
+    assert.equal(candidate.provider, 'writing-desk')
+  }
+  // 未知候选返回 undefined,不硬塞内容
+  assert.equal(await provider.get({ name: 'nope' }, {}), undefined)
 })
 
-test('list 给出可被模型与用户共同调用的候选,get 读出实时规则与风格', async () => {
+test('rules skill get 读出实时规则与风格;示例与未确认的提议不进', async () => {
   const state = styledState()
   const { ctx, providers } = skillContext({ store: { read: async () => state } })
-  rulesSkill.apply(ctx)
-  const provider = providers[0]
-  const candidates = await provider.list({})
-  assert.equal(candidates.length, 1)
-  const candidate = candidates[0]
-  assert.equal(candidate.name, 'writing-desk-rules')
-  assert.ok(candidate.description)
-  assert.deepEqual(candidate.invocation, { modelInvocable: true, userInvocable: true })
-  assert.equal(candidate.source, 'custom')
-  assert.equal(candidate.provider, 'writing-desk')
-  assert.equal(candidate.rank, 0)
+  skills.apply(ctx)
+  const [provider] = providers
+  const [candidate] = await provider.list({})
   const definition = await provider.get(candidate, {})
   assert.ok(definition && typeof definition.content === 'string')
-  // 内容来自当前状态:风格卡与已生效规则都在,示例与未确认的提议不进
   assert.match(definition.content, /测试腔/)
   assert.match(definition.content, /短句、说人话/)
   assert.match(definition.content, /同一选题优先在一个平台首发。/)
-  assert.match(definition.content, /首发平台/)
   assert.doesNotMatch(definition.content, /示例不算风格/)
   assert.doesNotMatch(definition.content, /用户没确认的不算/)
-})
-
-test('没有风格与规则时 skill 仍在,正文说明去哪里沉淀;规则改动后 get 读到新内容', async () => {
-  const state = seedState()
-  const { ctx, providers } = skillContext({ store: { read: async () => state } })
-  rulesSkill.apply(ctx)
-  const [provider] = providers
-  const [candidate] = await provider.list({})
-  const empty = await provider.get(candidate, {})
-  assert.ok(empty.content)
-  assert.match(empty.content, /工作台|风格|规则/)
-  assert.doesNotMatch(empty.content, /必须遵守的规则/)
   // 规则是 get 时实时读的:写入新规则后,同一个 provider 立刻给出新正文
   applyOps(state, [{ op: 'add_skill', name: '新规则', rule: '标题要有动词。', status: 'active' }])
   const fresh = await provider.get(candidate, {})
   assert.match(fresh.content, /标题要有动词。/)
 })
 
+test('rules skill 没有风格与规则时仍在,正文说明去哪里沉淀', async () => {
+  const state = seedState()
+  const { ctx, providers } = skillContext({ store: { read: async () => state } })
+  skills.apply(ctx)
+  const [provider] = providers
+  const [candidate] = await provider.list({})
+  const empty = await provider.get(candidate, {})
+  assert.ok(empty.content)
+  assert.match(empty.content, /工作台|风格|规则/)
+  assert.doesNotMatch(empty.content, /必须遵守的规则/)
+})
+
+test('craft skill 是静态写作法:意图单、声纹双向清单、审读双轴、润色四遍都在', async () => {
+  const { ctx, providers } = skillContext({ store: { read: async () => seedState() } })
+  skills.apply(ctx)
+  const [provider] = providers
+  const [, craft] = await provider.list({})
+  assert.equal(craft.name, 'writing-desk-craft')
+  const definition = await provider.get(craft, {})
+  assert.match(definition.content, /意图单/)
+  assert.match(definition.content, /不是问题/)
+  assert.match(definition.content, /Standards 轴|Standards/)
+  assert.match(definition.content, /Intent 轴|Intent/)
+  assert.match(definition.content, /停下/)
+  assert.match(definition.content, /小红书/)
+  assert.match(definition.content, /公众号/)
+  assert.match(definition.content, /知乎/)
+  // 人工闸门写进条款:不许自动跑到底
+  assert.match(definition.content, /不要自己一路跑到底|未经用户确认/)
+})
+
 // ---------- host 半片接线(src/host.js) ----------
 
-test('host 半片发布 writingDesk 服务,preset 子插件经它拿到同一份 Store 与 Producer', async () => {
+test('host 半片发布 writingDesk 服务,preset 子插件经它拿到同一份 Store', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-host-'))
   const previous = process.env.DSH_HOME
   process.env.DSH_HOME = dir
@@ -317,8 +323,8 @@ test('host 半片发布 writingDesk 服务,preset 子插件经它拿到同一份
     const desk = provided.writingDesk
     assert.ok(desk, 'apply 之后必须已经 provide writingDesk 服务')
     assert.equal(typeof desk.store.read, 'function')
-    assert.equal(typeof desk.producer.start, 'function')
     assert.ok(desk.settings, 'settings 也在同一份服务里')
+    assert.equal(desk.producer, undefined, '内置流水线退役,不再有 producer')
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previous

@@ -1,4 +1,4 @@
-// 一键保存：把成稿写成一个普通文件夹，脚本、封面、配图和分镜都在里面。
+// 一键保存：把成稿写成一个普通文件夹，正文、封面和配图都在里面。
 import { createHash } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
@@ -43,10 +43,6 @@ function stamp(date) {
   return `${date.getFullYear()}${two(date.getMonth() + 1)}${two(date.getDate())}-${two(date.getHours())}${two(date.getMinutes())}${two(date.getSeconds())}`
 }
 
-function cell(text) {
-  return String(text ?? '').replace(/\|/g, '｜').replace(/\n/g, ' ')
-}
-
 /** 成稿素材按 files/ 的落盘方式原样复制到目标文件夹,返回文件名;没画出来的(无 src)返回 null。 */
 export async function copyAssetFile(asset, name, filesDir, dir) {
   const match = /^writing-desk\/files\/([\w.-]+)$/.exec(asset?.src ?? '')
@@ -72,15 +68,15 @@ export function articleWithFigures(production, figures) {
 
 /**
  * @param {object} production - 成稿。
- * @param {{filesDir: string, exportDir: string, videoCover?: Buffer}} options - 素材目录、保存位置和合成好的视频封面。
+ * @param {{filesDir: string, exportDir: string}} options - 素材目录与保存位置。
  * @returns {Promise<{path: string, files: string[], hashes: Record<string, string>, backups: string[]}>} 文件夹路径、写入的文件名、稿子的指纹，以及这次留下的备份。
  */
-export async function saveProduction(production, { filesDir, exportDir, videoCover }) {
+export async function saveProduction(production, { filesDir, exportDir }) {
   // 英文界面用纯 ASCII 文件名，方便在别的系统和工具里打开
   const en = currentLang() === 'en'
   const names = en
-    ? { cover: 'cover-original', videoCover: 'video-cover.jpg', figure: i => `figure-${i}`, shot: n => `shot-${n}`, script: 'script.md', board: 'storyboard.md' }
-    : { cover: '封面原图', videoCover: '视频封面.jpg', figure: i => `配图${i}`, shot: n => `分镜${n}`, script: '脚本.md', board: '分镜脚本.md' }
+    ? { cover: 'cover-original', figure: i => `figure-${i}`, script: 'script.md' }
+    : { cover: '封面原图', figure: i => `配图${i}`, script: '文章.md' }
   const target = production.savedPath || freeFolder(exportDir, production.title)
   await mkdir(target, { recursive: true })
   const files = []
@@ -107,27 +103,12 @@ export async function saveProduction(production, { filesDir, exportDir, videoCov
     return file
   }
 
-  const cover = await copy(production.cover, names.cover)
-  if (videoCover) {
-    await writeFile(join(target, names.videoCover), videoCover)
-    files.push(names.videoCover)
-  }
+  await copy(production.cover, names.cover)
   const figures = []
   for (const [i, image] of (production.images ?? []).entries()) {
     figures.push({ image, ref: await copy(image, names.figure(i + 1)) })
   }
-  const shots = []
-  for (const [i, shot] of (production.shots ?? []).entries()) {
-    shots.push({ shot, file: await copy(shot, names.shot(String(i + 1).padStart(2, '0'))) })
-  }
 
   await writeText(names.script, articleWithFigures(production, figures))
-
-  if (shots.length) {
-    const seconds = value => (value === undefined || value === null ? '' : en ? `${value}s` : `${value} 秒`)
-    const rows = shots.map(({ shot, file }, i) => `| ${i + 1} | ${cell(shot.shot)} | ${seconds(shot.seconds)} | ${cell(shot.visual)} | ${cell(shot.voice)} | ${file ? `![](${file})` : ''} |`)
-    const heading = en ? `# ${production.title}: storyboard\n\n| Shot | Size | Length | Visual | Voice-over | Frame |` : `# ${production.title}：分镜头脚本\n\n| 镜号 | 景别 | 时长 | 画面 | 口播 | 分镜图 |`
-    await writeText(names.board, `${heading}\n| --- | --- | --- | --- | --- | --- |\n${rows.join('\n')}\n`)
-  }
   return { path: target, files, hashes, backups }
 }

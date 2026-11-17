@@ -8,11 +8,10 @@ export { STATUSES }
 // 这些表只放中文原文，显示时再用 t() 翻译
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
 export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记' }
-export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
-const OVERSEAS = new Set(['TikTok', 'Instagram', 'YouTube', 'X'])
-/** 下拉框里的平台顺序：英文界面把海外平台放前面。 */
+export const PLATFORMS = ['公众号', '小红书', '知乎']
+/** 下拉框里的平台顺序。 */
 export function platformChoices() {
-  return lang() === 'en' ? [...PLATFORMS.filter(p => OVERSEAS.has(p)), ...PLATFORMS.filter(p => !OVERSEAS.has(p))] : PLATFORMS
+  return PLATFORMS
 }
 export const STYLE_CATEGORIES = ['科技数码', '旅行探店', 'Vlog 生活', '观点认知', '干货教程', '种草测评', '情感故事', '热点资讯']
 
@@ -20,8 +19,7 @@ export function styleIcon(style) {
   return style?.icon || '✍️'
 }
 export const PLATFORM_URL = {
-  公众号: 'https://mp.weixin.qq.com/', 小红书: 'https://creator.xiaohongshu.com/publish/publish', 抖音: 'https://creator.douyin.com/creator-micro/content/upload',
-  B站: 'https://member.bilibili.com/platform/upload/video/frame', 视频号: 'https://channels.weixin.qq.com/platform/post/create', TikTok: 'https://www.tiktok.com/tiktokstudio/upload', Instagram: 'https://www.instagram.com/', YouTube: 'https://studio.youtube.com/', X: 'https://x.com/compose/post',
+  公众号: 'https://mp.weixin.qq.com/', 小红书: 'https://creator.xiaohongshu.com/publish/publish', 知乎: 'https://zhuanlan.zhihu.com/write',
 }
 
 export function hash(text) {
@@ -31,16 +29,6 @@ export function hash(text) {
     h = Math.imul(h, 16777619)
   }
   return h >>> 0
-}
-
-export function seeded(seed) {
-  let s = seed || 1
-  return () => {
-    s = Math.imul(s ^ (s >>> 15), 2246822507)
-    s = Math.imul(s ^ (s >>> 13), 3266489909)
-    s ^= s >>> 16
-    return (s >>> 0) / 4294967296
-  }
 }
 
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -146,7 +134,7 @@ export function computeStreak(items, now = new Date()) {
 /** 成稿之后，卡片显示封面和最终标题。 */
 export function displayItem(item) {
   const production = item.production
-  if (!production?.title || production.status === 'running') return item
+  if (!production?.title) return item
   const src = production.cover?.src
   return { ...item, title: production.title, ...(src ? { kind: 'image', media: { src, w: 3, h: 2 } } : {}) }
 }

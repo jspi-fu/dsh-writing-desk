@@ -33,8 +33,8 @@ test('src/ 内不再有旧状态口径的残留', () => {
   }
 })
 
-test('状态机事件:spec 定下的九个状态迁移事件,加上人工改稿的 editProduction', () => {
-  assert.deepEqual(EVENTS, ['start', 'articleWritten', 'done', 'fail', 'cancel', 'schedule', 'unschedule', 'setStatus', 'publish', 'editProduction'])
+test('状态机事件:会话写回 submit 与人工改稿 editProduction,加排期与发布(ADR 0006)', () => {
+  assert.deepEqual(EVENTS, ['submit', 'editProduction', 'schedule', 'unschedule', 'setStatus', 'publish'])
 })
 
 // 遗留草稿字段的存量清除(工单 #7):旧数据里读到就无害删键,不进任何判断。
@@ -89,75 +89,73 @@ test('无效状态、未知事件、找不到的灵感都直接报错', () => {
   assert.throws(() => run(item(), { type: 'setStatus', status: 'nope' }), /状态无效/)
   assert.throws(() => run(item(), { type: 'rewind' }), /不支持的状态事件/)
   assert.throws(() => reduce({ items: [] }, { type: 'setStatus', status: 'idea', id: 'nope' }), /找不到这条灵感/)
-  assert.throws(() => run(item(), { type: 'cancel' }), /还没有成稿/)
 })
 
-test('成稿取消后,已写好的正文保留,谓词仍说已成稿', () => {
-  const wrote = item({
-    status: 'draft',
-    production: { status: 'running', stage: 'making', article: '已经落盘的正文', cover: { status: 'pending' }, images: [{ status: 'running' }], shots: [{ status: 'done' }] },
-  })
-  assert.equal(panelState(wrote), 'producing')
-  run(wrote, { type: 'cancel' })
-  assert.equal(wrote.production.status, 'cancelled')
-  assert.equal(wrote.production.stage, 'done')
-  assert.equal(wrote.production.error, null)
-  assert.equal(wrote.production.article, '已经落盘的正文')
-  assert.equal(wrote.production.cover.status, 'idle')
-  assert.equal(wrote.production.images[0].status, 'idle')
-  assert.equal(wrote.production.shots[0].status, 'done')
-  assert.equal(isDrafted(wrote), true)
-  assert.equal(panelState(wrote), 'drafted')
+test('会话写回:没有产物就建一份,灵感推进成草稿,已排期的推进成待发布', () => {
+  const fresh = item()
+  run(fresh, { type: 'submit', article: '会话写回的正文', title: '会话定的标题' })
+  assert.equal(fresh.production.status, 'done')
+  assert.equal(fresh.production.article, '会话写回的正文')
+  assert.equal(fresh.production.title, '会话定的标题')
+  assert.equal(fresh.production.engine, 'harness')
+  assert.equal(fresh.production.aiArticle, '会话写回的正文', 'AI 快照就是会话刚写的版本')
+  assert.equal(fresh.production.rev, 1)
+  assert.equal(fresh.status, 'draft')
+  assert.equal(isDrafted(fresh), true)
+  assert.equal(panelState(fresh), 'drafted')
+  const planned = item({ scheduledAt: '2026-12-01T10:00:00.000Z', sentToSession: { at: NOW } })
+  run(planned, { type: 'submit', article: '正文' })
+  assert.equal(planned.status, 'ready')
+  assert.equal(planned.sentToSession, undefined, '写回清掉交会话的登记(相位推进)')
 })
 
-test('成稿失败同样保留正文,错误信息留给用户看', () => {
-  const wrote = item({ status: 'draft', production: { status: 'running', article: '已经落盘的正文' } })
-  run(wrote, { type: 'fail', error: '模型超时' })
-  assert.equal(wrote.production.status, 'failed')
-  assert.equal(wrote.production.error, '模型超时')
-  assert.equal(wrote.production.article, '已经落盘的正文')
-  assert.equal(isDrafted(wrote), true)
+test('会话写回落内容快照并带阶段说明,重复写回 rev 前进、覆盖人工修改前先有快照', () => {
+  const wrote = item({ status: 'draft', production: { status: 'done', article: '人工改过的正文', rev: 3, snapshots: [{ at: '2026-11-10T00:00:00.000Z', by: 'user', article: '人工改过的正文' }] } })
+  run(wrote, { type: 'submit', article: '会话的新版本', note: '按反馈润色' })
+  assert.equal(wrote.production.article, '会话的新版本')
+  assert.equal(wrote.production.aiArticle, '会话的新版本')
+  assert.equal(wrote.production.rev, 4)
+  const snapshots = wrote.production.snapshots
+  assert.equal(snapshots.length, 2)
+  assert.equal(snapshots[1].by, 'session')
+  assert.equal(snapshots[1].note, '按反馈润色')
+  assert.equal(snapshots[1].article, '会话的新版本', '快照带内容,校样浮层可回退')
 })
 
-test('重新成稿不清空上一次写好的正文,画面清零等这一轮重画', () => {
+test('只写部分字段时,其余字段与来历原样保留', () => {
   const wrote = item({
     status: 'draft',
     production: {
-      status: 'done', stage: 'done', finishedAt: '2026-11-10T00:00:00.000Z', article: '上一篇正文', aiArticle: '上一篇AI原稿', engine: 'deepseek', notice: null,
-      savedPath: '~/导出/稿子', savedHashes: { '脚本.md': 'h1' }, cover: { status: 'done' }, images: [{ status: 'done' }], shots: [{ status: 'done' }],
+      status: 'done', article: '已有正文', aiArticle: '已有AI原稿', engine: 'harness',
+      title: '旧标题', cover: { src: 'writing-desk/files/c.png', status: 'done' }, images: [{ src: 'writing-desk/files/a.png', status: 'done' }],
+      savedPath: '~/导出/稿子', savedHashes: { '文章.md': 'h1' },
     },
   })
-  run(wrote, { type: 'start', withImages: true, format: 'article' })
-  assert.equal(wrote.production.status, 'running')
-  assert.equal(wrote.production.stage, 'brief')
-  assert.equal(wrote.production.startedAt, NOW)
-  assert.equal(wrote.production.format, 'article')
-  assert.equal(wrote.production.withImages, true)
-  assert.equal(wrote.production.title, '测试灵感')
-  // 重试不毁稿:正文和它的来历(AI 原稿、引擎)都还在
-  assert.equal(wrote.production.article, '上一篇正文')
-  assert.equal(wrote.production.aiArticle, '上一篇AI原稿')
-  assert.equal(wrote.production.engine, 'deepseek')
+  run(wrote, { type: 'submit', title: '新标题' })
+  assert.equal(wrote.production.title, '新标题')
+  assert.equal(wrote.production.article, '已有正文')
+  assert.equal(wrote.production.aiArticle, '已有AI原稿', '没写正文就不动 AI 快照')
+  assert.equal(wrote.production.engine, 'harness')
   assert.equal(wrote.production.savedPath, '~/导出/稿子')
-  assert.deepEqual(wrote.production.savedHashes, { '脚本.md': 'h1' })
-  // 上一轮的画面不冒充这一轮的
-  assert.equal(wrote.production.cover, null)
-  assert.deepEqual(wrote.production.images, [])
-  assert.deepEqual(wrote.production.shots, [])
-  // 新一轮写出正文后原子替换
-  run(wrote, { type: 'articleWritten', article: '新正文', engine: 'deepseek' })
-  assert.equal(wrote.production.article, '新正文')
-  assert.equal(wrote.production.aiArticle, '新正文')
-  assert.equal(wrote.production.engine, 'deepseek')
+  assert.deepEqual(wrote.production.cover, { src: 'writing-desk/files/c.png', status: 'done' })
+  assert.equal(wrote.production.images.length, 1)
 })
 
-test('重新成稿后又取消,上一篇正文还在', () => {
-  const wrote = item({ status: 'draft', production: { status: 'done', article: '上一篇正文' } })
-  run(wrote, { type: 'start' })
-  run(wrote, { type: 'cancel' })
-  assert.equal(wrote.production.status, 'cancelled')
-  assert.equal(wrote.production.article, '上一篇正文')
-  assert.equal(isDrafted(wrote), true)
+test('写回可带意图单、审读报告与配图清单', () => {
+  const fresh = item()
+  run(fresh, {
+    type: 'submit',
+    article: '正文',
+    intent: { purpose: '立观点', status: 'confirmed' },
+    review: { findings: [{ axis: 'standards', severity: 'P1', location: '第 2 段', quote: '原文', suggestion: '删掉补分析' }] },
+    images: [{ src: 'writing-desk/files/a.png', caption: '配图', anchor: '为什么' }],
+    cover: { src: 'writing-desk/files/c.png', caption: '封面字' },
+  })
+  assert.deepEqual(fresh.production.intent, { purpose: '立观点', status: 'confirmed' })
+  assert.equal(fresh.production.review.findings.length, 1)
+  assert.equal(fresh.production.images[0].anchor, '为什么')
+  assert.equal(fresh.production.cover.src, 'writing-desk/files/c.png')
+  assert.equal(fresh.production.images[0].status, 'done')
 })
 
 // 人工改稿经 editProduction(update_production 的 reducer 事件):写完照常自愈,
@@ -188,40 +186,31 @@ test('人工补写正文:自愈向前推进,排期里没写稿的大纲当场待
   assert.equal(panelState(outlined), 'drafted')
 })
 
-test('人工改稿不动 AI 原稿快照:aiArticle 只由 articleWritten 产生', () => {
-  const wrote = item({ status: 'draft', production: { status: 'done', article: '改过的正文', aiArticle: 'AI 原稿', engine: 'deepseek' } })
+test('人工改稿不动 AI 原稿快照:aiArticle 只由会话写回产生,rev 前进并落用户快照', () => {
+  const wrote = item({ status: 'draft', production: { status: 'done', article: '改过的正文', aiArticle: 'AI 原稿', engine: 'harness', rev: 1 } })
   run(wrote, { type: 'editProduction', title: '人工定的标题', coverText: '封面文案', article: '再改一次的正文' })
   assert.equal(wrote.production.title, '人工定的标题')
   assert.equal(wrote.production.coverText, '封面文案')
   assert.equal(wrote.production.article, '再改一次的正文')
   assert.equal(wrote.production.aiArticle, 'AI 原稿', '手改不许冲掉 AI 原稿快照')
+  assert.equal(wrote.production.rev, 2)
+  const snapshots = wrote.production.snapshots
+  assert.equal(snapshots.length, 1)
+  assert.equal(snapshots[0].by, 'user')
+  assert.equal(snapshots[0].article, '再改一次的正文')
   // 没给的字段一个都不动;没有成稿产物的人工改稿直接报错
   run(wrote, { type: 'editProduction' })
   assert.equal(wrote.production.title, '人工定的标题')
   assert.throws(() => run(item(), { type: 'editProduction', article: '正文' }), /还没有成稿/)
 })
 
-test('正文落盘即成稿:灵感推进成草稿,已排期的推进成待发布', () => {
-  const fresh = item()
-  run(fresh, { type: 'start' })
-  run(fresh, { type: 'articleWritten', article: '正文' })
-  assert.equal(fresh.status, 'draft')
-  assert.equal(isDrafted(fresh), true)
-  const planned = item({ scheduledAt: '2026-12-01T10:00:00.000Z' })
-  run(planned, { type: 'start' })
-  run(planned, { type: 'articleWritten', article: '正文' })
-  assert.equal(planned.status, 'ready')
-})
-
-test('成稿完成:产物定稿并记下完成时间,未排期的落回草稿', () => {
-  const fresh = item()
-  run(fresh, { type: 'start' })
-  run(fresh, { type: 'done' })
-  assert.equal(fresh.production.status, 'done')
-  assert.equal(fresh.production.stage, 'done')
-  assert.equal(fresh.production.finishedAt, NOW)
-  assert.equal(fresh.status, 'draft')
-  assert.equal(panelState(fresh), 'drafted')
+test('快照最多留十份,旧的先出去', () => {
+  const wrote = item({ status: 'draft', production: { status: 'done', article: 'v0' } })
+  for (let i = 1; i <= 12; i++) run(wrote, { type: 'editProduction', article: `v${i}` })
+  assert.equal(wrote.production.snapshots.length, 10)
+  assert.equal(wrote.production.snapshots[0].article, 'v3')
+  assert.equal(wrote.production.snapshots[9].article, 'v12')
+  assert.equal(wrote.production.rev, 12)
 })
 
 test('排期与取消排期:已成稿的排上就是待发布,退回来就是草稿', () => {
@@ -267,14 +256,10 @@ test('排期时间无效直接报错', () => {
   assert.throws(() => run(item(), { type: 'schedule', scheduledAt: '不是日期' }), /排期时间无效/)
 })
 
-test('一条灵感从成稿到发布的整个生命周期,每个节点面板口径一致', () => {
-  const entry = item()
-  run(entry, { type: 'start', withImages: false, format: 'script' })
-  assert.equal(panelState(entry), 'producing')
-  run(entry, { type: 'articleWritten', article: '正文', engine: 'deepseek' })
+test('一条灵感从会话写回到发布的整个生命周期,每个节点面板口径一致', () => {
+  const entry = item({ sentToSession: { at: NOW } })
+  run(entry, { type: 'submit', article: '正文', engine: 'harness' })
   assert.equal(isDrafted(entry), true)
-  assert.equal(panelState(entry), 'producing')
-  run(entry, { type: 'done' })
   assert.equal(panelState(entry), 'drafted')
   assert.equal(entry.status, 'draft')
   run(entry, { type: 'schedule', scheduledAt: '2026-12-01T10:00:00.000Z' })

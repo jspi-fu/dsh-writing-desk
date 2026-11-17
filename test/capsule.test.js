@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { applyOps } from '../src/ops.js'
-import { buildSeed } from '../src/seed.js'
+import { buildSeed, migrateState } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import { retagPreview, tagShelf } from '../client/tags.js'
 
@@ -51,7 +51,17 @@ test('胶囊成员必须真实存在、去重、非空;空名字给默认名', (
   assert.deepEqual(dupErrors, [])
   const capsule = state.capsules.find(c => c.id === receipts[0].target)
   assert.deepEqual(capsule.itemIds, ['seed_1', 'seed_2'])
-  assert.equal(capsule.name, '新胶囊', '没起名就用默认名')
+  assert.ok(capsule.name.startsWith('普通人第一次用'), '没起名就拿第一条成员的标题当名字')
+  assert.ok(capsule.name.length <= 19, '名字按 18 字截断,够写在胶囊下面')
+})
+
+test('第一条成员既没有标题也没有正文时,胶囊退回默认名', () => {
+  const state = seed()
+  // 导入的裸数据可能两个字段都是空的;add_item 自己会补标题,这里直接塞进去模拟
+  state.items.push({ id: 'bare', kind: 'note', title: '', body: '', tags: [], createdAt: NOW.toISOString() })
+  const { receipts } = applyOps(state, [{ op: 'add_capsule', itemIds: ['bare', 'seed_2'] }])
+  const capsule = state.capsules.find(c => c.id === receipts[0].target)
+  assert.equal(capsule.name, '新胶囊')
 })
 
 test('改名与换成员;解散胶囊只删集合关系,成员灵感完整保留', () => {
@@ -75,17 +85,17 @@ test('改名与换成员;解散胶囊只删集合关系,成员灵感完整保留
   assert.equal(applyOps(state, [{ op: 'update_capsule', id, name: '再改' }]).errors.length, 1)
 })
 
-test('删掉成员灵感,胶囊摘掉它;成员删光胶囊就解散', () => {
+test('删掉成员灵感,只剩一个就自动解散', () => {
   const state = seed()
-  const { receipts } = applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2'] }])
-  const id = receipts[0].target
+  applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2', 'seed_3'] }])
   applyOps(state, [{ op: 'delete_item', id: 'seed_1' }])
-  assert.deepEqual(state.capsules.find(c => c.id === id).itemIds, ['seed_2'], '删成员只摘关系,不动胶囊本身')
+  assert.deepEqual(state.capsules[0].itemIds, ['seed_2', 'seed_3'], '还剩两个成员时胶囊保留')
   applyOps(state, [{ op: 'delete_item', id: 'seed_2' }])
-  assert.deepEqual(state.capsules, [], '成员删光,空胶囊没有存在的意义')
+  assert.deepEqual(state.capsules, [], '只剩一个成员时胶囊自动解散')
+  assert.ok(state.items.some(i => i.id === 'seed_3'), '最后一个成员仍独立存在')
 })
 
-test('清空示例后,胶囊里挂着的示例成员一并摘掉', () => {
+test('清空示例后,胶囊里挂着的示例成员一并摘掉,不足两个的自动解散', () => {
   const state = seed()
   const { receipts: added } = applyOps(state, [{ op: 'add_item', title: '我自己的' }])
   const mine = added[0].target
@@ -94,9 +104,43 @@ test('清空示例后,胶囊里挂着的示例成员一并摘掉', () => {
     { op: 'add_capsule', name: '全是示例', itemIds: ['seed_2', 'seed_3'] },
   ])
   applyOps(state, [{ op: 'clear_samples' }])
-  const [mixed] = state.capsules
-  assert.equal(state.capsules.length, 1, '全是示例成员的胶囊跟着消失')
-  assert.deepEqual(mixed.itemIds, [mine], '示例成员被摘掉,自己的灵感留在胶囊里')
+  assert.equal(state.capsules.length, 0, '只剩一个成员的胶囊自动解散')
+  assert.ok(state.items.some(i => i.id === mine), '自己的灵感仍在画布上')
+})
+
+test('一个灵感只属于一个胶囊;少于两个成员不能建胶囊', () => {
+  const state = seed()
+  assert.equal(applyOps(state, [{ op: 'add_capsule', name: '独苗', itemIds: ['seed_1'] }]).errors.length, 1, '单个成员不能建胶囊')
+  applyOps(state, [{ op: 'add_capsule', name: '甲', itemIds: ['seed_1', 'seed_2'] }])
+  applyOps(state, [{ op: 'add_capsule', name: '乙', itemIds: ['seed_2', 'seed_3'] }])
+  assert.equal(state.capsules.length, 1, '甲被拿走 seed_2 后只剩一个成员,自动解散')
+  assert.equal(state.capsules[0].name, '乙')
+  assert.deepEqual(state.capsules[0].itemIds, ['seed_2', 'seed_3'])
+})
+
+test('拖走成员只剩一个时,update_capsule 自动解散,最后一个成员留在灵感流里', () => {
+  const state = seed()
+  applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2'] }])
+  const { receipts, errors } = applyOps(state, [{ op: 'update_capsule', id: state.capsules[0].id, itemIds: ['seed_1'] }])
+  assert.deepEqual(errors, [])
+  assert.equal(state.capsules.length, 0)
+  assert.match(receipts[0].text, /自动解散/)
+  const left = state.items.find(i => i.id === 'seed_1')
+  assert.ok(left, '最后一个成员仍是独立灵感')
+  assert.equal(left.pos, undefined, '解散不再写画布坐标')
+})
+
+test('读旧数据时,只剩一个成员的胶囊直接解散,成员留在灵感墙上', () => {
+  const state = seed()
+  state.capsules = [
+    { id: 'cap_old', name: '旧胶囊', itemIds: ['seed_1'], createdAt: NOW.toISOString() },
+    { id: 'cap_dup', name: '抢了别人成员的胶囊', itemIds: ['seed_2', 'seed_3'], createdAt: NOW.toISOString() },
+    { id: 'cap_ok', name: '正常胶囊', itemIds: ['seed_2', 'seed_3'], createdAt: NOW.toISOString() },
+  ]
+  const migrated = migrateState(state)
+  assert.deepEqual(migrated.capsules.map(c => c.id), ['cap_dup'], '单成员胶囊解散,重复归属只留第一个')
+  assert.deepEqual(migrated.capsules[0].itemIds, ['seed_2', 'seed_3'])
+  assert.ok(migrated.items.some(i => i.id === 'seed_1'), '成员灵感仍在')
 })
 
 test('批量改标签带期望 revision:版本一致才应用,应用后版本前进', () => {

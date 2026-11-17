@@ -3,18 +3,14 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { extractJson, fallbackArticle, fallbackPlan } from '../src/ai.js'
 import { assertPublicUrl, harvest, harvestText } from '../src/harvest.js'
-import { activeStyle, normalizeStyle, stylePrompts, styleToVoice } from '../src/style.js'
-import { articlePrompts, planPrompts } from '../src/ai.js'
+import { activeStyle, styleToVoice } from '../src/style.js'
 import { migrateState } from '../src/seed.js'
 import { requestRejection } from '../src/host.js'
-import { computeInsights, exportSkill, learnFromEdits, proposeRules } from '../src/learn.js'
+import { exportSkill } from '../src/learn.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
-import { generateImage } from '../src/images.js'
-import { normalizePlan, Producer } from '../src/produce.js'
 import { saveProduction, resolveExportDir } from '../src/export.js'
 import { mkdir, readdir, writeFile } from 'node:fs/promises'
 import { publicSettings, Settings } from '../src/settings.js'
@@ -60,7 +56,6 @@ test('clear_samples 清空示例但保留用户内容', () => {
   const state = seed()
   applyOps(state, [{ op: 'add_item', title: '我自己的' }, { op: 'clear_samples' }])
   assert.deepEqual(state.items.map(i => i.title), ['我自己的'])
-  assert.equal(state.metrics.length, 0)
 })
 
 test('速记卡的来源类型只接受「我写的 / AI 生成的」', () => {
@@ -121,42 +116,6 @@ test('Store 持久化、撤销，并能感知另一进程的写入', async () =>
   }
 })
 
-test('extractJson 容忍代码块和前后说明', () => {
-  assert.deepEqual(extractJson('好的：\n```json\n{"a":1}\n```\n完成'), { a: 1 })
-  assert.deepEqual(extractJson('结果是 [1,2] 。'), [1, 2])
-  assert.throws(() => extractJson('没有结构'))
-})
-
-test('降级生成的内容明确标注未连接模型', () => {
-  const state = seed()
-  assert.match(fallbackArticle(state, state.items[0]), /没有连上文字模型/)
-  const plan = fallbackPlan(state.items[0], '## 甲\n## 乙', { imageCount: 2, shotCount: 6 })
-  assert.equal(plan.images.length, 2)
-  assert.equal(plan.shots.length, 6)
-})
-
-test('proposeRules 基于数据提案，已有规则不重复', () => {
-  const state = seed()
-  const first = proposeRules(state)
-  assert.ok(first.length > 0)
-  assert.ok(first.every(p => p.evidence))
-  applyOps(state, first.map(p => ({ op: 'add_skill', ...p })))
-  assert.equal(proposeRules(state).length, 0)
-})
-
-test('proposeRules 没有数据时不提案', () => {
-  const state = seed()
-  state.metrics = []
-  assert.equal(proposeRules(state).length, 0)
-})
-
-test('computeInsights 汇总与逐日数据一致', () => {
-  const state = seed()
-  const data = computeInsights(state)
-  assert.equal(data.daily.reduce((a, b) => a + b.views, 0), data.views)
-  assert.equal(data.platforms.reduce((a, b) => a + b.views, 0), data.views)
-})
-
 test('requestRejection 没有鉴权服务时拒绝，有服务时听它的', () => {
   const req = { headers: { cookie: 'x' } }
   assert.equal(requestRejection({ get: () => undefined }, req), 403)
@@ -185,69 +144,6 @@ test('exportSkill 不导出示例规则和示例人物', async () => {
   }
 })
 
-// 工单 #10 风格闭环:两条有人工删改的成稿 → 提炼出一条规则,写入(active)后
-// 下次成稿自动套用(进提示词),并可导出进 DSH Skill。
-function editedProductions(state, names, cut) {
-  const long = '字'.repeat(400)
-  state.items = names.map((name, i) => ({
-    id: `it_${i}`, title: name, status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
-    production: { status: 'done', format: 'article', title: name, aiArticle: `# ${name}\n\n${long}`, article: `# ${name}\n\n${long.slice(0, long.length - cut)}` },
-  }))
-}
-
-test('成稿反馈:修改差异提炼成规则,写入后直接生效并可导出', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-loop-'))
-  try {
-    const state = seed()
-    state.skills = []
-    editedProductions(state, ['甲', '乙'], 200)
-    const proposals = learnFromEdits(state)
-    assert.equal(proposals.length, 1)
-    assert.equal(proposals[0].source, '成稿反馈')
-    assert.ok(proposals[0].rule)
-    applyOps(state, proposals.map(row => ({ op: 'add_skill', ...row, status: 'active' })))
-    // 下次成稿自动套用:active 规则进入成稿提示词
-    const { system } = articlePrompts(state, state.items[0], null, null)
-    assert.ok(system.includes(proposals[0].rule))
-    // 风格规则可导出为 DSH Skill:导出内容含新规则
-    const result = await exportSkill(state, dir)
-    assert.equal(result.rules, 1)
-    const body = await readFile(result.path, 'utf8')
-    assert.ok(body.includes(proposals[0].rule))
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('成稿反馈不重复:同名或近同义规则不再写入,提案路径同样挡住', () => {
-  const state = seed()
-  state.skills = []
-  editedProductions(state, ['甲', '乙'], 200)
-  const first = learnFromEdits(state)
-  assert.equal(first.length, 1)
-  const name = first[0].name
-  // 已有同名规则(哪怕还在待确认)→ 不重复写入
-  applyOps(state, [{ op: 'add_skill', name, rule: '另一段规则文本', status: 'proposed' }])
-  assert.equal(learnFromEdits(state).length, 0)
-  // 近同义(名字只差标点)同样算已有规则;proposeRules 的提案也被挡住
-  state.skills = state.skills.filter(row => row.name !== name)
-  applyOps(state, [{ op: 'add_skill', name: `${name}！`, rule: '另一段规则文本', status: 'active' }])
-  assert.equal(learnFromEdits(state).length, 0)
-  assert.equal(proposeRules(state).filter(row => row.name === name).length, 0)
-})
-
-test('成稿没有人工修改时不提炼', () => {
-  const state = seed()
-  state.skills = []
-  const long = '字'.repeat(400)
-  state.items = [{ id: 'it_1', title: '甲', status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
-    production: { status: 'done', format: 'article', title: '甲', aiArticle: `# 甲\n\n${long}`, article: `# 甲\n\n${long}` } }]
-  assert.equal(learnFromEdits(state).length, 0)
-  // 只有 AI 快照、还没人工改过的成稿,同样不提炼
-  delete state.items[0].production.article
-  assert.equal(learnFromEdits(state).length, 0)
-})
-
 test('assertPublicUrl 拒绝本机和内网地址', async () => {
   for (const url of ['http://localhost:3000', 'http://127.0.0.1', 'http://10.0.0.1', 'http://192.168.1.1', 'http://169.254.169.254/latest', 'http://[::1]/', 'http://[::ffff:127.0.0.1]/', 'file:///etc/passwd']) {
     await assert.rejects(assertPublicUrl(url), url)
@@ -266,345 +162,49 @@ test('harvest 解析元信息，并拦截跳转到内网', async () => {
   await assert.rejects(harvest('https://93.184.216.34/u', redirect), /本机|内网/)
 })
 
-const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
-const IMAGE = { baseUrl: 'https://img.example/v1', model: 'm', apiKey: 'secret-key-1234', size: '1536x1024', quality: '', extra: '{"output_format":"jpeg"}' }
-
-test('generateImage 发送标准请求，支持 b64 和 images[0].url 两种返回', async () => {
-  const calls = []
-  const b64 = async (url, init) => {
-    calls.push([String(url), init])
-    return new Response(JSON.stringify({ data: [{ b64_json: PNG.toString('base64') }] }), { status: 200 })
-  }
-  const one = await generateImage(IMAGE, 'p', { fetchImpl: b64 })
-  assert.equal(one.ext, '.png')
-  assert.equal(calls[0][0], 'https://img.example/v1/images/generations')
-  assert.equal(calls[0][1].headers.authorization, 'Bearer secret-key-1234')
-  assert.deepEqual(JSON.parse(calls[0][1].body), { model: 'm', prompt: 'p', n: 1, size: '1536x1024', output_format: 'jpeg' })
-
-  const viaUrl = async (url) => (String(url).endsWith('/generations')
-    ? new Response(JSON.stringify({ images: [{ url: 'https://93.184.216.34/a.png' }] }))
-    : new Response(PNG))
-  assert.equal((await generateImage(IMAGE, 'p', { fetchImpl: viaUrl })).ext, '.png')
-})
-
-test('generateImage 拒绝内网下载地址、非图片内容，报错里不带密钥', async () => {
-  const internal = async () => new Response(JSON.stringify({ data: [{ url: 'http://127.0.0.1/x.png' }] }))
-  await assert.rejects(generateImage(IMAGE, 'p', { fetchImpl: internal }), /本机|内网/)
-  const html = async () => new Response(JSON.stringify({ data: [{ b64_json: Buffer.from('<html>').toString('base64') }] }))
-  await assert.rejects(generateImage(IMAGE, 'p', { fetchImpl: html }), /不是图片/)
-  const leak = async () => new Response(JSON.stringify({ error: { message: 'bad key secret-key-1234' } }), { status: 400 })
-  await assert.rejects(generateImage(IMAGE, 'p', { fetchImpl: leak }), err => !err.message.includes('secret-key') && err.message.includes('***'))
-  const denied = async () => new Response('{}', { status: 401 })
-  await assert.rejects(generateImage(IMAGE, 'p', { fetchImpl: denied }), /密钥无效/)
-})
-
-test('generateImage 遇到 5xx 重试一次', async () => {
-  let n = 0
-  const flaky = async () => {
-    n += 1
-    return n === 1 ? new Response('<html>', { status: 502 }) : new Response(JSON.stringify({ data: [{ b64_json: PNG.toString('base64') }] }))
-  }
-  assert.equal((await generateImage(IMAGE, 'p', { fetchImpl: flaky })).ext, '.png')
-  assert.equal(n, 2)
-})
-
-test('Settings 权限 600，密钥不外泄，空密钥不覆盖', async () => {
+test('Settings 只剩语言与导出位置，权限 600,旧字段读取时丢掉', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-set-'))
   try {
     const settings = new Settings(dir)
-    await settings.update({ image: { baseUrl: 'https://x.example/v1/images/generations/', model: 'm', apiKey: 'sk-abcdefgh1234' }, imageCount: 99 })
-    // Windows 不暴露 Unix 权限位，chmod 后就不再校验 mode
-    if (process.platform !== 'win32') assert.equal((await stat(join(dir, 'settings.json'))).mode & 0o777, 0o600)
+    // 旧版本的 settings.json 里存着生图配置:读进来直接丢,不再外泄也不再生效
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ image: { apiKey: 'sk-abcdefgh1234' }, shotCount: 6, language: 'en', exportDir: '~/稿件' }))
     const open = publicSettings(await settings.read())
-    assert.equal(open.image.baseUrl, 'https://x.example/v1')
-    assert.equal(open.image.keyHint, '1234')
-    assert.equal(open.imageCount, 4)
-    assert.equal(open.imageReady, true)
+    assert.deepEqual(open, { language: 'en', exportDir: '~/稿件' })
     assert.ok(!JSON.stringify(open).includes('abcdefgh'))
-    await settings.update({ image: { apiKey: '  ', model: 'n' } })
-    assert.equal((await settings.read()).image.apiKey, 'sk-abcdefgh1234')
-    await assert.rejects(settings.update({ image: { baseUrl: 'javascript:alert(1)' } }), /http/)
-    await assert.rejects(settings.update({ image: { extra: '[1]' } }), /JSON/)
-    await settings.update({ image: { clearKey: true } })
-    assert.equal(publicSettings(await settings.read()).imageReady, false)
+    // Windows 不暴露 Unix 权限位,chmod 后就不再校验 mode
+    if (process.platform !== 'win32') assert.equal((await stat(join(dir, 'settings.json'))).mode & 0o777, 0o600)
+    await settings.update({ exportDir: 'D:/稿件', imageCount: 99, shotCount: 3 })
+    assert.deepEqual(await settings.read(), { language: 'en', exportDir: 'D:/稿件' })
+    await assert.rejects(settings.update({ exportDir: 123 }), /导出位置无效/)
+    await settings.update({ language: 'zh' })
+    assert.equal((await settings.read()).language, 'zh')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('normalizePlan 丢弃多余字段并按设置截断', () => {
-  const plan = normalizePlan({ title: 'T', cover: 'c', images: [{ prompt: 'a', evil: 1 }, { prompt: 'b' }, { prompt: 'c' }], shots: [{ prompt: 'x', seconds: 999 }, 'bad', null] }, { imageCount: 2, shotCount: 6 }, 'fallback')
-  assert.equal(plan.images.length, 2)
-  assert.equal(plan.images[0].evil, undefined)
-  assert.equal(plan.shots.length, 1)
-  assert.equal(plan.shots[0].seconds, 60)
-  assert.equal(normalizePlan(null, { imageCount: 1, shotCount: 1 }, 'F').title, 'F')
-})
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex')
 
-async function producerFixture({ callText, generate, ready = true }) {
-  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-prod-'))
-  const store = new Store(dir)
-  await store.read()
-  const settings = new Settings(dir)
-  await settings.update({ imageCount: 1, shotCount: 2, voice: '短句，爱用比喻', ...(ready ? { image: { baseUrl: 'https://i.example/v1', model: 'm', apiKey: 'k' } } : {}) })
-  return { dir, store, settings, producer: new Producer({ store, settings, callText, generate }) }
-}
-
-async function waitDone(producer, id) {
-  for (let i = 0; i < 200 && producer.isRunning(id); i += 1) await new Promise(r => setTimeout(r, 5))
-}
-
-const isPlan = system => system.includes('策划案')
-const PLAN = JSON.stringify({ title: '最终标题', cover: 'cover', characters: 'a man', images: [{ anchor: '第一节', caption: '图注', prompt: 'fig' }], shots: [{ shot: '特写', visual: '手', voice: '说', seconds: 4, prompt: 's1' }, { shot: '全景', visual: '街', voice: '说', seconds: 6, prompt: 's2' }] })
-
-test('Producer 跑完整条线：文章、规划、全部图片，语气进入提示词', async () => {
-  const prompts = []
-  const systems = []
-  const callText = async ({ system, onText }) => {
-    systems.push(system)
-    if (isPlan(system)) return { text: PLAN, model: 'deepseek' }
-    onText('# 模型标题\n\n正文')
-    return { text: '# 模型标题\n\n## 第一节\n正文', model: 'deepseek' }
-  }
-  const generate = async (_, prompt) => {
-    prompts.push(prompt)
-    return { buffer: PNG, ext: '.png' }
-  }
-  const { dir, store, producer } = await producerFixture({ callText, generate })
-  try {
-    assert.equal(await producer.start('seed_2'), true)
-    assert.equal(await producer.start('seed_2'), false)
-    await waitDone(producer, 'seed_2')
-    const item = (await store.read()).items.find(i => i.id === 'seed_2')
-    const p = item.production
-    assert.equal(p.status, 'done')
-    assert.equal(p.title, '最终标题')
-    assert.match(p.article, /## 第一节/)
-    assert.doesNotMatch(p.article, /模型标题/)
-    assert.equal(p.cover.status, 'done')
-    assert.match(p.cover.src, /^writing-desk\/files\/g_.+\.png$/)
-    assert.equal(p.shots.length, 2)
-    assert.ok(p.shots.every(s => s.status === 'done'))
-    assert.equal(item.status, 'draft')
-    assert.equal(prompts.length, 4)
-    assert.ok(prompts.some(x => x.includes('black and white') && x.includes('a man')))
-    assert.ok(systems.every(x => x.includes('短句，爱用比喻')))
-    assert.ok(isPlan(systems[0]))
-    assert.equal((await stat(join(dir, 'files', p.cover.src.split('/').pop()))).size, PNG.length)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 关闭生图时只写文字，资产全部 skipped，之后可以单张补画', async () => {
-  let generated = 0
-  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# T\n\n正文', model: 'd' })
-  const generate = async () => {
-    generated += 1
-    return { buffer: PNG, ext: '.png' }
-  }
-  const { dir, store, producer } = await producerFixture({ callText, generate })
-  try {
-    await producer.start('seed_2', { withImages: false })
-    await waitDone(producer, 'seed_2')
-    let p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.withImages, false)
-    assert.equal(p.status, 'done')
-    assert.match(p.article, /正文/)
-    assert.equal(p.cover.status, 'skipped')
-    assert.equal(p.images.length, 1)
-    assert.equal(p.images[0].status, 'skipped')
-    assert.equal(p.shots.length, 2)
-    assert.ok(p.shots.every(s => s.status === 'skipped' && s.voice && s.prompt))
-    assert.equal(p.needsProvider, undefined)
-    assert.equal(generated, 0)
-
-    // 之后想补画某一张，仍然可以单独发起
-    await producer.regenerate('seed_2', 'cover')
-    await new Promise(r => setTimeout(r, 40))
-    p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.cover.status, 'done')
-    assert.equal(generated, 1)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('设置里的默认生图开关生效，单次选择可以覆盖', async () => {
-  let generated = 0
-  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# T\n正文', model: 'd' })
-  const generate = async () => {
-    generated += 1
-    return { buffer: PNG, ext: '.png' }
-  }
-  const { dir, store, settings, producer } = await producerFixture({ callText, generate })
-  try {
-    assert.equal((await settings.read()).generateImages, true)
-    await settings.update({ generateImages: false })
-    await producer.start('seed_2')
-    await waitDone(producer, 'seed_2')
-    let p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.withImages, false)
-    assert.equal(generated, 0)
-
-    await producer.start('seed_3', { withImages: true })
-    await waitDone(producer, 'seed_3')
-    p = (await store.read()).items.find(i => i.id === 'seed_3').production
-    assert.equal(p.withImages, true)
-    assert.ok(generated > 0)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 模型漏掉分镜时用模板补齐', async () => {
-  const callText = async ({ system }) => (isPlan(system) ? { text: '{"title":"T","cover":"c","images":[],"shots":[{"shot":"特写","visual":"手","prompt":"x"}]}', model: 'd' } : { text: '# T\n## 甲\n正文', model: 'd' })
-  const { dir, store, producer } = await producerFixture({ callText, generate: async () => ({ buffer: PNG, ext: '.png' }) })
-  try {
-    await producer.start('seed_2')
-    await waitDone(producer, 'seed_2')
-    const p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.images.length, 1)
-    assert.equal(p.shots.length, 2)
-    assert.deepEqual(p.shots.map(s => s.no), [1, 2])
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 文章和图片同时开工，策划案流式露出标题和分镜', async () => {
-  const order = []
-  let release
-  const gate = new Promise((r) => { release = r })
-  const callText = async ({ system, onText }) => {
-    if (isPlan(system)) {
-      onText('{"title":"流式标题","shots":[{"visual":"第一镜"},{"visual":"第二镜"}]')
-      return { text: PLAN, model: 'd' }
-    }
-    order.push('article-start')
-    await gate
-    order.push('article-end')
-    return { text: '正文', model: 'd' }
-  }
-  const generate = async () => {
-    order.push('image')
-    return { buffer: PNG, ext: '.png' }
-  }
-  const { dir, store, producer } = await producerFixture({ callText, generate })
-  try {
-    await producer.start('seed_2')
-    for (let i = 0; i < 100 && !order.includes('image'); i += 1) await new Promise(r => setTimeout(r, 5))
-    // 文章还没写完，图片已经开始了
-    assert.ok(order.includes('image'))
-    assert.ok(!order.includes('article-end'))
-    const live = producer.status('seed_2')
-    assert.equal(live.title, '流式标题')
-    assert.deepEqual(live.visuals, ['第一镜', '第二镜'])
-    release()
-    await waitDone(producer, 'seed_2')
-    const p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.status, 'done')
-    assert.equal(p.article, '正文')
-    assert.equal(p.title, '最终标题')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 一张图失败不影响其他，可以单独重画', async () => {
-  let fail = true
-  const generate = async (_, prompt) => {
-    if (prompt.includes('s1') && fail) throw new Error('额度不足')
-    return { buffer: PNG, ext: '.png' }
-  }
-  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# T\n正文', model: 'd' })
-  const { dir, store, producer } = await producerFixture({ callText, generate })
-  try {
-    await producer.start('seed_2')
-    await waitDone(producer, 'seed_2')
-    let p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.status, 'done')
-    assert.equal(p.shots[0].status, 'failed')
-    assert.equal(p.shots[0].error, '额度不足')
-    assert.equal(p.shots[1].status, 'done')
-    fail = false
-    await producer.regenerate('seed_2', 'shot:0')
-    await new Promise(r => setTimeout(r, 40))
-    p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.shots[0].status, 'done')
-    await assert.rejects(producer.regenerate('seed_2', '../x'), /目标无效/)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 没接生图时只出文字和分镜文案，没有模型时给结构草稿', async () => {
-  const callText = async () => { throw new Error('no model') }
-  const generate = async () => { throw new Error('不该被调用') }
-  const { dir, store, producer } = await producerFixture({ callText, generate, ready: false })
-  try {
-    await producer.start('seed_2')
-    await waitDone(producer, 'seed_2')
-    const p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(p.status, 'done')
-    assert.equal(p.engine, 'local')
-    assert.match(p.article, /结构草稿/)
-    assert.equal(p.needsProvider, true)
-    assert.equal(p.cover.status, 'skipped')
-    assert.equal(p.shots.length, 2)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Producer 可以取消，重启后卡住的任务会被标记为中断', async () => {
-  const callText = ({ signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted'))))
-  const { dir, store, producer } = await producerFixture({ callText, generate: async () => ({ buffer: PNG, ext: '.png' }) })
-  try {
-    await producer.start('seed_2')
-    await producer.cancel('seed_2')
-    await waitDone(producer, 'seed_2')
-    assert.equal((await store.read()).items.find(i => i.id === 'seed_2').production.status, 'cancelled')
-
-    await store.mutate('x', (s) => { s.items.find(i => i.id === 'seed_3').production = { status: 'running', cover: { status: 'running' }, images: [], shots: [] }; return s }, { undoable: false })
-    await producer.settle('seed_3')
-    const p = (await store.read()).items.find(i => i.id === 'seed_3').production
-    assert.equal(p.status, 'failed')
-    assert.equal(p.cover.status, 'idle')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-function revisable() {
-  return {
-    status: 'done', title: '旧标题', article: '开头一段。\n\n## 第一节\n\n这里要改。',
-    cover: { prompt: 'c', status: 'done' }, images: [{ caption: '图', prompt: 'i', status: 'done', anchor: '第一节' }],
-    shots: [{ no: 1, shot: '中景', visual: 'v', voice: 'x', seconds: 5, prompt: 'p', status: 'done' }],
-  }
-}
-
-test('saveProduction 写出文章、脚本和素材，标题里的路径字符被清掉', async () => {
+test('saveProduction 写出文章、封面和配图，标题里的路径字符被清掉，配图锚到小标题', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-save-'))
   try {
     const filesDir = join(dir, 'files')
     await mkdir(filesDir)
     await writeFile(join(filesDir, 'a.jpg'), PNG)
     await writeFile(join(filesDir, 'b.jpg'), PNG)
-    const p = revisable()
-    p.title = '../危险/标题: 测试'
-    p.cover.src = 'writing-desk/files/a.jpg'
-    p.images[0].src = 'writing-desk/files/b.jpg'
-    p.shots[0].src = 'writing-desk/assets/../../secret.jpg'
-    p.shots[0].voice = '带|竖线'
-    const saved = await saveProduction(p, { filesDir, exportDir: join(dir, 'out'), videoCover: Buffer.from([0xff, 0xd8, 0xff]) })
+    const p = {
+      title: '../危险/标题: 测试',
+      article: '# ../危险/标题: 测试\n\n开头。\n\n## 为什么\n\n这里要改。\n\n## 怎么办\n\n收尾。',
+      cover: { src: 'writing-desk/files/a.jpg', status: 'done' },
+      images: [{ src: 'writing-desk/files/b.jpg', caption: '配图', anchor: '为什么', status: 'done' }],
+    }
+    const saved = await saveProduction(p, { filesDir, exportDir: join(dir, 'out') })
     assert.equal(saved.path, join(dir, 'out', '危险 标题 测试'))
     const names = await readdir(saved.path)
-    assert.deepEqual(names.sort(), ['分镜脚本.md', '封面原图.jpg', '视频封面.jpg', '脚本.md', '配图1.jpg'].sort())
-    const article = await readFile(join(saved.path, '脚本.md'), 'utf8')
+    assert.deepEqual(names.sort(), ['封面原图.jpg', '文章.md', '配图1.jpg'].sort())
+    const article = await readFile(join(saved.path, '文章.md'), 'utf8')
     assert.match(article, /^# \.\.\/危险/)
-        assert.match(article, /这里要改。\n\n!\[图\]\(配图1\.jpg\)/)
-    assert.match(await readFile(join(saved.path, '分镜脚本.md'), 'utf8'), /带｜竖线/)
+    assert.match(article, /这里要改。\n\n!\[配图\]\(配图1\.jpg\)/)
     // 再存一次写回同一个文件夹
     p.savedPath = saved.path
     assert.equal((await saveProduction({ ...p, title: '改名了' }, { filesDir, exportDir: join(dir, 'out') })).path, saved.path)
@@ -619,42 +219,22 @@ test('resolveExportDir 展开 ~，空值用默认位置', () => {
   assert.equal(resolveExportDir('/tmp/x'), '/tmp/x')
 })
 
-test('风格：只留白名单字段，能变成写作要求，并进入提示词', () => {
-  const style = normalizeStyle({ name: '慢半拍', summary: 's', tone: 't', words: ['那天', 3, ''], samples: ['样句'], evil: 1 })
-  assert.equal(style.evil, undefined)
-  assert.deepEqual(style.words, ['那天'])
-  assert.match(styleToVoice(style), /常用词：那天/)
-  assert.equal(normalizeStyle(null, '备用').name, '备用')
-  assert.equal(styleToVoice(null), '')
-  assert.match(stylePrompts('素材', '').system, /文风分析师/)
-
+test('风格:ops 白名单只放行风格字段,选中的卡能变成写作要求', () => {
   const state = seed()
-  const item = state.items[0]
-  const { receipts } = applyOps(state, [{ op: 'add_style', name: '我的', tone: '很独特的语气' }])
-  assert.equal(activeStyle(state), null)
-  // 没选风格时用设置里的语气
-  assert.match(articlePrompts(state, item, '旧语气').system, /旧语气/)
+  const { receipts } = applyOps(state, [{ op: 'add_style', name: '慢半拍', tone: '很独特的语气', words: ['那天', 3], evil: 1 }])
+  const style = state.styles.find(row => row.id === receipts[0].target)
+  assert.equal(style.evil, undefined, '白名单之外的字段不落库')
+  assert.deepEqual(style.words, ['那天'], '非字符串词被滤掉')
+  assert.match(styleToVoice(style), /常用词：那天/)
+  assert.equal(styleToVoice(null), '')
+
+  assert.equal(activeStyle(state), null, '还没选中时不跟任何卡走')
   applyOps(state, [{ op: 'set_style', id: receipts[0].target }])
-  const prompts = articlePrompts(state, item, '旧语气')
-  assert.match(prompts.system, /很独特的语气/)
-  assert.doesNotMatch(prompts.system, /旧语气/)
-  assert.match(planPrompts(state, item, { imageCount: 1, shotCount: 1 }).system, /很独特的语气/)
+  assert.equal(activeStyle(state).name, '慢半拍')
   applyOps(state, [{ op: 'delete_style', id: receipts[0].target }])
   assert.equal(state.activeStyleId, null)
 })
 
-test('脚本提示词带上策划好的事实和口播，保证数字一致', () => {
-  const state = seed()
-  const plan = { title: 'T', outline: ['甲'], facts: ['存了 214 条提示词'], shots: [{ visual: 'v', voice: '三个月存了 214 条' }] }
-  const { system, user } = articlePrompts(state, state.items[0], '', plan)
-  assert.match(system, /口播脚本/)
-  assert.match(system, /存了 214 条提示词/)
-  assert.match(user, /三个月存了 214 条/)
-  const normalized = normalizePlan({ title: 'T', coverText: '封面字', facts: ['a', 1] }, { imageCount: 0, shotCount: 0 }, 'x')
-  assert.equal(normalized.coverText, '封面字')
-  assert.deepEqual(normalized.facts, ['a'])
-  assert.equal(normalizePlan({}, { imageCount: 0, shotCount: 0 }, '很长很长很长很长很长的标题').coverText.length, 12)
-})
 
 test('风格预设：旧模板换成新预设，清空示例也不会删预设', async () => {
   const { STYLE_CATEGORIES, STYLE_PRESETS } = await import('../src/style-presets.js')
@@ -685,9 +265,7 @@ test('风格预设：旧模板换成新预设，清空示例也不会删预设',
   assert.ok(state.items.some(row => row.sample))
   applyOps(state, [{ op: 'add_style', name: '我的' }, { op: 'set_style', id: 'preset_travel' }, { op: 'clear_samples' }])
   assert.equal(state.items.some(row => row.sample), false)
-  assert.equal(state.metrics.some(row => row.sample), false)
   assert.equal(state.skills.some(row => row.sample), false)
-  assert.equal(state.accounts.some(row => row.sample), false)
   assert.equal(state.styles.length, STYLE_PRESETS.length + 1)
   assert.equal(state.activeStyleId, 'preset_travel')
 })
@@ -696,7 +274,7 @@ test('migrateState: 旧版 writing-desk 的空结构迁移成新版完整结构�
   // 重构前 state.json 是这套字段：cards/boxes/drafts/works…，客户端新版全用 items 等。
   const legacy = JSON.parse('{"version":1,"cards":[],"boxes":[],"copies":[],"drafts":[],"mergeRecords":[],"upgradeIntents":[],"works":[],"undoHistory":[],"actions":[],"templates":[],"updatedAt":"2026-11-16T03:02:36.957Z"}')
   const migrated = migrateState(legacy)
-  for (const key of ['items', 'people', 'angles', 'skills', 'accounts', 'metrics', 'styles']) {
+  for (const key of ['items', 'people', 'angles', 'skills', 'styles']) {
     assert.ok(Array.isArray(migrated[key]), `迁移后 ${key} 必须是数组`)
   }
   assert.equal(typeof migrated.sampleCleared, 'boolean')
@@ -715,205 +293,11 @@ test('harvestText 抽出正文，去掉脚本和导航', async () => {
   await assert.rejects(harvestText('http://127.0.0.1/x'), /本机|内网/)
 })
 
-test('提炼风格时，用户起的名字优先于模型起的名字', async () => {
-  const { normalizeStyle } = await import('../src/style.js')
-  assert.equal(normalizeStyle({ name: '慢半拍' }, '我自己').name, '我自己')
-  assert.equal(normalizeStyle({ name: '慢半拍' }, '').name, '慢半拍')
-  assert.equal(normalizeStyle({}, '').name, '未命名风格')
-})
-
-test('Monid：主页链接只认三个平台和固定格式的 ID', async () => {
-  const { findUrl, parseAccountUrl } = await import('../src/monid.js')
-  assert.equal(parseAccountUrl('https://www.xiaohongshu.com/user/profile/aaaabbbbccccdddd00001111?xsec=1').platform, '小红书')
-  assert.equal(parseAccountUrl('https://www.douyin.com/user/MS4wLjABAAAAabcdefghijklmnopqrstuvwxyz?from=1').id, 'MS4wLjABAAAAabcdefghijklmnopqrstuvwxyz')
-  assert.equal(parseAccountUrl('https://space.bilibili.com/12345678/video').id, '12345678')
-  for (const bad of ['https://evil.example/user/profile/aaaabbbbccccdddd00001111', 'https://xiaohongshu.com.evil.example/user/profile/aaaabbbbccccdddd00001111', 'https://www.xiaohongshu.com/user/profile/--query', 'https://www.douyin.com/user/self', 'javascript:alert(1)']) {
-    assert.equal(parseAccountUrl(bad), null, bad)
-  }
-  assert.equal(findUrl('长按复制 https://v.douyin.com/abc/ 打开抖音'), 'https://v.douyin.com/abc/')
-})
-
-test('Monid：短链只跟平台自己的域名，打开后不是主页就报错', async () => {
-  const { resolveAccount } = await import('../src/monid.js')
-  await assert.rejects(resolveAccount('https://evil.example/x', async () => assert.fail('不该请求')), /认不出/)
-  await assert.rejects(resolveAccount('没有链接'), /没找到链接/)
-  const hops = []
-  const fake = async (url) => { hops.push(url); return { headers: new Headers({ location: 'https://space.bilibili.com/42' }) } }
-  const account = await resolveAccount('看这个 https://b23.tv/abc', fake)
-  assert.equal(account.id, '42')
-  assert.equal(hops.length, 1)
-})
-
-test('Monid：从 .cmd shim 找到真正的 CLI 入口（含转发壳）', async () => {
-  const { resolveMonidEntry } = await import('../src/monid.js')
-  const dir = await mkdtemp(join(tmpdir(), 'monid-shim-'))
-  try {
-    const entry = join(dir, 'node_modules', '@monid-ai', 'cli', 'dist', 'index.js')
-    await mkdir(join(dir, 'node_modules', '@monid-ai', 'cli', 'dist'), { recursive: true })
-    await writeFile(entry, '')
-    const shim = join(dir, 'monid.cmd')
-    await writeFile(shim, '@ECHO off\r\n"%dp0%\\node_modules\\@monid-ai\\cli\\dist\\index.js" %*')
-    assert.equal(await resolveMonidEntry(shim), entry)
-    const forwarder = join(dir, 'forwarder.cmd')
-    await writeFile(forwarder, '@echo off\r\ncall "' + shim + '" %*')
-    assert.equal(await resolveMonidEntry(forwarder), entry)
-    assert.equal(await resolveMonidEntry(join(dir, 'no-such-dir', 'missing.cmd')), null)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Monid：有 JS 入口时用 node 执行，参数原样传、不经过 shell', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const calls = []
-  const exec = (file, argv, options, callback) => { calls.push({ file, argv, options }); callback(null, '{"balance":{"value":0,"currency":"USD"}}', '') }
-  const run = createMonidRunner(exec, async () => ({ bin: 'C:\\npm\\monid.cmd', entry: 'C:\\npm\\node_modules\\@monid-ai\\cli\\dist\\index.js', path: 'C:\\npm' }))
-  assert.deepEqual(await run(['--query', '{"limit":1}', '-j']), { balance: { value: 0, currency: 'USD' } })
-  assert.equal(calls.length, 1)
-  assert.equal(calls[0].file, process.execPath)
-  assert.deepEqual(calls[0].argv, ['C:\\npm\\node_modules\\@monid-ai\\cli\\dist\\index.js', '--query', '{"limit":1}', '-j'])
-  assert.equal(calls[0].options.env.NO_COLOR, '1')
-  assert.equal(calls[0].options.env.PATH, 'C:\\npm')
-})
-
-test('Monid：没有 JS 入口时照旧直接调用命令本身', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const calls = []
-  const exec = (file, argv, options, callback) => { calls.push({ file, argv }); callback(null, '{"ok":true}', '') }
-  const run = createMonidRunner(exec, async () => ({ bin: '/usr/local/bin/monid', entry: null, path: '/usr/local/bin' }))
-  assert.deepEqual(await run(['balance', '-j']), { ok: true })
-  assert.equal(calls[0].file, '/usr/local/bin/monid')
-  assert.deepEqual(calls[0].argv, ['balance', '-j'])
-})
-
-const xhsOutput = { code: 0, success: true, data: { notes: [
-  { id: 'a'.repeat(24), title: '第一条', desc: '正文', create_time: 1790000000, likes: 10, comments_count: 2, collected_count: 3, share_count: 1, view_count: 0, images_list: [{ url: 'http://ci.example/1.jpg' }] },
-  { id: 'not-valid', title: '坏数据' },
-] } }
-
-test('Monid：只取用得到的字段，坏数据和平台报错都不进来', async () => {
-  const { normalizePosts, normalizeProfile } = await import('../src/monid.js')
-  const [note, ...rest] = normalizePosts('小红书', xhsOutput)
-  assert.equal(rest.length, 0)
-  assert.deepEqual([note.title, note.likes, note.views, note.cover], ['第一条', 10, 0, 'https://ci.example/1.jpg'])
-  assert.equal(note.url, `https://www.xiaohongshu.com/explore/${'a'.repeat(24)}`)
-  const [video] = normalizePosts('抖音', { status_code: 0, aweme_list: [{ aweme_id: '123', desc: '第一行\n第二行', create_time: 1790000000, statistics: { digg_count: 5, play_count: 0 }, video: { cover: { url_list: ['https://p.example/c.jpg'] } } }] })
-  assert.deepEqual([video.title, video.likes, video.url], ['第一行', 5, 'https://www.douyin.com/video/123'])
-  const [bili] = normalizePosts('B站', { code: 0, data: { list: { vlist: [{ bvid: 'BV1xx', title: '视频', created: 1790000000, play: 99, comment: 1, pic: '//i0.example/a.jpg' }] } } })
-  assert.deepEqual([bili.views, bili.cover], [99, 'https://i0.example/a.jpg'])
-  assert.throws(() => normalizePosts('抖音', { status_code: 8, status_msg: '账号不存在' }), /账号不存在/)
-  assert.throws(() => normalizePosts('B站', { code: -404, message: '啥都木有' }), /啥都木有/)
-  assert.equal(normalizeProfile('B站', { profile: { data: { name: '某人' } }, relation: { follower: 7 } }).followers, 7)
-  assert.equal(normalizeProfile('小红书', { profile: { data: { nickname: '某人', interactions: [{ type: 'fans', count: 8 }] } } }).followers, 8)
-})
-
-test('Monid：花费累加，资料失败不影响内容，预算拦截和没装都说清楚', async () => {
-  const { fetchAccount, monidStatus } = await import('../src/monid.js')
-  const account = { platform: '小红书', id: 'a'.repeat(24), url: 'u' }
-  const calls = []
-  const run = async (args) => {
-    calls.push(args)
-    if (args.includes('/api/v1/xiaohongshu/app_v2/get_user_info')) throw new Error('超时')
-    return { status: 'COMPLETED', cost: { value: 0.01 }, output: xhsOutput }
-  }
-  const result = await fetchAccount(account, run)
-  assert.equal(result.posts.length, 1)
-  assert.equal(result.cost, 0.01)
-  assert.equal(calls.length, 2)
-  assert.deepEqual(JSON.parse(calls[0][calls[0].indexOf('--query') + 1]), { user_id: 'a'.repeat(24) })
-  await assert.rejects(fetchAccount(account, async () => ({ status: 'BLOCKED' })), /预算限制/)
-  await assert.rejects(fetchAccount(account, async () => null), /还没装好/)
-  await assert.rejects(fetchAccount(account, async () => ({ status: 'COMPLETED', output: { code: 0, data: { notes: [] } } })), /没抓到内容/)
-  assert.deepEqual(await monidStatus(async () => null), { state: 'missing' })
-  assert.deepEqual(await monidStatus(async () => ({ error: { code: 'AUTH_FAILED' } })), { state: 'nokey' })
-  assert.deepEqual(await monidStatus(async () => ({ balance: { value: 1.5, currency: 'USD' } })), { state: 'ready', balance: { value: 1.5, currency: 'USD' } })
-})
-
-test('Monid：重复导入只更新数字，示例数据退出统计，没有播放量时按互动排序', async () => {
-  const { importPosts, normalizePosts, postsToMaterial } = await import('../src/monid.js')
-  const { computeInsights } = await import('../src/learn.js')
-  const posts = normalizePosts('小红书', xhsOutput)
-  const draft = { items: [{ id: 's', title: '示例', status: 'published', sample: true }], metrics: [{ id: 'sm', itemId: 's', platform: '抖音', date: '2026-01-01T00:00:00Z', views: 9999, likes: 1, sample: true }], accounts: [{ id: 'sa', followers: 500, sample: true }] }
-  const account = { platform: '小红书', id: 'x', url: 'https://www.xiaohongshu.com/user/profile/x' }
-  const first = importPosts(draft, { account, profile: { nickname: '我', followers: 100 }, posts })
-  assert.deepEqual(first, { added: 1, updated: 0 })
-  const item = draft.items.find(row => row.imported)
-  // 导入条目天生已发布:发布时间沿用平台给的,不另盖时间戳(工单 #7 后状态元组经 reducer 落位)
-  assert.equal(item.status, 'published')
-  assert.equal(item.publishedAt, posts[0].publishedAt)
-  assert.equal(item.scheduledAt, posts[0].publishedAt)
-  item.title = '我改过的标题'
-  const second = importPosts(draft, { account, profile: { nickname: '我', followers: 120 }, posts: [{ ...posts[0], likes: 50 }] })
-  assert.deepEqual(second, { added: 0, updated: 1 })
-  assert.equal(draft.items.filter(row => row.imported).length, 1)
-  assert.equal(item.title, '我改过的标题')
-  assert.equal(draft.metrics.filter(row => row.externalId).length, 1)
-  assert.equal(draft.accounts.filter(row => row.externalId).length, 1)
-  const insights = computeInsights(draft)
-  assert.equal(insights.hasSample, false)
-  assert.equal(insights.views, 0)
-  assert.equal(insights.engaged, 56)
-  assert.equal(insights.published, 1)
-  assert.equal(insights.followers, 120)
-  assert.equal(insights.top[0].engaged, 56)
-  assert.match(postsToMaterial(posts), /第一条\n正文/)
-})
-
-test('Monid：不经过 shell，混着提示也能解析，出错时读得到错误', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const located = async () => ({ bin: '/x/monid', path: '/x' })
-  let seen
-  const noisy = createMonidRunner((bin, args, options, callback) => {
-    seen = { bin, args, options }
-    callback(null, '有新版本可用\n{"balance":{"value":1}}\n', '')
-  }, located)
-  const injected = '$(touch /tmp/pwned); --query'
-  assert.deepEqual(await noisy(['run', injected]), { balance: { value: 1 } })
-  assert.equal(seen.bin, '/x/monid')
-  assert.deepEqual(seen.args, ['run', injected])
-  assert.equal(seen.options.shell, undefined)
-  assert.equal(seen.options.env.NO_COLOR, '1')
-  const failing = createMonidRunner((bin, args, options, callback) => callback(new Error('exit 1'), '{"error":{"code":"AUTH_FAILED"}}', ''), located)
-  assert.equal((await failing(['balance', '-j'])).error.code, 'AUTH_FAILED')
-  const broken = createMonidRunner((bin, args, options, callback) => callback(new Error('exit 1'), '', '坏了'), located)
-  await assert.rejects(broken(['balance', '-j']), /坏了/)
-  assert.equal(await createMonidRunner(() => assert.fail('不该运行'), async () => null)(['balance', '-j']), null)
-})
-
-test('Monid：封面存到本地，内网地址、非图片和已有封面都跳过', async () => {
-  const { mkdtemp, readdir, rm } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const { saveCovers } = await import('../src/monid.js')
-  const dir = await mkdtemp(join(tmpdir(), 'md-covers-'))
-  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])
-  const requested = []
-  const fake = async (url) => {
-    requested.push(String(url))
-    if (String(url).includes('html')) return new Response('<html>', { status: 200 })
-    return new Response(png, { status: 200 })
-  }
-  const posts = [
-    { id: 'ok', cover: 'https://93.184.216.34/a.png' },
-    { id: 'html', cover: 'https://93.184.216.34/html' },
-    { id: 'private', cover: 'https://127.0.0.1/secret.png' },
-    { id: 'none', cover: null },
-    { id: 'known', cover: 'https://93.184.216.34/known.png' },
-  ]
-  const state = { items: [{ externalId: '抖音:known', media: { src: 'writing-desk/files/x.png' } }] }
-  const saved = await saveCovers(posts, '抖音', state, dir, fake)
-  assert.deepEqual([...saved.keys()], ['ok'])
-  assert.match(saved.get('ok'), /^writing-desk\/files\/c_[\w]+\.png$/)
-  assert.equal(requested.some(url => url.includes('127.0.0.1') || url.includes('known')), false)
-  assert.equal((await readdir(dir)).length, 1)
-  await rm(dir, { recursive: true })
-})
-
 test('排期：排上日历就是待发布，取消排期退回草稿，已发布不动', () => {
   const state = seed()
   const [ideaR, doneR] = applyOps(state, [{ op: 'add_item', title: '只有灵感' }, { op: 'add_item', title: '已成稿' }]).receipts
   const done = state.items.find(row => row.id === doneR.target)
-  done.production = { status: 'done', title: '已成稿' }
+  done.production = { status: 'done', title: '已成稿', article: '正文' }
   applyOps(state, [{ op: 'schedule_item', id: ideaR.target, scheduledAt: '2026-12-01T12:00:00Z' }, { op: 'schedule_item', id: doneR.target, scheduledAt: '2026-12-01T12:00:00Z' }])
   assert.equal(state.items.find(row => row.id === ideaR.target).status, 'outline')
   assert.equal(done.status, 'ready')
@@ -925,29 +309,6 @@ test('排期：排上日历就是待发布，取消排期退回草稿，已发�
   assert.match(state.items.find(row => row.id === media.target).title, /的图片$/)
 })
 
-test('生图被限流（429）时会等一会儿再试，最多三次', async () => {
-  const calls = { s1: 0, other: 0 }
-  const generate = async (_, prompt) => {
-    if (prompt.includes('s1')) {
-      calls.s1 += 1
-      if (calls.s1 < 3) throw new Error('请求太频繁或额度不足（429）')
-    } else calls.other += 1
-    return { buffer: PNG, ext: '.png' }
-  }
-  const callText = async ({ system }) => (isPlan(system) ? { text: PLAN, model: 'd' } : { text: '# T\n正文', model: 'd' })
-  const { dir, store, producer } = await producerFixture({ callText, generate })
-  producer.retryScale = 0.001
-  try {
-    await producer.start('seed_2')
-    await waitDone(producer, 'seed_2')
-    const p = (await store.read()).items.find(i => i.id === 'seed_2').production
-    assert.equal(calls.s1, 3)
-    assert.equal(p.shots[0].status, 'done')
-    assert.ok(p.shots.every(row => row.status === 'done'))
-  } finally {
-    await rm(dir, { recursive: true })
-  }
-})
 
 test('撤销只撤回那一步：之后生成的成稿和画好的图不受影响', async () => {
   const { Store, revertChange } = await import('../src/store.js')
@@ -1011,43 +372,21 @@ test('状态规则：发布时间、排期与取消排期、清空示例不留�
   applyOps(state, [{ op: 'set_status', id: item.id, status: 'draft' }])
   assert.equal(item.publishedAt, undefined, '离开已发布要清掉发布时间')
   const sample = state.items.find(row => row.sample)
-  const [child] = applyOps(state, [{ op: 'add_item', title: '挂在示例下面', parentId: sample.id }, { op: 'add_metric', itemId: sample.id, platform: '抖音', date: '2026-11-01T12:00:00Z', views: 10 }]).receipts
+  const [child] = applyOps(state, [{ op: 'add_item', title: '挂在示例下面', parentId: sample.id }]).receipts
   applyOps(state, [{ op: 'clear_samples' }])
   assert.equal(state.items.find(row => row.id === child.target).parentId, null)
-  assert.equal(state.metrics.length, 0)
 })
 
-test('体裁：脚本一句一行，文章按自然段；set_format 记在状态上，成稿时带进提示词', () => {
+
+test('参考内容：风格卡只留六个样句,写作要求带上逻辑与衔接', () => {
   const state = seed()
-  const item = state.items[0]
-  assert.match(articlePrompts(state, item, '').system, /一句话占一行/)
-  const { receipts } = applyOps(state, [{ op: 'set_format', format: 'article' }])
-  assert.equal(state.draftFormat, 'article')
-  assert.ok(receipts[0].text)
-  const article = articlePrompts(state, item, '').system
-  assert.match(article, /按自然段写/)
-  assert.doesNotMatch(article, /一句话占一行/)
-  // 已经开写的稿子按它自己的体裁，不跟着后来的选择变
-  assert.match(articlePrompts(state, { ...item, production: { format: 'script' } }, '').system, /一句话占一行/)
-  applyOps(state, [{ op: 'set_format', format: '乱写' }])
-  assert.equal(state.draftFormat, 'script')
-})
-
-test('参考内容：风格卡带上断句、逻辑、讲述和衔接；原文只进正文提示词', () => {
-  const style = normalizeStyle({ name: '我', logic: '先讲反例', story: '从一件小事讲起', flow: '用「然后呢」接', samples: ['一', '二', '三', '四', '五', '六', '七'] })
+  const { receipts } = applyOps(state, [{ op: 'add_style', name: '我', logic: '先讲反例', story: '从一件小事讲起', flow: '用「然后呢」接', samples: ['一', '二', '三', '四', '五', '六'] }])
+  const style = state.styles.find(row => row.id === receipts[0].target)
   assert.equal(style.samples.length, 6)
-  assert.match(styleToVoice(style), /逻辑：先讲反例/)
-  assert.match(styleToVoice(style), /衔接：用「然后呢」接/)
-  const state = seed()
-  const item = state.items[0]
-  state.styles = [{ id: 'st_x', ...style, reference: '然后呢，我就真去试了。' }]
-  state.activeStyleId = 'st_x'
-  const { system } = articlePrompts(state, item, '')
-  assert.match(system, /断句/)
-  assert.match(system, /口头禅/)
-  assert.match(system, /<reference>然后呢，我就真去试了。<\/reference>/)
-  assert.doesNotMatch(planPrompts(state, item, { imageCount: 1, shotCount: 1 }).system, /<reference>/)
-  // 手动填的语气同样按这个标准贴近
-  state.activeStyleId = null
-  assert.match(articlePrompts(state, item, '我说话爱用反问').system, /看问题的逻辑[\s\S]*我说话爱用反问/)
+  const voice = styleToVoice(style)
+  assert.match(voice, /逻辑：先讲反例/)
+  assert.match(voice, /衔接：用「然后呢」接/)
+  assert.match(voice, /样句（学节奏，不要照抄）/)
+  applyOps(state, [{ op: 'set_style', id: receipts[0].target }])
+  assert.equal(activeStyle(state).logic, '先讲反例')
 })

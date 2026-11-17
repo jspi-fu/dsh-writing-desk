@@ -109,6 +109,21 @@ const SKILLS_EN = [
   ['Use readers\' words in the title', 'Lift exact phrases from the comments into the title. They get more clicks than your own summary.', 'Example: needs more data to confirm'],
 ]
 
+/** 胶囊旧数据迁移:去重归属、少于两个成员的胶囊解散;旧版遗留的坐标字段顺手清掉。 */
+function migrateCapsules(state) {
+  const seen = new Set()
+  for (const capsule of [...state.capsules]) {
+    delete capsule.pos
+    capsule.itemIds = capsule.itemIds.filter(id => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    if (capsule.itemIds.length < 2) state.capsules = state.capsules.filter(row => row.id !== capsule.id)
+  }
+  for (const item of state.items) delete item.pos
+}
+
 export function migrateState(state) {
   // 重构前的 state 是另一套字段（cards/boxes/works…），没有 items。
   // 客户端新版全用 items/people/angles/skills/accounts/metrics/styles，把旧对象直接
@@ -121,20 +136,12 @@ export function migrateState(state) {
   if (state.activeStyleId === undefined) state.activeStyleId = null
   // 胶囊是后来才有的实体:旧状态文件补一个空集合,避免读取方对着 undefined
   if (!Array.isArray(state.capsules)) state.capsules = []
+  migrateCapsules(state)
   // 加入英文之前的数据都是中文示例
   if (state.sampleLang === undefined) state.sampleLang = 'zh'
   if (state.sampleLang === 'en') stashChineseLeftovers(state)
   return migratePresets(state)
 }
-
-const SAMPLE_HANDLE = { zh: '示例账号', en: 'Sample account' }
-
-const ACCOUNTS = [
-  ['公众号', '示例账号', 12840],
-  ['小红书', '示例账号', 8620],
-  ['抖音', '示例账号', 21300],
-  ['B站', '示例账号', 5470],
-]
 
 function shift(base, days, hour = 10, minute = 0) {
   const d = new Date(base)
@@ -184,25 +191,6 @@ export function buildSeed(now, lang = currentLang()) {
     }
   })
 
-  const metrics = []
-  const published = items.filter(item => item.publishedAt)
-  // 每篇已发布内容生成一段衰减的日阅读，数据只用于演示复盘界面
-  const PEAK = { seed_7: 8200, seed_12: 21400, seed_14: 12600, seed_16: 34800 }
-  for (const item of published) {
-    const start = new Date(item.publishedAt)
-    const peak = PEAK[item.id] ?? 6000
-    for (let d = 0; d < 9; d += 1) {
-      const date = new Date(start)
-      date.setDate(date.getDate() + d)
-      if (date > now) break
-      const views = Math.round(peak * Math.exp(-d * 0.55) * (0.9 + ((d * 37) % 20) / 100))
-      metrics.push({
-        id: `seed_m_${item.id}_${d}`, itemId: item.id, platform: item.platform, date: date.toISOString(), views,
-        likes: Math.round(views * 0.046), comments: Math.round(views * 0.009), shares: Math.round(views * 0.012), saves: Math.round(views * (item.platform === '小红书' ? 0.05 : 0.018)), sample: true,
-      })
-    }
-  }
-
   const state = {
     version: 1,
     sampleCleared: false,
@@ -212,8 +200,6 @@ export function buildSeed(now, lang = currentLang()) {
     people: PEOPLE.map(([id, name, role, note, traits, tone]) => ({ id, name, role, note, traits, tone, sample: true })),
     angles: ANGLES.map(([id, name, hook, prompt]) => ({ id, name, hook, prompt, sample: true })),
     skills: SKILLS.map(([name, rule, evidence, status, confidence], index) => ({ id: `seed_s_${index + 1}`, name, rule, source: '示例', evidence, status, confidence, sample: true })),
-    accounts: ACCOUNTS.map(([platform, handle, followers], index) => ({ id: `seed_ac_${index + 1}`, platform, handle, followers, url: null, sample: true })),
-    metrics,
     styles: seedPresets(),
     presetVersion: PRESET_VERSION,
     activeStyleId: null,
@@ -241,7 +227,6 @@ function textTables(lang) {
       return [id, { name, hook, prompt }]
     })),
     skills: Object.fromEntries(SKILLS.map(([name, rule, evidence], index) => [`seed_s_${index + 1}`, en ? { name: SKILLS_EN[index][0], rule: SKILLS_EN[index][1], evidence: SKILLS_EN[index][2], source: 'Sample' } : { name, rule, evidence, source: '示例' }])),
-    accounts: Object.fromEntries(ACCOUNTS.map((row, index) => [`seed_ac_${index + 1}`, { handle: SAMPLE_HANDLE[lang] }])),
   }
 }
 
@@ -324,7 +309,7 @@ export function localizeSamples(state, lang) {
       const to = row?.sample ? TABLES[target].items[row.id] : null
       if (to) swapItem(row, from, target, to)
     }
-    for (const key of ['people', 'angles', 'skills', 'accounts']) {
+    for (const key of ['people', 'angles', 'skills']) {
       for (const row of state[key] ?? []) {
         const to = row?.sample ? TABLES[target][key][row.id] : null
         if (to) swapFields(row, [TABLES.zh[key][row.id], TABLES.en[key][row.id]], to)

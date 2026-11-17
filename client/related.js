@@ -60,33 +60,3 @@ export function relatedIdeas(items, query, limit = 6) {
   }
   return scored.sort((a, b) => b.score - a.score || b.at - a.at).slice(0, limit).map(row => row.id)
 }
-
-/**
- * 相关卡片在中间那句话左右排成列：最相关的离中间最近，一列放不下再往外开一列。
- * @param {{ id: string, w: number, h: number }[]} cards - 按相关程度排好的卡片和尺寸。
- * @returns {Record<string, { x: number, y: number }>} 每张卡片中心点的位置。
- */
-export function relatedLayout(cards) {
-  const MAX_H = 640
-  const GAP = 20
-  const sides = { [-1]: [[]], [1]: [[]] }
-  cards.forEach((card, index) => {
-    const side = sides[index % 2 === 0 ? -1 : 1]
-    let column = side[side.length - 1]
-    const used = column.reduce((sum, c) => sum + c.h + GAP, 0)
-    if (column.length && used + card.h > MAX_H) side.push(column = [])
-    column.push(card)
-  })
-  const out = {}
-  for (const sign of [-1, 1]) {
-    sides[sign].forEach((column, k) => {
-      const total = column.reduce((sum, c) => sum + c.h, 0) + GAP * (column.length - 1)
-      let y = -total / 2
-      for (const card of column) {
-        out[card.id] = { x: sign * (430 + k * 300), y: Math.round(y + card.h / 2) }
-        y += card.h + GAP
-      }
-    })
-  }
-  return out
-}

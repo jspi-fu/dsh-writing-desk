@@ -3,12 +3,12 @@
 import { currentLang, platformName, tr } from './i18n.js'
 // 状态枚举以 state.js 为唯一来源;这里 re-export 保持既有引用不破
 import { reduce, STATUSES } from './state.js'
-import { draftFormat } from './style.js'
+import { resolveProduceInput } from './produce-input.js'
 
 export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
 export const KINDS = ['image', 'video', 'web', 'quote', 'note']
-export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
+export const PLATFORMS = ['公众号', '小红书', '知乎']
 
 /** 状态在当前语言下的名字。 */
 export function statusLabel(status) {
@@ -17,7 +17,7 @@ export function statusLabel(status) {
 
 const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
-  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', pos: 'pos', score: 'num',
+  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', score: 'num',
   contentOrigin: 'origin',
 }
 const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
@@ -25,8 +25,6 @@ const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list'
 const ANGLE_FIELDS = { name: 'text', hook: 'text', prompt: 'text' }
 const STYLE_FIELDS = { name: 'text', icon: 'text', summary: 'text', tone: 'text', sentences: 'text', opening: 'text', structure: 'text', logic: 'text', story: 'text', flow: 'text', words: 'list', avoid: 'list', samples: 'list' }
 const SKILL_FIELDS = { name: 'text', rule: 'text', source: 'text', status: 'text', confidence: 'num', evidence: 'text' }
-const METRIC_FIELDS = { itemId: 'id', platform: 'platform', date: 'date', views: 'num', likes: 'num', comments: 'num', shares: 'num', saves: 'num' }
-const ACCOUNT_FIELDS = { platform: 'text', handle: 'text', url: 'url', followers: 'num', note: 'text', title: 'text', description: 'text', avatar: 'url', fetchedAt: 'date', fetchError: 'text' }
 
 let counter = 0
 export function newId(prefix = 'x') {
@@ -59,7 +57,6 @@ function coerce(type, value) {
     case 'num': return Number.isFinite(value) ? value : undefined
     case 'url': return value === null || value === '' ? null : isHttpUrl(value) ? value : undefined
     case 'date': return value === null ? null : typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : undefined
-    case 'pos': return value && [value.x, value.y].every(Number.isFinite) ? { x: value.x, y: value.y, r: Number.isFinite(value.r) ? value.r : 0 } : undefined
     case 'media': {
       if (value === null) return null
       if (!value || typeof value.src !== 'string') return undefined
@@ -114,33 +111,74 @@ function fmtShort(iso) {
 // 时间戳统一取 applyOps 传进来的 now。
 
 /** 胶囊成员:去重后逐个对着 items 校验,不存在的 ID 拒收,避免胶囊挂上空引用。 */
-function capsuleMembers(state, rawIds) {
+function capsuleIds(state, rawIds) {
   const ids = [...new Set(coerce('ids', rawIds) ?? [])]
-  if (!ids.length) throw new Error(tr('胶囊至少要收进一条灵感'))
   const known = new Set(state.items.map(row => row.id))
   const missing = ids.filter(id => !known.has(id))
   if (missing.length) throw new Error(tr('灵感 {ids} 不存在，收不进胶囊', { ids: missing.join('、') }))
   return ids
 }
 
+/** 默认名字:用第一条成员的标题,没标题就用正文开头;都没有才退回「新胶囊」。
+ *  标题先取第一句,名字短一点更像文件夹上的标签,而不是整条灵感的回显。 */
+function defaultCapsuleName(state, itemIds) {
+  const first = state.items.find(row => row.id === itemIds[0])
+  const raw = String(first?.title || first?.body || '').trim()
+  const clause = raw.split(/[。！？!?，,、：:；;\n]/)[0].trim()
+  return short(clause || raw, 18) || tr('新胶囊')
+}
+
+/** 解散只删集合关系：成员灵感原样留在灵感流里，不再需要坐标。 */
+function releaseCapsule(state, capsule) {
+  state.capsules = (state.capsules ?? []).filter(row => row.id !== capsule.id)
+}
+
+/** 灵感唯一归属:把要收进胶囊的灵感从别的胶囊摘掉,原胶囊不足两个就自动解散。 */
+function detachFromOtherCapsules(state, itemIds, keepId) {
+  const moving = new Set(itemIds)
+  for (const capsule of [...(state.capsules ?? [])]) {
+    if (capsule.id === keepId || !capsule.itemIds.some(id => moving.has(id))) continue
+    const remaining = capsule.itemIds.filter(id => !moving.has(id))
+    if (remaining.length < 2) {
+      capsule.itemIds = remaining
+      releaseCapsule(state, capsule)
+    } else {
+      capsule.itemIds = remaining
+    }
+  }
+}
+
 const handlers = {
   add_capsule(state, op, now) {
-    const itemIds = capsuleMembers(state, op.itemIds)
-    const name = typeof op.name === 'string' && op.name.trim() ? op.name.trim().slice(0, 60) : tr('新胶囊')
+    const itemIds = capsuleIds(state, op.itemIds)
+    if (itemIds.length < 2) throw new Error(tr('胶囊至少要收进两条灵感'))
+    detachFromOtherCapsules(state, itemIds, null)
+    const fields = pick(CAPSULE_FIELDS, op)
+    const name = typeof fields.name === 'string' && fields.name.trim() ? fields.name.trim().slice(0, 60) : defaultCapsuleName(state, itemIds)
     const capsule = { id: newId('cap'), name, itemIds, createdAt: now }
     state.capsules.unshift(capsule)
     return { text: tr('把 {n} 条灵感收进胶囊《{name}》', { n: itemIds.length, name }), target: capsule.id, kind: 'capsule' }
   },
   update_capsule(state, op) {
     const capsule = findById(state.capsules ?? [], op.id)
-    if (op.itemIds !== undefined) capsule.itemIds = capsuleMembers(state, op.itemIds)
-    if (typeof op.name === 'string' && op.name.trim()) capsule.name = op.name.trim().slice(0, 60)
+    const fields = pick(CAPSULE_FIELDS, op)
+    if (op.itemIds !== undefined) {
+      const next = capsuleIds(state, op.itemIds)
+      detachFromOtherCapsules(state, next.filter(id => !capsule.itemIds.includes(id)), capsule.id)
+      capsule.itemIds = next
+      if (next.length < 2) {
+        const name = capsule.name
+        releaseCapsule(state, capsule)
+        return { text: tr('胶囊《{name}》成员不足两个，已自动解散', { name }), kind: 'capsule', target: op.id }
+      }
+    }
+    if (typeof fields.name === 'string' && fields.name.trim()) capsule.name = fields.name.trim().slice(0, 60)
     return { text: tr('更新胶囊《{name}》', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
   },
   // 解散只删集合关系:成员灵感原样保留,还能单独打开
   delete_capsule(state, op) {
     const capsule = findById(state.capsules ?? [], op.id)
-    state.capsules = state.capsules.filter(row => row.id !== op.id)
+    releaseCapsule(state, capsule)
     return { text: tr('解散胶囊《{name}》，{n} 条灵感仍在', { name: capsule.name, n: capsule.itemIds.length }), kind: 'capsule' }
   },
   add_item(state, op, now) {
@@ -151,12 +189,6 @@ const handlers = {
     if (!item.title && !item.body && !item.media) throw new Error(tr('灵感内容为空'))
     // 只贴了图或视频也要有个名字，卡片和回执才有东西可显示
     if (!item.title) item.title = short(item.body, 28) || (item.media ? tr(item.kind === 'video' ? '{date}的视频' : '{date}的图片', { date: fmtShort(now) }) : '')
-    // 新灵感落在首屏文字旁边，一眼就能看到，也不会打乱已有布局
-    if (!item.pos && !item.parentId) {
-      const n = state.items.filter(row => !row.parentId && row.pos).length
-      const scale = 1 + (n % 6) * 0.2
-      item.pos = { x: Math.round(Math.cos(n * 2.39996) * 580 * scale), y: Math.round(Math.sin(n * 2.39996) * 340 * scale), r: ((n % 5) - 2) * 1.2 }
-    }
     // 先落库再经 reducer 迁移状态元组(工单 #5):一律先落成灵感,再按参数走与
     // schedule_item / set_status 完全同一批事件——同参数下先建后改的终态一致,自愈照常跑。
     const { status, scheduledAt } = item
@@ -174,18 +206,24 @@ const handlers = {
     if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
     if (scheduledAt !== undefined) reduce(state, scheduledAt ? { type: 'schedule', id: item.id, scheduledAt, at: now } : { type: 'unschedule', id: item.id, at: now })
     if (status !== undefined) reduce(state, { type: 'setStatus', id: item.id, status, at: now })
-    const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])].filter(key => key !== 'pos')
+    const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])]
     return names.length ? { text: tr('更新《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' } : null
   },
   delete_item(state, op) {
     const item = findById(state.items, op.id)
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
-    state.metrics = state.metrics.filter(row => row.itemId !== op.id)
-    // 成员灵感删了就从胶囊里摘掉;删光的胶囊没有意义,顺手解散
-    state.capsules = (state.capsules ?? [])
-      .map(capsule => capsule.itemIds.includes(op.id) ? { ...capsule, itemIds: capsule.itemIds.filter(id => id !== op.id) } : capsule)
-      .filter(capsule => capsule.itemIds.length > 0)
+    // 成员灵感删了就从胶囊里摘掉;剩一个的胶囊没有存在意义,自动解散
+    for (const capsule of [...(state.capsules ?? [])]) {
+      if (!capsule.itemIds.includes(op.id)) continue
+      const remaining = capsule.itemIds.filter(id => id !== op.id)
+      if (remaining.length < 2) {
+        capsule.itemIds = remaining
+        releaseCapsule(state, capsule)
+      } else {
+        capsule.itemIds = remaining
+      }
+    }
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
   schedule_item(state, op, now) {
@@ -213,7 +251,7 @@ const handlers = {
   },
   // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
   // 字段白名单与截断留在这里,落库经 reducer 的 editProduction 事件——清空正文等改动
-  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 learn 对比修改方向。
+  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 harness 对比修改方向。
   update_production(state, op, now) {
     const item = findById(state.items, op.id)
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
@@ -223,6 +261,56 @@ const handlers = {
     if (typeof op.article === 'string') fields.article = op.article.slice(0, 200000)
     reduce(state, { type: 'editProduction', id: item.id, at: now, ...fields })
     return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  },
+  // 素材交会话(ADR 0006 相位):登记 sentToSession,内容页呈现「审读中」;
+  // 会话写回(submit)时自动清掉。输入与成稿同一套归一(produce-input)。
+  send_to_session(state, op, now) {
+    const { sourceIds } = resolveProduceInput(state, op)
+    for (const id of sourceIds) findById(state.items, id).sentToSession = { at: now }
+    return { text: tr('把 {n} 条灵感交给了创作会话', { n: sourceIds.length }), target: sourceIds[0], kind: 'item' }
+  },
+  // 会话写回入口:rev 基线不符且未带 force 时,写回被拦下、暂存为 pendingWrite,
+  // 由校样浮层的冲突横幅裁决(apply_write / discard_write),绝不静默覆盖人工修改。
+  write_production(state, op, now) {
+    const item = findById(state.items, op.targetId)
+    const rev = item.production?.rev ?? 0
+    const base = typeof op.rev === 'number' ? op.rev : rev
+    if (base !== rev && op.force !== true) {
+      if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
+      const fields = {}
+      for (const key of ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review', 'note']) {
+        if (op[key] !== undefined) fields[key] = op[key]
+      }
+      item.production.pendingWrite = { ...fields, baseRev: base, at: now }
+      throw Object.assign(new Error(tr('会话写回与你的修改冲突,已暂存到校样浮层等你裁决')), { status: 409 })
+    }
+    const event = { type: 'submit', id: item.id, at: now }
+    if (typeof op.title === 'string') event.title = op.title.slice(0, 200)
+    if (typeof op.coverText === 'string') event.coverText = op.coverText.slice(0, 40)
+    if (typeof op.article === 'string') event.article = op.article.slice(0, 200000)
+    if (op.cover && typeof op.cover.src === 'string') event.cover = { src: op.cover.src, ...(typeof op.cover.caption === 'string' ? { caption: op.cover.caption.slice(0, 60) } : {}) }
+    if (Array.isArray(op.images)) event.images = op.images
+    if (op.intent && typeof op.intent === 'object') event.intent = op.intent
+    if (op.review && typeof op.review === 'object') event.review = op.review
+    if (typeof op.note === 'string') event.note = op.note.slice(0, 200)
+    reduce(state, event)
+    return { text: tr('会话写回了《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  },
+  // 冲突裁决:接受暂存的写回(force 语义),或丢弃它保留人工版本。都清 pendingWrite。
+  apply_write(state, op, now) {
+    const item = findById(state.items, op.targetId)
+    const pending = item.production?.pendingWrite
+    if (!pending) throw new Error(tr('没有待裁决的写回'))
+    const { baseRev, at, ...fields } = pending
+    item.production.pendingWrite = undefined
+    reduce(state, { type: 'submit', id: item.id, at: now, ...fields, forceHint: true })
+    return { text: tr('已接受会话的写回'), target: item.id, kind: 'item' }
+  },
+  discard_write(state, op) {
+    const item = findById(state.items, op.targetId)
+    if (!item.production?.pendingWrite) throw new Error(tr('没有待裁决的写回'))
+    item.production.pendingWrite = undefined
+    return { text: tr('已保留你的修改,会话那版没有写入'), target: item.id, kind: 'item' }
   },
   // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——
   // Agent 的自动整理不许冲掉用户预览之后又手动改过的分类。
@@ -303,10 +391,6 @@ const handlers = {
     state.activeStyleId = style.id
     return { text: tr('之后按「{name}」的风格写', { name: style.name }) }
   },
-  set_format(state, op) {
-    state.draftFormat = draftFormat(op.format)
-    return { text: state.draftFormat === 'article' ? tr('之后写成文章') : tr('之后写成口播脚本') }
-  },
   add_skill(state, op, now) {
     const skill = { id: newId('s'), name: '', rule: '', source: tr('手动'), status: 'proposed', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }
     if (!skill.name || !skill.rule) throw new Error(tr('Skill 需要名字和规则'))
@@ -323,45 +407,26 @@ const handlers = {
     state.skills = state.skills.filter(row => row.id !== op.id)
     return { text: tr('删除规则「{name}」', { name: skill.name }) }
   },
-  add_metric(state, op) {
-    const metric = { id: newId('m'), date: new Date().toISOString(), views: 0, likes: 0, comments: 0, shares: 0, saves: 0, ...pick(METRIC_FIELDS, op) }
-    if (!metric.platform) throw new Error(tr('数据需要平台'))
-    state.metrics.push(metric)
-    return { text: tr('记录 {platform} 数据 {views} 阅读', { platform: platformName(metric.platform), views: metric.views }) }
-  },
-  add_account(state, op, now) {
-    const account = { id: newId('ac'), platform: '', handle: '', url: null, followers: null, createdAt: now, ...pick(ACCOUNT_FIELDS, op) }
-    if (!account.platform && !account.handle && !account.url) throw new Error(tr('账号信息为空'))
-    state.accounts.push(account)
-    return { text: tr('添加账号档案「{name}」', { name: account.handle || account.title || platformName(account.platform) }), target: account.id, kind: 'account' }
-  },
-  update_account(state, op) {
-    const account = findById(state.accounts, op.id)
-    Object.assign(account, pick(ACCOUNT_FIELDS, op))
-    return { text: tr('更新账号档案「{name}」', { name: account.handle || account.title || platformName(account.platform) }) }
-  },
-  delete_account(state, op) {
-    findById(state.accounts, op.id)
-    state.accounts = state.accounts.filter(row => row.id !== op.id)
-    return { text: tr('删除账号档案') }
-  },
   clear_samples(state) {
     state.items = state.items.filter(row => !row.sample)
     state.people = state.people.filter(row => !row.sample)
     state.angles = state.angles.filter(row => !row.sample)
-    state.metrics = state.metrics.filter(row => !row.sample)
-    state.accounts = state.accounts.filter(row => !row.sample)
     state.skills = state.skills.filter(row => !row.sample)
     state.styles = (state.styles ?? []).filter(row => !row.sample)
     if (!state.styles.some(row => row.id === state.activeStyleId)) state.activeStyleId = null
-    // 自己的数据可能挂在示例内容下面：父条目没了就断开，指标没了对应内容就删掉
+    // 自己的数据可能挂在示例内容下面：父条目没了就断开
     const ids = new Set(state.items.map(row => row.id))
     for (const row of state.items) if (row.parentId && !ids.has(row.parentId)) row.parentId = null
-    state.metrics = state.metrics.filter(row => !row.itemId || ids.has(row.itemId))
-    // 胶囊里挂着的示例成员摘掉;空了的胶囊跟着清掉
-    state.capsules = (state.capsules ?? [])
-      .map(capsule => ({ ...capsule, itemIds: capsule.itemIds.filter(id => ids.has(id)) }))
-      .filter(capsule => capsule.itemIds.length > 0)
+    // 胶囊里挂着的示例成员摘掉;不足两个成员的胶囊按自动解散处理
+    for (const capsule of [...(state.capsules ?? [])]) {
+      const remaining = capsule.itemIds.filter(id => ids.has(id))
+      if (remaining.length < 2) {
+        capsule.itemIds = remaining
+        releaseCapsule(state, capsule)
+      } else {
+        capsule.itemIds = remaining
+      }
+    }
     state.sampleCleared = true
     return { text: tr('已清空全部示例数据') }
   },

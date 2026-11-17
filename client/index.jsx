@@ -1,20 +1,22 @@
 // dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
+// 成稿主战场在 DSH 创作会话(ADR 0006):这里注册看板、校样浮层与素材接驳条。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
-import { CapsuleDialog } from './capsule.jsx'
+import { CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
+import { DockRail } from './dock.jsx'
 import { Editor } from './editor.jsx'
+import { ProofOverlay } from './proof.jsx'
 import { RetagDialog } from './retag.jsx'
-import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
-import { ProduceView } from './produce.jsx'
+import { setSessionWorkspace } from './session-link.js'
 import css from './styles.css'
-import { lang, subscribeLang, t, useLang } from './i18n.js'
+import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
-import { Dialog, FormDialog, Icon, IconButton, Toast } from './ui.jsx'
+import { Dialog, FormDialog, Icon, IconButton, Menu, Toast } from './ui.jsx'
 
 const PANEL_ID = 'writing-desk'
 
@@ -23,12 +25,10 @@ const NAV = [
   { id: 'home', label: '灵感', navKey: '灵感（导航）' },
   { id: 'content', label: '内容' },
   { id: 'schedule', label: '排期' },
-  // 数据面板降级为可选模块(工单 #10):手动录入/CSV 导入都在这一页里,主链路(成稿/发布)不依赖它
-  { id: 'insights', label: '复盘', optional: true },
   { id: 'style', label: '风格', navKey: '风格（导航）' },
 ]
 
-const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
+const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, style: StyleView }
 
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
@@ -173,7 +173,6 @@ function Desk() {
   const ready = useDesk(s => Boolean(s.state))
   const error = useDesk(s => s.error)
   const view = useDesk(s => s.view)
-  const produceId = useDesk(s => s.produceId)
   const canUndo = useDesk(s => s.canUndo)
   const rootRef = React.useRef(null)
   const [width, setWidth] = React.useState(1600)
@@ -208,9 +207,8 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} title={entry.optional ? t('数据面板是可选模块，不进成稿主链路') : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, produceId: null, produceSources: null, selection: null })}>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, proofId: null, selection: null })}>
                 {entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}
-                {entry.optional ? <small className="md-nav-optional">{t('可选')}</small> : null}
               </button>
             ))}
           </nav>
@@ -223,18 +221,18 @@ function Desk() {
         <main className="md-content" key={view}>
           {error ? (
             <div className="md-page"><p className="md-muted">{t('工作台加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={loadDesk}>{t('重试')}</button></div>
-          ) : ready ? (
-            // 统一成稿工作面占住主区域,关闭后回到原来的视图;不是浮层,点灵感也不会再进 Studio
-            produceId ? <ProduceView /> : <Active />
-          ) : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
+          ) : ready ? <Active /> : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
         </main>
         {ready ? <Editor /> : null}
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
-      {ready ? <CapsuleDialog /> : null}
+      {ready ? <CapsuleView /> : null}
       {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
+      {/* 校样浮层由 desk store 的 proofId 门控,常挂载——内容页成稿卡与签收栏都点开它 */}
+      <ProofOverlay />
+      <Menu />
       <Toast />
     </div>
   )
@@ -248,28 +246,47 @@ export const inject = ['slots']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
-  // 侧栏的名字只在注册时读一次，换语言时重新注册
-  ctx.effect(() => {
-    let release = null
-    const mount = () => {
-      release?.()
-      release = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-        name: 'sidebar.panellist',
-        id: PANEL_ID,
-        order: 5,
-        label: () => t('图文创作台'),
-      }, PanelIcon))
-    }
-    mount()
-    const off = subscribeLang(mount)
-    return () => { off(); release?.() }
-  }, 'dsh-writing-desk: sidebar entry')
+  mountComposerDock(ctx)
+  mountWorkspace(ctx)
   mountBetterSidebar(ctx)
 }
 
 /**
- * 装了 dsh-better-sidebar 就再挂一个右侧栏的页面（#10）：左侧栏被别的插件整个接管时，
- * 这是唯一还点得到的入口。没装就什么都不做——它是软依赖，不进顶层的 inject。
+ * 素材接驳条挂进宿主对话输入区下方的 conversation.composer.dock 槽位。
+ * 旧宿主没有这个槽位(或 slots.inject 不存在)时整段静默跳过——降级为纯看板。
+ */
+function mountComposerDock(ctx) {
+  try {
+    if (typeof ctx.slots?.inject !== 'function') return
+    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+      name: 'conversation.composer.dock', id: 'writing-desk-dock',
+    }, DockRail))
+  } catch (error) {
+    console.warn('[dsh-writing-desk] composer dock skipped:', error)
+  }
+}
+
+/**
+ * 能力检测(ADR 0006 宿主版本):uiWorkspace 是软依赖,拿不到时
+ * 「去创作会话」降级为 toast,看板与校样浮层照常可用。
+ */
+function mountWorkspace(ctx) {
+  const register = (inner) => {
+    const workspace = inner.uiWorkspace ?? inner.get?.('uiWorkspace')
+    setSessionWorkspace(workspace)
+  }
+  try {
+    if (typeof ctx.inject === 'function') ctx.inject(['uiWorkspace'], register)
+    else register(ctx)
+  } catch (error) {
+    console.warn('[dsh-writing-desk] uiWorkspace unavailable:', error)
+    setSessionWorkspace(null)
+  }
+}
+
+/**
+ * 入口只挂在右侧栏（dsh-better-sidebar 的页面槽位）：左侧栏不再注册，避免同一个工作台
+ * 在两处重复出现。没装 better-sidebar 就什么都不做——它是软依赖，不进顶层的 inject。
  */
 function mountBetterSidebar(ctx) {
   const register = inner => {
@@ -278,7 +295,7 @@ function mountBetterSidebar(ctx) {
     inner.effect(() => sidebar.registerTab({
       id: `${PANEL_ID}:workbench`,
       title: () => t('图文创作台'),
-      description: () => t('灵感、内容、排期、复盘、风格'),
+      description: () => t('灵感、内容、排期、风格'),
       icon: size => <PanelIcon size={size} />,
       order: 60,
       single: true,

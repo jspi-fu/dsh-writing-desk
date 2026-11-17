@@ -1,16 +1,16 @@
 // 浏览器侧的状态：Host 状态的本地镜像，加上只属于界面的选中、视图等。
+// 成稿发生在 DSH 创作会话(ADR 0006),这里只剩数据镜像、路由调用与界面状态。
 import React from 'react'
-import { resolveProduceInput } from '../src/produce-input.js'
-import { coverDataUrl } from './cover.js'
-import { lang, plural, setLanguagePreference, t } from './i18n.js'
+import { lang, setLanguagePreference, t } from './i18n.js'
 
 const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, produceSources: null, query: '', kindFilter: 'all', related: null,
-  capsuleId: null, retag: null, tagFilter: null, selection: null,
-  live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
+  view: 'home', focusId: null, sheetOrigin: null, proofId: null, query: '', kindFilter: 'all', related: null,
+  capsuleId: null, retag: null, tagFilter: null, selection: null, menu: null,
+  settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
+  capabilities: { session: false },
 }
 // getSnapshot 稳定性:useDesk 选择器缺字段时回落到这同一个数组引用,
 // 每次返回新 [] 会让 useSyncExternalStore 认为快照一直在变,触发 React #185 无限渲染
@@ -98,6 +98,40 @@ export function closeItem() {
   setDesk({ focusId: null, sheetOrigin: null })
 }
 
+// 校样浮层(ADR 0006):内容页成稿卡与签收栏的人工介入载体;灵感卡仍走 Editor。
+export function openProof(id) {
+  setDesk(s => {
+    markIntake(id, s.state?.items.find(row => row.id === id)?.production?.rev ?? 0)
+    return { proofId: id, focusId: null, sheetOrigin: null }
+  })
+}
+
+export function closeProof() {
+  setDesk({ proofId: null })
+}
+
+// 已读签收记录:itemId → 已看过的 rev,内容页据此宣布「已写回」
+function readIntake() {
+  try {
+    const raw = JSON.parse(localStorage.getItem('writing-desk-intake') ?? '{}')
+    return raw && typeof raw === 'object' ? raw : {}
+  } catch {
+    return {}
+  }
+}
+
+export function seenRevOf(id) {
+  return readIntake()[id] ?? 0
+}
+
+function markIntake(id, rev) {
+  if (!id || typeof rev !== 'number') return
+  const intake = readIntake()
+  if ((intake[id] ?? 0) >= rev) return
+  intake[id] = rev
+  try { localStorage.setItem('writing-desk-intake', JSON.stringify(intake)) } catch { /* 隐私模式等存不进就当作没签收 */ }
+}
+
 // 胶囊对话框:重命名、看成员、解散
 export function openCapsule(id) {
   setDesk({ capsuleId: id })
@@ -105,6 +139,15 @@ export function openCapsule(id) {
 
 export function closeCapsule() {
   setDesk({ capsuleId: null })
+}
+
+// 右键菜单:一个全局实例,坐标相对 .md-root,避免被画布/浮层的容器裁掉
+export function openMenu(at, items) {
+  setDesk({ menu: { x: at.x, y: at.y, items } })
+}
+
+export function closeMenu() {
+  setDesk({ menu: null })
 }
 
 // 批量改标签:先 diff 预览再应用,版本冲突时 Host 拒绝
@@ -116,7 +159,7 @@ export function closeRetag() {
   setDesk({ retag: null })
 }
 
-// 画布多选:Shift+点选灵感或胶囊,凑一批直接成稿;成稿或清除后收回
+// 画布多选:Shift+点选灵感或胶囊,凑一批引用到对话;清除后收回
 export function toggleSelect(kind, id) {
   setDesk(s => {
     const key = kind === 'capsule' ? 'capsules' : 'items'
@@ -128,85 +171,6 @@ export function toggleSelect(kind, id) {
 
 export function clearSelection() {
   setDesk({ selection: null })
-}
-
-// 统一成稿入口(GLOSSARY「成稿输入」):单灵感/多灵感/单胶囊/多胶囊都进这一个工作面。
-// 字符串 = 单灵感(编辑界面「去成稿」);对象 = { itemIds } / { capsuleIds }(画布多选、胶囊、标签资料架)。
-// 解析与 Host 用同一个模块:去重、滤掉已删除;产物落在第一个来源上。
-export function openProduce(input) {
-  const state = getDesk().state
-  const resolved = typeof input === 'string' ? { itemIds: [input] } : input ?? {}
-  let sourceIds = []
-  try {
-    sourceIds = resolveProduceInput(state ?? { items: [], capsules: [] }, resolved).sourceIds
-  } catch {
-    sourceIds = []
-  }
-  if (!sourceIds.length) return toast(t('没有可成稿的灵感'), { error: true })
-  setDesk({
-    focusId: null, sheetOrigin: null, selection: null,
-    produceId: sourceIds[0],
-    produceSources: sourceIds.length > 1 ? sourceIds : null,
-  })
-}
-
-export function closeProduce() {
-  setDesk({ produceId: null, produceSources: null })
-}
-
-/** 一键成稿。任务在 Host 里跑，这里只负责启动和看进度；多来源时把来源一并交给 Host 解析。 */
-export async function runProduce(id, { withImages, itemIds } = {}) {
-  try {
-    const data = await request('produce', {
-      id,
-      ...(Array.isArray(itemIds) && itemIds.length > 1 ? { itemIds } : {}),
-      ...(typeof withImages === 'boolean' ? { withImages } : {}),
-    })
-    setDesk({ state: data.state })
-  } catch (err) {
-    report(err)
-  }
-}
-
-export async function cancelProduce(id) {
-  try {
-    await request('produce/cancel', { id })
-  } catch (err) {
-    report(err)
-  }
-}
-
-export async function regenAsset(id, target) {
-  try {
-    const data = await request('produce/regen', { id, target })
-    setDesk({ state: data.state })
-  } catch (err) {
-    report(err)
-  }
-}
-
-function mergeProduction(id, production, status) {
-  setDesk(s => ({ state: { ...s.state, items: s.state.items.map(item => (item.id === id ? { ...item, production, ...(status ? { status } : {}) } : item)) } }))
-}
-
-/** 轮询进度，返回停止函数。 */
-export function watchProduction(id) {
-  let stopped = false
-  const tick = async () => {
-    while (!stopped) {
-      try {
-        const data = await request(`production?id=${encodeURIComponent(id)}`)
-        if (stopped) return
-        setDesk(s => ({ live: { ...s.live, [id]: data.live } }))
-        if (data.production) mergeProduction(id, data.production, data.status)
-      } catch {
-        // 连接抖动时下一轮再试
-      }
-      await new Promise(r => setTimeout(r, 700))
-    }
-  }
-  tick()
-  return () => { stopped = true }
 }
 
 export async function saveSettings(payload) {
@@ -222,31 +186,15 @@ export async function saveSettings(payload) {
   }
 }
 
-export async function testImage(payload) {
-  try {
-    const settings = await request('settings', payload)
-    setLanguagePreference(settings.language)
-    setDesk({ settings })
-    const { src } = await request('settings/test', {})
-    return src
-  } catch (err) {
-    report(err)
-    return null
-  }
-}
-
+// 交接三件套:保存文件夹 / 打开文件夹 / 导出发布包,都落在 Host 的 production/* 路由上
 export async function saveProduced(id) {
   try {
-    const production = snapshot.state.items.find(row => row.id === id)?.production
-    // 视频封面在浏览器里合成，一起存进文件夹
-    const videoCover = await coverDataUrl({ src: production.cover?.src, text: production.coverText || production.title }).catch(() => undefined)
-    const data = await request('produce/save', { id, videoCover })
+    const data = await request('production/save', { id })
     setDesk({ state: data.state })
     const where = data.backups?.length
       ? t('已保存到 {path}。你在文件夹里改过的稿子另存成了 {names}', { path: data.path, names: data.backups.join(lang() === 'en' ? ', ' : '、') })
       : t('已保存到 {path}', { path: data.path })
-    // 导出成稿也沉淀规则(工单 #10):Host 保存后顺手提炼,这里把结果说清楚
-    toast(data.learned ? t('{where}，并把你的修改沉淀成了规则', { where }) : where)
+    toast(where)
   } catch (err) {
     report(err)
   }
@@ -254,7 +202,7 @@ export async function saveProduced(id) {
 
 export async function revealSaved(id) {
   try {
-    await request('produce/reveal', { id })
+    await request('production/reveal', { id })
   } catch (err) {
     report(err)
   }
@@ -263,7 +211,7 @@ export async function revealSaved(id) {
 // 发布交接(工单 #9):导出 CLI 原生发布包。只出文件与命令,是否已发布由用户在确认框里决定。
 export async function exportForPublish(id) {
   try {
-    const data = await request('produce/export', { id })
+    const data = await request('production/export', { id })
     setDesk({ state: data.state })
     return data
   } catch (err) {
@@ -304,88 +252,17 @@ export async function captureFiles(files) {
   }
 }
 
-export async function refreshAccount(payload) {
-  try {
-    const data = await request('account/refresh', payload)
-    setDesk({ state: data.state, canUndo: true })
-    if (data.fetchError) toast(t('读取主页失败：{error}', { error: data.fetchError }), { error: true })
-    else toast(t('已更新账号档案'))
-    return data
-  } catch (err) {
-    report(err)
-    return null
-  }
-}
-
-export async function extractStyle(payload) {
-  try {
-    const data = await request('style/extract', payload)
-    setDesk({ state: data.state, canUndo: true })
-    const missed = data.failures?.length ?? 0
-    toast(missed ? t(plural(missed, '风格提炼好了，有 1 个链接没抓到', '风格提炼好了，有 {n} 个链接没抓到'), { n: missed }) : t('风格提炼好了，之后就按它写'), { undo: true })
-    return true
-  } catch (err) {
-    report(err)
-    return false
-  }
-}
-
-export async function monidStatus() {
-  try {
-    return await request('monid/status')
-  } catch (err) {
-    return { state: 'error', message: err.message }
-  }
-}
-
-export async function importAccount(payload) {
-  try {
-    const data = await request('monid/import', payload)
-    setDesk({ state: data.state, canUndo: true })
-    const spent = data.cost ? t('，花费 ${cost}', { cost: data.cost.toFixed(3) }) : ''
-    const what = t(plural(data.count, '读到 {name} 的 1 条内容，新增 {added} 条', '读到 {name} 的 {count} 条内容，新增 {added} 条'), { name: data.nickname, count: data.count, added: data.added })
-    toast(data.styleError ? t('{what}{spent}。风格没提炼成：{error}', { what, spent, error: data.styleError }) : t('{what}，已提炼成风格{spent}', { what, spent }), { error: Boolean(data.styleError), undo: !data.styleError })
-    return true
-  } catch (err) {
-    report(err)
-    return false
-  }
-}
-
-export async function learnSkills() {
-  try {
-    const data = await request('skills/learn', {})
-    setDesk({ state: data.state, canUndo: true })
-    toast(data.added ? t(plural(data.added, '从数据里提炼出 1 条新规则，等你确认', '从数据里提炼出 {n} 条新规则，等你确认'), { n: data.added }) : t('目前的数据还提炼不出新规则'))
-  } catch (err) {
-    report(err)
-  }
+// 只抓正文不调模型(ADR 0006):风格提炼的文字由这里取,之后投给创作会话。
+export async function harvestText(urls) {
+  return request('harvest-text', { urls })
 }
 
 export async function exportSkills() {
   try {
     const data = await request('skills/export', {})
     setDesk({ state: data.state })
-    toast(t(plural(data.rules, '已导出 Skill：{name}（1 条规则）', '已导出 Skill：{name}（{n} 条规则）'), { name: data.name, n: data.rules }))
+    toast(t('已导出 Skill：{name}（{n} 条规则）', { name: data.name, n: data.rules }))
   } catch (err) {
     report(err)
   }
 }
-
-// 风格闭环(工单 #10):把成稿的人工修改提炼成写作规则,去重后写入并直接生效,下次成稿自动套用
-export async function feedbackSkills() {
-  try {
-    const data = await request('skills/feedback', {})
-    setDesk({ state: data.state, canUndo: data.added > 0 })
-    toast(data.added
-      ? t(plural(data.added, '已把你的修改沉淀成 1 条规则，下次成稿自动套用', '已把你的修改沉淀成 {n} 条规则，下次成稿自动套用'), { n: data.added })
-      : t('这次的修改还沉淀不出新规则，多改几篇再来'))
-  } catch (err) {
-    report(err)
-  }
-}
-
-export function fetchInsights() {
-  return request('insights')
-}
-

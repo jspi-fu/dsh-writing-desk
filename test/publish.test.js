@@ -179,7 +179,7 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
 
     // 导出目录先指到临时目录,别写进用户真实的 Documents
     assert.equal((await post('settings', { exportDir: join(dir, 'out') })).status, 200)
-    const result = await post('produce/export', { id: 'seed_2' })
+    const result = await post('production/export', { id: 'seed_2' })
     assert.equal(result.status, 200)
     assert.equal(result.body.articlePath, join(result.body.dir, 'article.md'))
     assert.match(result.body.command, /^wechatsync sync/)
@@ -191,10 +191,10 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     assert.equal(after.publishedAt, null)
     assert.equal(after.production.cliPath, result.body.dir)
     // 再导一次写回同一个文件夹,不另开新目录
-    const again = await post('produce/export', { id: 'seed_2' })
+    const again = await post('production/export', { id: 'seed_2' })
     assert.equal(again.body.dir, result.body.dir)
     // 没有成稿的灵感拒绝导出
-    const empty = await post('produce/export', { id: 'seed_1' })
+    const empty = await post('production/export', { id: 'seed_1' })
     assert.equal(empty.status, 400)
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME

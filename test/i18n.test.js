@@ -3,10 +3,8 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { callModel, planPrompts } from '../src/ai.js'
-import { currentLang, ENGLISH_DIRECTIVE, tr, withLang } from '../src/i18n.js'
+import { currentLang, tr, withLang } from '../src/i18n.js'
 import { applyOps } from '../src/ops.js'
-import { normalizePlan } from '../src/produce.js'
 import { buildSeed, localizeSamples, migrateState, samplesNeedLocale } from '../src/seed.js'
 import { Store } from '../src/store.js'
 import plugin from '../src/host.js'
@@ -23,7 +21,7 @@ test('tr：中文原样返回，英文查表并填占位符，查不到时退回
     assert.equal(tr('把《{title}》排到 {when}', { title: 'Slow writing', when: 'Nov 3 20:00' }), 'Scheduled "Slow writing" for Nov 3 20:00')
     assert.equal(tr('还没有保存过'), 'Not saved yet')
     assert.equal(tr('词典里没有的一句'), '词典里没有的一句')
-    assert.equal(tr('导入{platform}账号', {}), 'Import {platform} account')
+    assert.equal(tr('《{title}》状态改为「{status}」', { title: 'X', status: '待发布' }), 'Moved "X" to 待发布')
   })
   assert.equal(withLang('en-US', currentLang), 'en')
   assert.equal(withLang('zh-CN', currentLang), 'zh')
@@ -39,10 +37,9 @@ test('英文请求下生成英文示例，结构和中文版完全一致', async
   // 图上印着中文的那张，英文版换成英文图；切回中文换回来
   const back = localizeSamples(structuredClone(en), 'zh')
   assert.equal(back.items.find(row => row.id === 'seed_7').media.src, 'writing-desk/assets/poster.jpg')
-  assert.deepEqual(en.metrics, zh.metrics)
   assert.deepEqual(en.styles.map(row => [row.id, row.category, row.icon]), zh.styles.map(row => [row.id, row.category, row.icon]))
   for (const row of en.items) for (const field of ['title', 'body', 'source', ...row.tags]) assert.ok(!CJK.test(field in row ? row[field] : field), `${row.id} ${field}`)
-  for (const key of ['people', 'angles', 'skills', 'accounts']) assert.ok(!CJK.test(JSON.stringify(en[key].map(({ platform, ...rest }) => rest))), key)
+  for (const key of ['people', 'angles', 'skills']) assert.ok(!CJK.test(JSON.stringify(en[key])), key)
   for (const row of en.styles) assert.ok(!CJK.test(JSON.stringify({ ...row, category: '' })), row.id)
 
   // Store 在请求里第一次建库时也按请求语言写示例
@@ -68,7 +65,6 @@ test('localizeSamples：中英来回切换只换示例文字，用户内容和�
   ])
   const seed2 = state.items.find(row => row.id === 'seed_2')
   seed2.production = { status: 'done', title: '成稿标题', article: '正文' }
-  const metrics = clone(state.metrics)
   const before = clone(state)
 
   assert.equal(samplesNeedLocale(state, 'en'), true)
@@ -87,14 +83,12 @@ test('localizeSamples：中英来回切换只换示例文字，用户内容和�
   assert.ok(!CJK.test(item('seed_2').title))
   assert.ok(!CJK.test(item('seed_3').title))
   assert.ok(!CJK.test(item('seed_3').body))
-  assert.deepEqual(state.metrics, metrics)
   const news = state.styles.find(row => row.id === 'preset_news')
   assert.equal(news.tone, '我自己的语气')
   assert.ok(!CJK.test(news.name))
   assert.equal(news.category, '热点资讯')
   assert.equal(state.styles.find(row => row.name === '我的风格').tone, '原样')
   assert.equal(state.people.find(row => row.id === 'newbie').role, 'Target reader')
-  assert.equal(state.accounts[0].platform, '公众号')
 
   // 重复调用不再改动
   const once = JSON.stringify(state)
@@ -130,53 +124,10 @@ test('localizeSamples：清空示例后只换内置预设；旧数据没有 samp
   delete old.sampleLang
   assert.equal(samplesNeedLocale(old, 'zh'), false)
   assert.equal(migrateState(old).sampleLang, 'zh')
-  const legacy = migrateState({ items: [], people: [], angles: [], skills: [], accounts: [], metrics: [] })
+  const legacy = migrateState({ items: [], people: [], angles: [], skills: [] })
   assert.equal(legacy.sampleLang, 'zh')
   localizeSamples(legacy, 'en')
   assert.ok(legacy.styles.length > 0 && legacy.styles.every(row => !CJK.test(row.name)))
-})
-
-test('英文界面下，系统提示词末尾追加英文要求，原来的中文提示词保留', async () => {
-  const seen = []
-  const ctx = {
-    get(name) {
-      if (name === 'agentDefaultModel') return { currentSelection: () => ({ provider: 'p', model: 'm' }) }
-      if (name === 'llm') {
-        return {
-          prepareCall: async () => ({
-            config: {},
-            async* stream(request) {
-              seen.push(request.system)
-              yield { type: 'text-delta', text: 'ok' }
-            },
-          }),
-        }
-      }
-      return undefined
-    },
-  }
-  await callModel(ctx, { system: '你是文风分析师。', user: 'x' })
-  await withLang('en', () => callModel(ctx, { system: '你是文风分析师。', user: 'x' }))
-  assert.equal(seen[0], '你是文风分析师。')
-  assert.ok(seen[1].startsWith('你是文风分析师。'))
-  assert.ok(seen[1].endsWith(ENGLISH_DIRECTIVE))
-
-  // 模拟模型靠中文关键词识别提示词，英文界面下这些词还在
-  const state = buildSeed(NOW, 'zh')
-  const settings = { imageCount: 2, shotCount: 6, voice: '' }
-  const en = withLang('en', () => planPrompts(state, state.items[0], settings).system)
-  assert.match(en, /策划案/)
-  assert.doesNotMatch(en, /中文图注/)
-  assert.match(planPrompts(state, state.items[0], settings).system, /中文图注/)
-})
-
-test('英文成稿：默认景别和封面大字兜底都是英文，长度上限不变', () => {
-  withLang('en', () => {
-    const plan = normalizePlan({ shots: [{ prompt: 'x' }] }, { imageCount: 0, shotCount: 1 }, 'Why your first AI side project never makes a dollar')
-    assert.equal(plan.shots[0].shot, 'Medium shot')
-    assert.equal(plan.coverText, 'Why your first AI side')
-    assert.ok(plan.coverText.length <= 24)
-  })
 })
 
 test('GET state 按请求头的语言换示例文字', async () => {
