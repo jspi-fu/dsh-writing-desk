@@ -2,7 +2,7 @@
 import React from 'react'
 import { panelState } from '../src/state.js'
 import { downloadCover } from './cover.js'
-import { cancelProduce, closeProduce, dispatchOps, EMPTY_LIST, exportForPublish, feedbackSkills, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
+import { cancelProduce, closeProduce, dispatchOps, EMPTY_LIST, exportForPublish, regenAsset, revealSaved, runProduce, saveProduced, setDesk, toast, useDesk, watchProduction } from './desk.js'
 import { plural, t } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, SPRING_SOFT, STYLE_CATEGORIES, fmtDate, fmtWhen, reducedMotion, renderMarkdown, styleIcon, textLength, toLocalInput } from './util.js'
@@ -289,8 +289,6 @@ function HeroTile({ item, live, onView, sources }) {
             <button type="button" className="md-pill is-primary" onClick={copy}><Icon name="copy" size={14} />{production?.format === 'article' ? t('复制文章') : t('复制脚本')}</button>
             <button type="button" className="md-pill" onClick={save} disabled={saving}><Icon name="save" size={14} />{saving ? t('保存中…') : t('保存')}</button>
             <button type="button" className="md-pill" onClick={publishExport} disabled={publishing}><Icon name="upRight" size={14} />{publishing ? t('导出中…') : t('发布')}</button>
-            {/* 风格闭环(工单 #10):把对这篇稿子的人工修改沉淀成写作规则,下次成稿自动套用 */}
-            <button type="button" className="md-pill" title={t('把这次对稿子的修改沉淀成规则，下次成稿自动套用')} onClick={() => feedbackSkills()}><Icon name="spark" size={14} />{t('写进风格')}</button>
             <button type="button" className="md-pill" onClick={() => downloadCover({ src: production.cover?.src, text: production.coverText || production.title }, production.title).catch(err => toast(err.message, { error: true }))}><Icon name="image" size={14} />{t('下载封面')}</button>
             <label className="md-pill md-date-pill">
               <Icon name="calendar" size={14} />{item.scheduledAt ? fmtWhen(item.scheduledAt) : t('排期')}

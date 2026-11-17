@@ -8,7 +8,7 @@ import { draftFormat } from './style.js'
 export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
 export const KINDS = ['image', 'video', 'web', 'quote', 'note']
-export const PLATFORMS = ['公众号', '小红书', '抖音', 'B站', '视频号', 'TikTok', 'Instagram', 'YouTube', 'X']
+export const PLATFORMS = ['公众号', '小红书', '知乎']
 
 /** 状态在当前语言下的名字。 */
 export function statusLabel(status) {
@@ -25,8 +25,6 @@ const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list'
 const ANGLE_FIELDS = { name: 'text', hook: 'text', prompt: 'text' }
 const STYLE_FIELDS = { name: 'text', icon: 'text', summary: 'text', tone: 'text', sentences: 'text', opening: 'text', structure: 'text', logic: 'text', story: 'text', flow: 'text', words: 'list', avoid: 'list', samples: 'list' }
 const SKILL_FIELDS = { name: 'text', rule: 'text', source: 'text', status: 'text', confidence: 'num', evidence: 'text' }
-const METRIC_FIELDS = { itemId: 'id', platform: 'platform', date: 'date', views: 'num', likes: 'num', comments: 'num', shares: 'num', saves: 'num' }
-const ACCOUNT_FIELDS = { platform: 'text', handle: 'text', url: 'url', followers: 'num', note: 'text', title: 'text', description: 'text', avatar: 'url', fetchedAt: 'date', fetchError: 'text' }
 
 let counter = 0
 export function newId(prefix = 'x') {
@@ -215,7 +213,6 @@ const handlers = {
     const item = findById(state.items, op.id)
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
-    state.metrics = state.metrics.filter(row => row.itemId !== op.id)
     // 成员灵感删了就从胶囊里摘掉;剩一个的胶囊没有存在意义,自动解散
     for (const capsule of [...(state.capsules ?? [])]) {
       if (!capsule.itemIds.includes(op.id)) continue
@@ -254,7 +251,7 @@ const handlers = {
   },
   // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
   // 字段白名单与截断留在这里,落库经 reducer 的 editProduction 事件——清空正文等改动
-  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 learn 对比修改方向。
+  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 harness 对比修改方向。
   update_production(state, op, now) {
     const item = findById(state.items, op.id)
     if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
@@ -364,41 +361,16 @@ const handlers = {
     state.skills = state.skills.filter(row => row.id !== op.id)
     return { text: tr('删除规则「{name}」', { name: skill.name }) }
   },
-  add_metric(state, op) {
-    const metric = { id: newId('m'), date: new Date().toISOString(), views: 0, likes: 0, comments: 0, shares: 0, saves: 0, ...pick(METRIC_FIELDS, op) }
-    if (!metric.platform) throw new Error(tr('数据需要平台'))
-    state.metrics.push(metric)
-    return { text: tr('记录 {platform} 数据 {views} 阅读', { platform: platformName(metric.platform), views: metric.views }) }
-  },
-  add_account(state, op, now) {
-    const account = { id: newId('ac'), platform: '', handle: '', url: null, followers: null, createdAt: now, ...pick(ACCOUNT_FIELDS, op) }
-    if (!account.platform && !account.handle && !account.url) throw new Error(tr('账号信息为空'))
-    state.accounts.push(account)
-    return { text: tr('添加账号档案「{name}」', { name: account.handle || account.title || platformName(account.platform) }), target: account.id, kind: 'account' }
-  },
-  update_account(state, op) {
-    const account = findById(state.accounts, op.id)
-    Object.assign(account, pick(ACCOUNT_FIELDS, op))
-    return { text: tr('更新账号档案「{name}」', { name: account.handle || account.title || platformName(account.platform) }) }
-  },
-  delete_account(state, op) {
-    findById(state.accounts, op.id)
-    state.accounts = state.accounts.filter(row => row.id !== op.id)
-    return { text: tr('删除账号档案') }
-  },
   clear_samples(state) {
     state.items = state.items.filter(row => !row.sample)
     state.people = state.people.filter(row => !row.sample)
     state.angles = state.angles.filter(row => !row.sample)
-    state.metrics = state.metrics.filter(row => !row.sample)
-    state.accounts = state.accounts.filter(row => !row.sample)
     state.skills = state.skills.filter(row => !row.sample)
     state.styles = (state.styles ?? []).filter(row => !row.sample)
     if (!state.styles.some(row => row.id === state.activeStyleId)) state.activeStyleId = null
-    // 自己的数据可能挂在示例内容下面：父条目没了就断开，指标没了对应内容就删掉
+    // 自己的数据可能挂在示例内容下面：父条目没了就断开
     const ids = new Set(state.items.map(row => row.id))
     for (const row of state.items) if (row.parentId && !ids.has(row.parentId)) row.parentId = null
-    state.metrics = state.metrics.filter(row => !row.itemId || ids.has(row.itemId))
     // 胶囊里挂着的示例成员摘掉;不足两个成员的胶囊按自动解散处理
     for (const capsule of [...(state.capsules ?? [])]) {
       const remaining = capsule.itemIds.filter(id => ids.has(id))

@@ -313,19 +313,6 @@ export async function captureFiles(files) {
   }
 }
 
-export async function refreshAccount(payload) {
-  try {
-    const data = await request('account/refresh', payload)
-    setDesk({ state: data.state, canUndo: true })
-    if (data.fetchError) toast(t('读取主页失败：{error}', { error: data.fetchError }), { error: true })
-    else toast(t('已更新账号档案'))
-    return data
-  } catch (err) {
-    report(err)
-    return null
-  }
-}
-
 export async function extractStyle(payload) {
   try {
     const data = await request('style/extract', payload)
@@ -339,38 +326,6 @@ export async function extractStyle(payload) {
   }
 }
 
-export async function monidStatus() {
-  try {
-    return await request('monid/status')
-  } catch (err) {
-    return { state: 'error', message: err.message }
-  }
-}
-
-export async function importAccount(payload) {
-  try {
-    const data = await request('monid/import', payload)
-    setDesk({ state: data.state, canUndo: true })
-    const spent = data.cost ? t('，花费 ${cost}', { cost: data.cost.toFixed(3) }) : ''
-    const what = t(plural(data.count, '读到 {name} 的 1 条内容，新增 {added} 条', '读到 {name} 的 {count} 条内容，新增 {added} 条'), { name: data.nickname, count: data.count, added: data.added })
-    toast(data.styleError ? t('{what}{spent}。风格没提炼成：{error}', { what, spent, error: data.styleError }) : t('{what}，已提炼成风格{spent}', { what, spent }), { error: Boolean(data.styleError), undo: !data.styleError })
-    return true
-  } catch (err) {
-    report(err)
-    return false
-  }
-}
-
-export async function learnSkills() {
-  try {
-    const data = await request('skills/learn', {})
-    setDesk({ state: data.state, canUndo: true })
-    toast(data.added ? t(plural(data.added, '从数据里提炼出 1 条新规则，等你确认', '从数据里提炼出 {n} 条新规则，等你确认'), { n: data.added }) : t('目前的数据还提炼不出新规则'))
-  } catch (err) {
-    report(err)
-  }
-}
-
 export async function exportSkills() {
   try {
     const data = await request('skills/export', {})
@@ -379,22 +334,5 @@ export async function exportSkills() {
   } catch (err) {
     report(err)
   }
-}
-
-// 风格闭环(工单 #10):把成稿的人工修改提炼成写作规则,去重后写入并直接生效,下次成稿自动套用
-export async function feedbackSkills() {
-  try {
-    const data = await request('skills/feedback', {})
-    setDesk({ state: data.state, canUndo: data.added > 0 })
-    toast(data.added
-      ? t(plural(data.added, '已把你的修改沉淀成 1 条规则，下次成稿自动套用', '已把你的修改沉淀成 {n} 条规则，下次成稿自动套用'), { n: data.added })
-      : t('这次的修改还沉淀不出新规则，多改几篇再来'))
-  } catch (err) {
-    report(err)
-  }
-}
-
-export function fetchInsights() {
-  return request('insights')
 }
 

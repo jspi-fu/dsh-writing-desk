@@ -9,7 +9,7 @@ import { activeStyle, normalizeStyle, stylePrompts, styleToVoice } from '../src/
 import { articlePrompts, planPrompts } from '../src/ai.js'
 import { migrateState } from '../src/seed.js'
 import { requestRejection } from '../src/host.js'
-import { computeInsights, exportSkill, learnFromEdits, proposeRules } from '../src/learn.js'
+import { exportSkill } from '../src/learn.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
@@ -60,7 +60,6 @@ test('clear_samples 清空示例但保留用户内容', () => {
   const state = seed()
   applyOps(state, [{ op: 'add_item', title: '我自己的' }, { op: 'clear_samples' }])
   assert.deepEqual(state.items.map(i => i.title), ['我自己的'])
-  assert.equal(state.metrics.length, 0)
 })
 
 test('速记卡的来源类型只接受「我写的 / AI 生成的」', () => {
@@ -135,28 +134,6 @@ test('降级生成的内容明确标注未连接模型', () => {
   assert.equal(plan.shots.length, 6)
 })
 
-test('proposeRules 基于数据提案，已有规则不重复', () => {
-  const state = seed()
-  const first = proposeRules(state)
-  assert.ok(first.length > 0)
-  assert.ok(first.every(p => p.evidence))
-  applyOps(state, first.map(p => ({ op: 'add_skill', ...p })))
-  assert.equal(proposeRules(state).length, 0)
-})
-
-test('proposeRules 没有数据时不提案', () => {
-  const state = seed()
-  state.metrics = []
-  assert.equal(proposeRules(state).length, 0)
-})
-
-test('computeInsights 汇总与逐日数据一致', () => {
-  const state = seed()
-  const data = computeInsights(state)
-  assert.equal(data.daily.reduce((a, b) => a + b.views, 0), data.views)
-  assert.equal(data.platforms.reduce((a, b) => a + b.views, 0), data.views)
-})
-
 test('requestRejection 没有鉴权服务时拒绝，有服务时听它的', () => {
   const req = { headers: { cookie: 'x' } }
   assert.equal(requestRejection({ get: () => undefined }, req), 403)
@@ -183,69 +160,6 @@ test('exportSkill 不导出示例规则和示例人物', async () => {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
-})
-
-// 工单 #10 风格闭环:两条有人工删改的成稿 → 提炼出一条规则,写入(active)后
-// 下次成稿自动套用(进提示词),并可导出进 DSH Skill。
-function editedProductions(state, names, cut) {
-  const long = '字'.repeat(400)
-  state.items = names.map((name, i) => ({
-    id: `it_${i}`, title: name, status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
-    production: { status: 'done', format: 'article', title: name, aiArticle: `# ${name}\n\n${long}`, article: `# ${name}\n\n${long.slice(0, long.length - cut)}` },
-  }))
-}
-
-test('成稿反馈:修改差异提炼成规则,写入后直接生效并可导出', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-loop-'))
-  try {
-    const state = seed()
-    state.skills = []
-    editedProductions(state, ['甲', '乙'], 200)
-    const proposals = learnFromEdits(state)
-    assert.equal(proposals.length, 1)
-    assert.equal(proposals[0].source, '成稿反馈')
-    assert.ok(proposals[0].rule)
-    applyOps(state, proposals.map(row => ({ op: 'add_skill', ...row, status: 'active' })))
-    // 下次成稿自动套用:active 规则进入成稿提示词
-    const { system } = articlePrompts(state, state.items[0], null, null)
-    assert.ok(system.includes(proposals[0].rule))
-    // 风格规则可导出为 DSH Skill:导出内容含新规则
-    const result = await exportSkill(state, dir)
-    assert.equal(result.rules, 1)
-    const body = await readFile(result.path, 'utf8')
-    assert.ok(body.includes(proposals[0].rule))
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('成稿反馈不重复:同名或近同义规则不再写入,提案路径同样挡住', () => {
-  const state = seed()
-  state.skills = []
-  editedProductions(state, ['甲', '乙'], 200)
-  const first = learnFromEdits(state)
-  assert.equal(first.length, 1)
-  const name = first[0].name
-  // 已有同名规则(哪怕还在待确认)→ 不重复写入
-  applyOps(state, [{ op: 'add_skill', name, rule: '另一段规则文本', status: 'proposed' }])
-  assert.equal(learnFromEdits(state).length, 0)
-  // 近同义(名字只差标点)同样算已有规则;proposeRules 的提案也被挡住
-  state.skills = state.skills.filter(row => row.name !== name)
-  applyOps(state, [{ op: 'add_skill', name: `${name}！`, rule: '另一段规则文本', status: 'active' }])
-  assert.equal(learnFromEdits(state).length, 0)
-  assert.equal(proposeRules(state).filter(row => row.name === name).length, 0)
-})
-
-test('成稿没有人工修改时不提炼', () => {
-  const state = seed()
-  state.skills = []
-  const long = '字'.repeat(400)
-  state.items = [{ id: 'it_1', title: '甲', status: 'draft', createdAt: NOW.toISOString(), drafts: {}, platform: '公众号',
-    production: { status: 'done', format: 'article', title: '甲', aiArticle: `# 甲\n\n${long}`, article: `# 甲\n\n${long}` } }]
-  assert.equal(learnFromEdits(state).length, 0)
-  // 只有 AI 快照、还没人工改过的成稿,同样不提炼
-  delete state.items[0].production.article
-  assert.equal(learnFromEdits(state).length, 0)
 })
 
 test('assertPublicUrl 拒绝本机和内网地址', async () => {
@@ -685,9 +599,7 @@ test('风格预设：旧模板换成新预设，清空示例也不会删预设',
   assert.ok(state.items.some(row => row.sample))
   applyOps(state, [{ op: 'add_style', name: '我的' }, { op: 'set_style', id: 'preset_travel' }, { op: 'clear_samples' }])
   assert.equal(state.items.some(row => row.sample), false)
-  assert.equal(state.metrics.some(row => row.sample), false)
   assert.equal(state.skills.some(row => row.sample), false)
-  assert.equal(state.accounts.some(row => row.sample), false)
   assert.equal(state.styles.length, STYLE_PRESETS.length + 1)
   assert.equal(state.activeStyleId, 'preset_travel')
 })
@@ -696,7 +608,7 @@ test('migrateState: 旧版 writing-desk 的空结构迁移成新版完整结构�
   // 重构前 state.json 是这套字段：cards/boxes/drafts/works…，客户端新版全用 items 等。
   const legacy = JSON.parse('{"version":1,"cards":[],"boxes":[],"copies":[],"drafts":[],"mergeRecords":[],"upgradeIntents":[],"works":[],"undoHistory":[],"actions":[],"templates":[],"updatedAt":"2026-11-16T03:02:36.957Z"}')
   const migrated = migrateState(legacy)
-  for (const key of ['items', 'people', 'angles', 'skills', 'accounts', 'metrics', 'styles']) {
+  for (const key of ['items', 'people', 'angles', 'skills', 'styles']) {
     assert.ok(Array.isArray(migrated[key]), `迁移后 ${key} 必须是数组`)
   }
   assert.equal(typeof migrated.sampleCleared, 'boolean')
@@ -721,194 +633,6 @@ test('提炼风格时，用户起的名字优先于模型起的名字', async ()
   assert.equal(normalizeStyle({ name: '慢半拍' }, '').name, '慢半拍')
   assert.equal(normalizeStyle({}, '').name, '未命名风格')
 })
-
-test('Monid：主页链接只认三个平台和固定格式的 ID', async () => {
-  const { findUrl, parseAccountUrl } = await import('../src/monid.js')
-  assert.equal(parseAccountUrl('https://www.xiaohongshu.com/user/profile/aaaabbbbccccdddd00001111?xsec=1').platform, '小红书')
-  assert.equal(parseAccountUrl('https://www.douyin.com/user/MS4wLjABAAAAabcdefghijklmnopqrstuvwxyz?from=1').id, 'MS4wLjABAAAAabcdefghijklmnopqrstuvwxyz')
-  assert.equal(parseAccountUrl('https://space.bilibili.com/12345678/video').id, '12345678')
-  for (const bad of ['https://evil.example/user/profile/aaaabbbbccccdddd00001111', 'https://xiaohongshu.com.evil.example/user/profile/aaaabbbbccccdddd00001111', 'https://www.xiaohongshu.com/user/profile/--query', 'https://www.douyin.com/user/self', 'javascript:alert(1)']) {
-    assert.equal(parseAccountUrl(bad), null, bad)
-  }
-  assert.equal(findUrl('长按复制 https://v.douyin.com/abc/ 打开抖音'), 'https://v.douyin.com/abc/')
-})
-
-test('Monid：短链只跟平台自己的域名，打开后不是主页就报错', async () => {
-  const { resolveAccount } = await import('../src/monid.js')
-  await assert.rejects(resolveAccount('https://evil.example/x', async () => assert.fail('不该请求')), /认不出/)
-  await assert.rejects(resolveAccount('没有链接'), /没找到链接/)
-  const hops = []
-  const fake = async (url) => { hops.push(url); return { headers: new Headers({ location: 'https://space.bilibili.com/42' }) } }
-  const account = await resolveAccount('看这个 https://b23.tv/abc', fake)
-  assert.equal(account.id, '42')
-  assert.equal(hops.length, 1)
-})
-
-test('Monid：从 .cmd shim 找到真正的 CLI 入口（含转发壳）', async () => {
-  const { resolveMonidEntry } = await import('../src/monid.js')
-  const dir = await mkdtemp(join(tmpdir(), 'monid-shim-'))
-  try {
-    const entry = join(dir, 'node_modules', '@monid-ai', 'cli', 'dist', 'index.js')
-    await mkdir(join(dir, 'node_modules', '@monid-ai', 'cli', 'dist'), { recursive: true })
-    await writeFile(entry, '')
-    const shim = join(dir, 'monid.cmd')
-    await writeFile(shim, '@ECHO off\r\n"%dp0%\\node_modules\\@monid-ai\\cli\\dist\\index.js" %*')
-    assert.equal(await resolveMonidEntry(shim), entry)
-    const forwarder = join(dir, 'forwarder.cmd')
-    await writeFile(forwarder, '@echo off\r\ncall "' + shim + '" %*')
-    assert.equal(await resolveMonidEntry(forwarder), entry)
-    assert.equal(await resolveMonidEntry(join(dir, 'no-such-dir', 'missing.cmd')), null)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('Monid：有 JS 入口时用 node 执行，参数原样传、不经过 shell', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const calls = []
-  const exec = (file, argv, options, callback) => { calls.push({ file, argv, options }); callback(null, '{"balance":{"value":0,"currency":"USD"}}', '') }
-  const run = createMonidRunner(exec, async () => ({ bin: 'C:\\npm\\monid.cmd', entry: 'C:\\npm\\node_modules\\@monid-ai\\cli\\dist\\index.js', path: 'C:\\npm' }))
-  assert.deepEqual(await run(['--query', '{"limit":1}', '-j']), { balance: { value: 0, currency: 'USD' } })
-  assert.equal(calls.length, 1)
-  assert.equal(calls[0].file, process.execPath)
-  assert.deepEqual(calls[0].argv, ['C:\\npm\\node_modules\\@monid-ai\\cli\\dist\\index.js', '--query', '{"limit":1}', '-j'])
-  assert.equal(calls[0].options.env.NO_COLOR, '1')
-  assert.equal(calls[0].options.env.PATH, 'C:\\npm')
-})
-
-test('Monid：没有 JS 入口时照旧直接调用命令本身', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const calls = []
-  const exec = (file, argv, options, callback) => { calls.push({ file, argv }); callback(null, '{"ok":true}', '') }
-  const run = createMonidRunner(exec, async () => ({ bin: '/usr/local/bin/monid', entry: null, path: '/usr/local/bin' }))
-  assert.deepEqual(await run(['balance', '-j']), { ok: true })
-  assert.equal(calls[0].file, '/usr/local/bin/monid')
-  assert.deepEqual(calls[0].argv, ['balance', '-j'])
-})
-
-const xhsOutput = { code: 0, success: true, data: { notes: [
-  { id: 'a'.repeat(24), title: '第一条', desc: '正文', create_time: 1790000000, likes: 10, comments_count: 2, collected_count: 3, share_count: 1, view_count: 0, images_list: [{ url: 'http://ci.example/1.jpg' }] },
-  { id: 'not-valid', title: '坏数据' },
-] } }
-
-test('Monid：只取用得到的字段，坏数据和平台报错都不进来', async () => {
-  const { normalizePosts, normalizeProfile } = await import('../src/monid.js')
-  const [note, ...rest] = normalizePosts('小红书', xhsOutput)
-  assert.equal(rest.length, 0)
-  assert.deepEqual([note.title, note.likes, note.views, note.cover], ['第一条', 10, 0, 'https://ci.example/1.jpg'])
-  assert.equal(note.url, `https://www.xiaohongshu.com/explore/${'a'.repeat(24)}`)
-  const [video] = normalizePosts('抖音', { status_code: 0, aweme_list: [{ aweme_id: '123', desc: '第一行\n第二行', create_time: 1790000000, statistics: { digg_count: 5, play_count: 0 }, video: { cover: { url_list: ['https://p.example/c.jpg'] } } }] })
-  assert.deepEqual([video.title, video.likes, video.url], ['第一行', 5, 'https://www.douyin.com/video/123'])
-  const [bili] = normalizePosts('B站', { code: 0, data: { list: { vlist: [{ bvid: 'BV1xx', title: '视频', created: 1790000000, play: 99, comment: 1, pic: '//i0.example/a.jpg' }] } } })
-  assert.deepEqual([bili.views, bili.cover], [99, 'https://i0.example/a.jpg'])
-  assert.throws(() => normalizePosts('抖音', { status_code: 8, status_msg: '账号不存在' }), /账号不存在/)
-  assert.throws(() => normalizePosts('B站', { code: -404, message: '啥都木有' }), /啥都木有/)
-  assert.equal(normalizeProfile('B站', { profile: { data: { name: '某人' } }, relation: { follower: 7 } }).followers, 7)
-  assert.equal(normalizeProfile('小红书', { profile: { data: { nickname: '某人', interactions: [{ type: 'fans', count: 8 }] } } }).followers, 8)
-})
-
-test('Monid：花费累加，资料失败不影响内容，预算拦截和没装都说清楚', async () => {
-  const { fetchAccount, monidStatus } = await import('../src/monid.js')
-  const account = { platform: '小红书', id: 'a'.repeat(24), url: 'u' }
-  const calls = []
-  const run = async (args) => {
-    calls.push(args)
-    if (args.includes('/api/v1/xiaohongshu/app_v2/get_user_info')) throw new Error('超时')
-    return { status: 'COMPLETED', cost: { value: 0.01 }, output: xhsOutput }
-  }
-  const result = await fetchAccount(account, run)
-  assert.equal(result.posts.length, 1)
-  assert.equal(result.cost, 0.01)
-  assert.equal(calls.length, 2)
-  assert.deepEqual(JSON.parse(calls[0][calls[0].indexOf('--query') + 1]), { user_id: 'a'.repeat(24) })
-  await assert.rejects(fetchAccount(account, async () => ({ status: 'BLOCKED' })), /预算限制/)
-  await assert.rejects(fetchAccount(account, async () => null), /还没装好/)
-  await assert.rejects(fetchAccount(account, async () => ({ status: 'COMPLETED', output: { code: 0, data: { notes: [] } } })), /没抓到内容/)
-  assert.deepEqual(await monidStatus(async () => null), { state: 'missing' })
-  assert.deepEqual(await monidStatus(async () => ({ error: { code: 'AUTH_FAILED' } })), { state: 'nokey' })
-  assert.deepEqual(await monidStatus(async () => ({ balance: { value: 1.5, currency: 'USD' } })), { state: 'ready', balance: { value: 1.5, currency: 'USD' } })
-})
-
-test('Monid：重复导入只更新数字，示例数据退出统计，没有播放量时按互动排序', async () => {
-  const { importPosts, normalizePosts, postsToMaterial } = await import('../src/monid.js')
-  const { computeInsights } = await import('../src/learn.js')
-  const posts = normalizePosts('小红书', xhsOutput)
-  const draft = { items: [{ id: 's', title: '示例', status: 'published', sample: true }], metrics: [{ id: 'sm', itemId: 's', platform: '抖音', date: '2026-01-01T00:00:00Z', views: 9999, likes: 1, sample: true }], accounts: [{ id: 'sa', followers: 500, sample: true }] }
-  const account = { platform: '小红书', id: 'x', url: 'https://www.xiaohongshu.com/user/profile/x' }
-  const first = importPosts(draft, { account, profile: { nickname: '我', followers: 100 }, posts })
-  assert.deepEqual(first, { added: 1, updated: 0 })
-  const item = draft.items.find(row => row.imported)
-  // 导入条目天生已发布:发布时间沿用平台给的,不另盖时间戳(工单 #7 后状态元组经 reducer 落位)
-  assert.equal(item.status, 'published')
-  assert.equal(item.publishedAt, posts[0].publishedAt)
-  assert.equal(item.scheduledAt, posts[0].publishedAt)
-  item.title = '我改过的标题'
-  const second = importPosts(draft, { account, profile: { nickname: '我', followers: 120 }, posts: [{ ...posts[0], likes: 50 }] })
-  assert.deepEqual(second, { added: 0, updated: 1 })
-  assert.equal(draft.items.filter(row => row.imported).length, 1)
-  assert.equal(item.title, '我改过的标题')
-  assert.equal(draft.metrics.filter(row => row.externalId).length, 1)
-  assert.equal(draft.accounts.filter(row => row.externalId).length, 1)
-  const insights = computeInsights(draft)
-  assert.equal(insights.hasSample, false)
-  assert.equal(insights.views, 0)
-  assert.equal(insights.engaged, 56)
-  assert.equal(insights.published, 1)
-  assert.equal(insights.followers, 120)
-  assert.equal(insights.top[0].engaged, 56)
-  assert.match(postsToMaterial(posts), /第一条\n正文/)
-})
-
-test('Monid：不经过 shell，混着提示也能解析，出错时读得到错误', async () => {
-  const { createMonidRunner } = await import('../src/monid.js')
-  const located = async () => ({ bin: '/x/monid', path: '/x' })
-  let seen
-  const noisy = createMonidRunner((bin, args, options, callback) => {
-    seen = { bin, args, options }
-    callback(null, '有新版本可用\n{"balance":{"value":1}}\n', '')
-  }, located)
-  const injected = '$(touch /tmp/pwned); --query'
-  assert.deepEqual(await noisy(['run', injected]), { balance: { value: 1 } })
-  assert.equal(seen.bin, '/x/monid')
-  assert.deepEqual(seen.args, ['run', injected])
-  assert.equal(seen.options.shell, undefined)
-  assert.equal(seen.options.env.NO_COLOR, '1')
-  const failing = createMonidRunner((bin, args, options, callback) => callback(new Error('exit 1'), '{"error":{"code":"AUTH_FAILED"}}', ''), located)
-  assert.equal((await failing(['balance', '-j'])).error.code, 'AUTH_FAILED')
-  const broken = createMonidRunner((bin, args, options, callback) => callback(new Error('exit 1'), '', '坏了'), located)
-  await assert.rejects(broken(['balance', '-j']), /坏了/)
-  assert.equal(await createMonidRunner(() => assert.fail('不该运行'), async () => null)(['balance', '-j']), null)
-})
-
-test('Monid：封面存到本地，内网地址、非图片和已有封面都跳过', async () => {
-  const { mkdtemp, readdir, rm } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const { saveCovers } = await import('../src/monid.js')
-  const dir = await mkdtemp(join(tmpdir(), 'md-covers-'))
-  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0])
-  const requested = []
-  const fake = async (url) => {
-    requested.push(String(url))
-    if (String(url).includes('html')) return new Response('<html>', { status: 200 })
-    return new Response(png, { status: 200 })
-  }
-  const posts = [
-    { id: 'ok', cover: 'https://93.184.216.34/a.png' },
-    { id: 'html', cover: 'https://93.184.216.34/html' },
-    { id: 'private', cover: 'https://127.0.0.1/secret.png' },
-    { id: 'none', cover: null },
-    { id: 'known', cover: 'https://93.184.216.34/known.png' },
-  ]
-  const state = { items: [{ externalId: '抖音:known', media: { src: 'writing-desk/files/x.png' } }] }
-  const saved = await saveCovers(posts, '抖音', state, dir, fake)
-  assert.deepEqual([...saved.keys()], ['ok'])
-  assert.match(saved.get('ok'), /^writing-desk\/files\/c_[\w]+\.png$/)
-  assert.equal(requested.some(url => url.includes('127.0.0.1') || url.includes('known')), false)
-  assert.equal((await readdir(dir)).length, 1)
-  await rm(dir, { recursive: true })
-})
-
 test('排期：排上日历就是待发布，取消排期退回草稿，已发布不动', () => {
   const state = seed()
   const [ideaR, doneR] = applyOps(state, [{ op: 'add_item', title: '只有灵感' }, { op: 'add_item', title: '已成稿' }]).receipts
@@ -1011,10 +735,9 @@ test('状态规则：发布时间、排期与取消排期、清空示例不留�
   applyOps(state, [{ op: 'set_status', id: item.id, status: 'draft' }])
   assert.equal(item.publishedAt, undefined, '离开已发布要清掉发布时间')
   const sample = state.items.find(row => row.sample)
-  const [child] = applyOps(state, [{ op: 'add_item', title: '挂在示例下面', parentId: sample.id }, { op: 'add_metric', itemId: sample.id, platform: '抖音', date: '2026-11-01T12:00:00Z', views: 10 }]).receipts
+  const [child] = applyOps(state, [{ op: 'add_item', title: '挂在示例下面', parentId: sample.id }]).receipts
   applyOps(state, [{ op: 'clear_samples' }])
   assert.equal(state.items.find(row => row.id === child.target).parentId, null)
-  assert.equal(state.metrics.length, 0)
 })
 
 test('体裁：脚本一句一行，文章按自然段；set_format 记在状态上，成稿时带进提示词', () => {

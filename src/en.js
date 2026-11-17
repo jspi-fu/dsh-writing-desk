@@ -53,33 +53,11 @@ export const EN = {
   未命名风格: 'Untitled style',
   手动: 'Manual',
 
-  // 导入账号
-  '上一个账号还在导入，等它结束再试': 'Another account is still importing. Try again when it finishes.',
-  '导入{platform}账号': 'Import {platform} account',
-  '{platform}账号': '{platform} account',
-  '这个账号的文字太少，提炼不出风格': 'This account doesn\'t have enough text to learn a style from.',
-  '没找到链接，请贴账号主页的链接': 'No link found. Paste the URL of the account\'s profile page.',
-  '认不出这个主页。目前支持小红书、抖音、B 站、TikTok、Instagram 和 X 的账号主页链接，别的平台可以贴内容来提炼风格。': 'This profile link isn\'t recognized. TikTok, Instagram, X, RedNote, Douyin and Bilibili profiles are supported. For other platforms, paste your posts to learn a style.',
-  '这个链接打开后不是账号主页。请到账号主页再复制一次链接。': 'This link doesn\'t lead to an account profile. Open the profile page and copy its link again.',
-  平台没有返回内容: 'The platform returned nothing',
   无标题: 'Untitled',
-  'Monid 命令运行失败': 'The Monid command failed',
-  'Monid 返回的内容看不懂，可以先升级一下命令行': 'Couldn\'t read what Monid returned. Try updating the Monid CLI.',
-  '还没装好 Monid': 'Monid isn\'t installed yet',
-  'Monid 还没配置密钥': 'Monid doesn\'t have an API key yet',
-  'Monid：{message}': 'Monid: {message}',
-  '这次导入被 Monid 后台的预算限制拦下了，可以到 app.monid.ai 调整后再试': 'Monid\'s budget limit blocked this import. Adjust it at app.monid.ai and try again.',
-  'Monid 这次没跑完（{status}）': 'Monid didn\'t finish this run ({status})',
   未知状态: 'unknown status',
-  '没抓到内容，账号可能是私密的或者还没发过内容。': 'No posts found. The account may be private or hasn\'t posted yet.',
 
-  // 收藏与账号档案
+  // 收藏
   '收藏《{title}》': 'Save "{title}"',
-  更新账号档案: 'Update account profile',
-  '添加账号档案「{name}」': 'Added account profile "{name}"',
-  '更新账号档案「{name}」': 'Updated account profile "{name}"',
-  删除账号档案: 'Deleted account profile',
-  账号信息为空: 'The account details are empty',
 
   // 网页抓取
   '只支持 http 和 https 链接': 'Only http and https links are supported',
@@ -182,11 +160,6 @@ export const EN = {
   '上次成稿被中断了，可以重新开始': 'The last draft was interrupted. You can start it again.',
 
   // 洞察与写作规则
-  从数据中学习: 'Learned from data',
-  '首发放在{platform}': 'Publish first on {platform}',
-  '同一选题优先在{platform}首发，再改写分发到其他平台。': 'Publish each topic on {platform} first, then adapt it for the other platforms.',
-  '{platform}平均 {avg} 阅读，高于第二名{second}的 {secondAvg}': '{platform} averages {avg} views, ahead of {second} in second place at {secondAvg}',
-  数据复盘: 'Insights',
   '{hour} 点前后发布': 'Publish around {hour}:00',
   '默认把内容排在 {hour}:00 前后发布。': 'Schedule posts around {hour}:00 by default.',
   '这个时段 {n} 篇平均 {avg} 阅读': '{n} posts in this slot average {avg} views',

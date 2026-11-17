@@ -1,12 +1,11 @@
 // 风格：按博主类型分板块的预设，加上从自己账号提炼的专属风格。选哪张，就按哪张写。
 import React from 'react'
-import { dispatchOps, EMPTY_LIST, exportSkills, extractStyle, learnSkills, setDesk, useDesk } from './desk.js'
-import { ConnectDialog } from './connect.jsx'
+import { dispatchOps, EMPTY_LIST, exportSkills, extractStyle, setDesk, useDesk } from './desk.js'
 import { lang, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { STYLE_CATEGORIES, hash, styleIcon } from './util.js'
 
-function AddStyleDialog({ initialTab, onClose, onConnect }) {
+function AddStyleDialog({ initialTab, onClose }) {
   const [tab, setTab] = React.useState(initialTab)
   const [text, setText] = React.useState('')
   const [urls, setUrls] = React.useState('')
@@ -35,7 +34,7 @@ function AddStyleDialog({ initialTab, onClose, onConnect }) {
           <label className="md-field">
             <span>{t('链接')}</span>
             <textarea rows={4} required value={urls} onChange={e => setUrls(e.target.value)} placeholder={t('你自己发过的内容链接\n一行一个，最多 5 个')} />
-            <small>{t('只读公开页面。小红书、抖音、B 站和 TikTok、Instagram、X 要登录才能看，')}<button type="button" className="md-inline-link" onClick={onConnect}>{t('改用导入账号')}</button>{t('。')}</small>
+            <small>{t('只读公开页面。需要登录才能看的内容，把文字直接贴进来。')}</small>
           </label>
         )}
         <label className="md-field">
@@ -105,7 +104,6 @@ export function StyleView() {
   const activeId = useDesk(s => s.state.activeStyleId)
   const skills = useDesk(s => s.state.skills)
   const [adding, setAdding] = React.useState(null)
-  const [connecting, setConnecting] = React.useState(false)
   const [category, setCategory] = React.useState('全部')
   const active = styles.find(row => row.id === activeId)
   const mine = styles.filter(row => !row.preset)
@@ -134,11 +132,10 @@ export function StyleView() {
         <section className="md-tile md-i-hero md-style-hero">
           <div className="md-hero-copy">
             <h1 className="md-i-line">
-              {active ? <>{t('现在按')} <span className="md-inline-emoji" aria-hidden="true">{styleIcon(active)}</span> <b>{active.name}</b> {t('的风格写。')}</> : <>{t('选一种预设直接开写，')}<br />{t('或者抓自己的账号，提炼你的风格。')}</>}
+              {active ? <>{t('现在按')} <span className="md-inline-emoji" aria-hidden="true">{styleIcon(active)}</span> <b>{active.name}</b> {t('的风格写。')}</> : <>{t('选一种预设直接开写，')}<br />{t('或者贴几篇你写过的稿子，提炼你的风格。')}</>}
             </h1>
             <div className="md-hero-actions">
-              <button type="button" className="md-pill is-primary" onClick={() => setConnecting(true)}><Icon name="user" size={14} />{t('抓我的账号')}</button>
-              <button type="button" className="md-pill" onClick={() => setAdding('text')}><Icon name="pen" size={14} />{t('贴内容')}</button>
+              <button type="button" className="md-pill is-primary" onClick={() => setAdding('text')}><Icon name="pen" size={14} />{t('贴内容')}</button>
               <button type="button" className="md-pill" onClick={() => setAdding('url')}><Icon name="link" size={14} />{t('贴链接')}</button>
             </div>
           </div>
@@ -167,18 +164,16 @@ export function StyleView() {
             <h2>{t('写作规则')}</h2>
             <span className="md-tile-meta">{t('每种风格都会遵守')}</span>
             <span className="md-grow" />
-            <button type="button" className="md-pill is-small" onClick={learnSkills}><Icon name="spark" size={13} />{t('从数据中学习')}</button>
             <button type="button" className="md-pill is-small" onClick={exportSkills}><Icon name="bolt" size={13} />{t('导出为 Skill')}</button>
           </header>
           <ul>
             {proposed.map(rule)}
             {rules.map(rule)}
-            {!proposed.length && !rules.length ? <li className="md-muted md-rule-empty">{t('点「从数据中学习」，就会从你的内容里提炼出规则；也可以导出成 Skill 给 DeepSeek Harness 用。')}</li> : null}
+            {!proposed.length && !rules.length ? <li className="md-muted md-rule-empty">{t('在创作会话里确认的规则会出现在这里；也可以导出成 Skill 给 DeepSeek Harness 用。')}</li> : null}
           </ul>
         </section>
       </div>
-      {adding ? <AddStyleDialog initialTab={adding} onClose={() => setAdding(null)} onConnect={() => { setAdding(null); setConnecting(true) }} /> : null}
-      {connecting ? <ConnectDialog onClose={() => setConnecting(false)} /> : null}
+      {adding ? <AddStyleDialog initialTab={adding} onClose={() => setAdding(null)} /> : null}
     </div>
   )
 }

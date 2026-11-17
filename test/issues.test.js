@@ -146,37 +146,3 @@ test('#16 再次保存不冲掉文件夹里手改的稿子，标题相同的两�
     await rm(dir, { recursive: true, force: true })
   }
 })
-
-test('#15 一篇内容有导入的累计数据时，手动再录的不重复计算', async () => {
-  const { computeInsights, proposeRules } = await import('../src/learn.js')
-  const state = {
-    items: [
-      { id: 'a', title: '导入的', platform: '抖音', status: 'published' },
-      { id: 'b', title: '手动的', platform: '公众号', status: 'published' },
-    ],
-    accounts: [], skills: [],
-    metrics: [
-      { id: 'm1', itemId: 'a', platform: '抖音', date: '2026-11-01T04:00:00Z', views: 120, likes: 12, externalId: '抖音:1', fetchedAt: '2026-11-10T00:00:00Z' },
-      { id: 'm2', itemId: 'a', platform: '抖音', date: '2026-11-05T04:00:00Z', views: 100, likes: 10 },
-      // 手动数据按天录，同一篇的几条相加
-      { id: 'm3', itemId: 'b', platform: '公众号', date: '2026-11-02T04:00:00Z', views: 30, likes: 1 },
-      { id: 'm4', itemId: 'b', platform: '公众号', date: '2026-11-03T04:00:00Z', views: 20, likes: 2 },
-      // 不关联内容的平台数据照常计入
-      { id: 'm5', itemId: null, platform: '公众号', date: '2026-11-04T04:00:00Z', views: 5 },
-    ],
-  }
-  const data = computeInsights(state)
-  assert.equal(data.views, 175)
-  assert.deepEqual(data.top.map(row => [row.id, row.views]), [['a', 120], ['b', 50]])
-  assert.deepEqual(data.platforms.map(row => [row.platform, row.views]), [['抖音', 120], ['公众号', 55]])
-  assert.equal(data.daily.reduce((total, day) => total + day.views, 0), 175)
-  assert.equal(data.imported, true)
-  assert.equal(data.skipped, 1)
-  assert.doesNotThrow(() => proposeRules(state))
-
-  // 没有导入数据时和原来一样全部相加
-  const manual = computeInsights({ ...state, metrics: state.metrics.filter(row => !row.externalId) })
-  assert.equal(manual.views, 155)
-  assert.equal(manual.imported, false)
-  assert.equal(manual.skipped, 0)
-})

@@ -10,7 +10,7 @@ const DIR = new URL('../client/', import.meta.url)
 // 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
 // 工单 #9：发布交接——成稿工作面经 desk.js 的 exportForPublish 导出发布包
 const WIRED = [
-  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish', 'feedbackSkills'], name => `${name}(`],
+  ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleView'], name => `<${name}`],
   ['./produce.jsx', ['ProduceView'], name => `<${name}`],
@@ -69,22 +69,19 @@ test('成稿工作面的成稿中判断走共享谓词', () => {
   assert.match(source, SHARED_PREDICATE, 'produce.jsx 要从 src/state.js 引共享谓词')
 })
 
-// 工单 #10:数据面板降级为可选模块——导航带「可选」标识,首页/主流程不出现数据采集入口
-test('复盘导航标注为可选模块,主流程不引数据采集(工单 #10)', () => {
+// 复盘与 Monid 已整体裁剪(ADR 0005):导航、数据采集入口与相关路由都不再出现
+test('复盘与 Monid 已整体裁剪,主流程没有数据采集入口(ADR 0005)', () => {
   const index = readFileSync(new URL('./index.jsx', DIR), 'utf8')
-  assert.match(index, /\{\s*id:\s*'insights',[^\n]*optional:\s*true/, '导航里的复盘要带 optional 标识')
-  const home = readFileSync(new URL('./canvas.jsx', DIR), 'utf8')
-  for (const fn of ['fetchInsights', 'importAccount', 'monidStatus']) {
-    assert.ok(!home.includes(fn), `首页/主流程不应出现数据采集入口 ${fn}`)
-  }
-})
-
-// 工单 #10:风格闭环——成稿反馈走 desk.js 的 feedbackSkills → Host 的 skills/feedback
-test('成稿反馈入口接在共享提炼函数上(工单 #10)', () => {
+  assert.doesNotMatch(index, /insights/, '导航里不应再有复盘')
   const desk = readFileSync(new URL('./desk.js', DIR), 'utf8')
-  assert.match(desk, /'skills\/feedback'/, 'desk.js 要接 skills/feedback 路由')
+  for (const fn of ['fetchInsights', 'importAccount', 'monidStatus', 'learnSkills', 'feedbackSkills', 'refreshAccount']) {
+    assert.ok(!desk.includes(fn), `desk.js 不应再有数据采集/提炼入口 ${fn}`)
+  }
+  for (const route of ['monid/', 'insights', 'skills/learn', 'skills/feedback', 'account/refresh']) {
+    assert.ok(!desk.includes(`'${route}'`), `desk.js 不应再接 ${route} 路由`)
+  }
   const learn = readFileSync(new URL('../src/learn.js', DIR), 'utf8')
-  assert.match(learn, /export function learnFromEdits/, 'Host 要导出 learnFromEdits 供反馈提炼共用')
+  assert.doesNotMatch(learn, /learnFromEdits|proposeRules|computeInsights/, 'learn.js 只留 Skill 导出')
 })
 
 // 遗留口径清理(工单 #7):草稿字段已整体下线,client 的任何面板都不许再引用它

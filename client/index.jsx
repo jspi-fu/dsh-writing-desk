@@ -6,7 +6,6 @@ import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { Editor } from './editor.jsx'
 import { RetagDialog } from './retag.jsx'
-import { InsightsView } from './insights.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
@@ -23,12 +22,10 @@ const NAV = [
   { id: 'home', label: '灵感', navKey: '灵感（导航）' },
   { id: 'content', label: '内容' },
   { id: 'schedule', label: '排期' },
-  // 数据面板降级为可选模块(工单 #10):手动录入/CSV 导入都在这一页里,主链路(成稿/发布)不依赖它
-  { id: 'insights', label: '复盘', optional: true },
   { id: 'style', label: '风格', navKey: '风格（导航）' },
 ]
 
-const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, insights: InsightsView, style: StyleView }
+const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, style: StyleView }
 
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
@@ -208,9 +205,8 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} title={entry.optional ? t('数据面板是可选模块，不进成稿主链路') : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, produceId: null, produceSources: null, selection: null })}>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, produceId: null, produceSources: null, selection: null })}>
                 {entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}
-                {entry.optional ? <small className="md-nav-optional">{t('可选')}</small> : null}
               </button>
             ))}
           </nav>
@@ -263,7 +259,7 @@ function mountBetterSidebar(ctx) {
     inner.effect(() => sidebar.registerTab({
       id: `${PANEL_ID}:workbench`,
       title: () => t('图文创作台'),
-      description: () => t('灵感、内容、排期、复盘、风格'),
+      description: () => t('灵感、内容、排期、风格'),
       icon: size => <PanelIcon size={size} />,
       order: 60,
       single: true,

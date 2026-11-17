@@ -10,15 +10,14 @@ import { exportForCli } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
 import { generateImage } from './images.js'
 import { generateToolImage, imageTool } from './image-tool.js'
-import { computeInsights, exportSkill, learnFromEdits, proposeRules } from './learn.js'
-import { createMonidRunner, fetchAccount, importPosts, monidStatus, postsToMaterial, resolveAccount, saveCovers } from './monid.js'
+import { exportSkill } from './learn.js'
 import { applyOps, newId } from './ops.js'
 import { resolveProduceInput } from './produce-input.js'
 import { Producer } from './produce.js'
 import { publicSettings, Settings, imageReady } from './settings.js'
 import { normalizeStyle, referenceExcerpt, stylePrompts } from './style.js'
 import { dshHome, Store } from './store.js'
-import { currentLang, platformName, tr, withLang } from './i18n.js'
+import { currentLang, tr, withLang } from './i18n.js'
 import { localizeSamples, samplesNeedLocale } from './seed.js'
 import { createVersionCheck } from './version.js'
 
@@ -27,8 +26,6 @@ const MAX_JSON = 4_000_000
 const MAX_UPLOAD = 250_000_000
 const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.mp4': 'video/mp4', '.webm': 'video/webm', '.mov': 'video/quicktime' }
 const UPLOAD_EXT = Object.fromEntries(Object.entries(MIME).filter(([ext]) => ext !== '.jpeg').map(([ext, type]) => [type, ext]))
-// 保存 / 导出发布包 / 反馈三处共用的沉淀回执标签;tr 按请求语言现场翻译,所以只存中文原文
-const LEARN_EDITS_LABEL = '把成稿修改沉淀为规则'
 
 function json(res, status, body) {
   res.statusCode = status
@@ -134,33 +131,6 @@ async function styleFromMaterial(ctx, store, { material, name, source, sourceUrl
   })
 }
 
-/** 导入用户自己的账号。钱花在 Monid 上，所以先把内容存好，提炼失败也不会白花。 */
-async function importAccountRoute(ctx, store, desk, body) {
-  if (desk.importing) throw Object.assign(new Error(tr('上一个账号还在导入，等它结束再试')), { status: 409 })
-  desk.importing = true
-  try {
-    const account = await resolveAccount(body.text)
-    const { posts, profile, cost } = await fetchAccount(account, desk.monid)
-    const covers = await saveCovers(posts, account.platform, await store.read(), store.filesDir)
-    const added = await store.mutate(tr('导入{platform}账号', { platform: platformName(account.platform) }), draft => importPosts(draft, { account, profile, posts, covers }).added)
-    const nickname = profile.nickname || platformName(account.platform)
-    let styleError = null
-    const material = postsToMaterial(posts)
-    if (material.length >= 80) {
-      try {
-        await styleFromMaterial(ctx, store, { material, name: nickname, source: tr('{platform}账号', { platform: platformName(account.platform) }), sourceUrls: [account.url], accountKey: `${account.platform}:${account.id}` })
-      } catch (err) {
-        styleError = err.message
-      }
-    } else {
-      styleError = tr('这个账号的文字太少，提炼不出风格')
-    }
-    return { platform: account.platform, nickname, count: posts.length, added, cost, styleName: styleError ? null : nickname, styleError, state: await store.read() }
-  } finally {
-    desk.importing = false
-  }
-}
-
 async function addFromUrl(ctx, store, body) {
   const url = String(body.url || '').trim()
   const info = await harvest(url)
@@ -173,41 +143,6 @@ async function addFromUrl(ctx, store, body) {
     const { receipts, errors } = applyOps(draft, [op])
     return { receipts, errors, id: receipts[0]?.target, state: draft }
   })
-}
-
-async function refreshAccount(store, body) {
-  const url = String(body.url || '').trim()
-  const now = new Date().toISOString()
-  let patch
-  try {
-    const info = await harvest(url)
-    patch = { url: info.url, title: info.title ?? undefined, description: info.description ?? undefined, avatar: info.image ?? undefined, fetchedAt: now, fetchError: '', ...(info.followers ? { followers: info.followers } : {}) }
-  } catch (err) {
-    patch = { url, fetchedAt: now, fetchError: err.message }
-  }
-  return store.mutate(tr('更新账号档案'), (draft) => {
-    const op = body.id ? { op: 'update_account', id: body.id, ...patch } : { op: 'add_account', platform: body.platform ?? '', handle: body.handle ?? '', ...patch }
-    const { errors } = applyOps(draft, [op])
-    return { state: draft, errors, fetchError: patch.fetchError || null }
-  })
-}
-
-/**
- * 风格闭环(工单 #10):把成稿产物的人工修改提炼成规则写入 state.skills。
- * 写入前按已有规则去重(learnFromEdits 内),状态直接 active,下次成稿自动套用。
- * 对成稿做反馈(skills/feedback)与导出成稿(produce/save)都走这里。
- * 修改差异全部来自示例成稿时,写出的规则也算示例,清空示例时一起清掉、导出时跳过。
- */
-async function learnEditsInto(store, label) {
-  const proposals = learnFromEdits(await store.read())
-  if (!proposals.length) return null
-  const state = await store.mutate(label, (draft) => {
-    const fromSamples = !draft.items.some(item => !item.sample && item.production?.aiArticle && item.production.article !== item.production.aiArticle)
-    const { receipts } = applyOps(draft, proposals.map(row => ({ op: 'add_skill', ...row, status: 'active' })))
-    if (fromSamples) for (const receipt of receipts) { const skill = draft.skills.find(row => row.id === receipt?.target); if (skill) skill.sample = true }
-    return draft
-  })
-  return { added: proposals.length, state }
 }
 
 async function handleUpload(req, store, res) {
@@ -253,8 +188,6 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { production: item?.production ?? null, status: item?.status, live: desk.producer.status(id) })
     }
     if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read(), Boolean(imageTool(ctx))), defaultExportDir: defaultExportDir() })
-    if (path === 'insights') return json(res, 200, computeInsights(await store.read()))
-    if (path === 'monid/status') return json(res, 200, await monidStatus(desk.monid))
     if (path === 'version') return json(res, 200, await desk.versionCheck.read())
     return json(res, 404, { error: tr('接口不存在') })
   }
@@ -312,9 +245,7 @@ async function route(ctx, store, desk, req, res) {
         }
         return draft
       }, { undoable: false })
-      // 导出成稿也算一次反馈(工单 #10):顺手把人工修改提炼成规则,去重后直接生效
-      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
-      return json(res, 200, { ...saved, learned: learned?.added ?? 0, state: learned?.state ?? next })
+      return json(res, 200, { ...saved, state: next })
     }
     case 'produce/reveal': {
       // 路径只取自保存记录，不接受请求里传来的路径
@@ -326,7 +257,6 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { path })
     }
     case 'style/extract': return json(res, 200, await extractStyle(ctx, store, body))
-    case 'monid/import': return json(res, 200, await importAccountRoute(ctx, store, desk, body))
     case 'settings': {
       const updated = await desk.settings.update(body)
       return json(res, 200, { ...publicSettings(updated, Boolean(imageTool(ctx))), defaultExportDir: defaultExportDir() })
@@ -341,19 +271,6 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { src: `writing-desk/files/${name}` })
     }
     case 'capture-url': return json(res, 200, await addFromUrl(ctx, store, body))
-    case 'account/refresh': return json(res, 200, await refreshAccount(store, body))
-    case 'skills/learn': {
-      const proposals = proposeRules(await store.read())
-      if (!proposals.length) return json(res, 200, { added: 0, state: await store.read() })
-      const state = await store.mutate(tr('从数据中学习'), (draft) => {
-        // 只用示例数据算出来的建议也算示例，清空示例时一起清掉，也不会被导出
-        const fromSamples = !draft.metrics.some(metric => !metric.sample)
-        const { receipts } = applyOps(draft, proposals.map(row => ({ op: 'add_skill', ...row, status: 'proposed' })))
-        if (fromSamples) for (const receipt of receipts) { const skill = draft.skills.find(row => row.id === receipt?.target); if (skill) skill.sample = true }
-        return draft
-      })
-      return json(res, 200, { added: proposals.length, state })
-    }
     case 'skills/export': {
       const state = await store.read()
       const result = await exportSkill(state, dshHome())
@@ -375,14 +292,7 @@ async function route(ctx, store, desk, req, res) {
         if (target?.production) target.production.cliPath = exported.dir
         return draft
       }, { undoable: false })
-      // 导出发布包同样算「导出稿」(工单 #10):与 produce/save 走同一个提炼入口,去重后直接生效
-      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
-      return json(res, 200, { ...exported, learned: learned?.added ?? 0, state: learned?.state ?? next })
-    }
-    // ---- 工单 #10 风格闭环路由段:对成稿做反馈时把人工修改提炼成规则,直接生效 ----
-    case 'skills/feedback': {
-      const learned = await learnEditsInto(store, tr(LEARN_EDITS_LABEL))
-      return json(res, 200, learned ?? { added: 0, state: await store.read() })
+      return json(res, 200, { ...exported, state: next })
     }
     default: return json(res, 404, { error: tr('接口不存在') })
   }
@@ -413,8 +323,7 @@ export default {
       ready: saved => imageReady(saved, Boolean(imageTool(ctx))),
       generate: (image, prompt, options) => image.source === 'tool' ? generateToolImage(ctx, image, prompt, options) : generateImage(image, prompt, options),
     })
-    const monid = createMonidRunner()
-    const desk = { settings, producer, monid, versionCheck: createVersionCheck(), store }
+    const desk = { settings, producer, versionCheck: createVersionCheck(), store }
     // 创作模式(工单 #8):preset-writing 的子插件(tool/skill provider)经这个服务拿到
     // 与页面路由同一份 Store 和 Producer,成稿写回同一个 reducer。假 ctx(测试)没有
     // provide,跳过即可;真实宿主的 ctx 一定有。
