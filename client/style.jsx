@@ -1,10 +1,12 @@
-// 风格：按博主类型分板块的预设，加上从自己账号提炼的专属风格。选哪张，就按哪张写。
+// 风格：按博主类型分板块的预设，加上从创作会话提炼的专属风格。选哪张，就按哪张写。
 import React from 'react'
-import { dispatchOps, EMPTY_LIST, exportSkills, extractStyle, setDesk, useDesk } from './desk.js'
+import { dispatchOps, EMPTY_LIST, exportSkills, harvestText, setDesk, useDesk } from './desk.js'
+import { openStyleSession } from './session-link.js'
 import { lang, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { STYLE_CATEGORIES, hash, styleIcon } from './util.js'
 
+// 提炼入口(ADR 0006):模型调用在会话侧——贴的文字直接进 prompt,贴的链接先只抓正文。
 function AddStyleDialog({ initialTab, onClose }) {
   const [tab, setTab] = React.useState(initialTab)
   const [text, setText] = React.useState('')
@@ -14,12 +16,25 @@ function AddStyleDialog({ initialTab, onClose }) {
   const submit = async (event) => {
     event.preventDefault()
     setBusy(true)
-    const ok = await extractStyle(tab === 'text' ? { text, name } : { urls: urls.split(/\s+/).filter(Boolean), name })
+    let material = text.trim()
+    if (tab === 'url') {
+      const links = urls.split(/\s+/).filter(Boolean)
+      try {
+        const data = await harvestText(links)
+        for (const failure of data.failures ?? []) toast(failure, { error: true })
+        material = data.text
+      } catch (err) {
+        toast(err.message, { error: true })
+        setBusy(false)
+        return
+      }
+    }
+    openStyleSession(material, name)
     setBusy(false)
-    if (ok) onClose()
+    onClose()
   }
   return (
-    <Dialog title={t('添加我的风格')} onClose={onClose} width={520}>
+    <Dialog title={t('交给创作会话提炼')} onClose={onClose} width={520}>
       <div className="md-capture-tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'text'} className={tab === 'text' ? 'is-on' : ''} onClick={() => setTab('text')}>{t('贴内容')}</button>
         <button type="button" role="tab" aria-selected={tab === 'url'} className={tab === 'url' ? 'is-on' : ''} onClick={() => setTab('url')}>{t('贴链接')}</button>
@@ -39,12 +54,12 @@ function AddStyleDialog({ initialTab, onClose }) {
         )}
         <label className="md-field">
           <span>{t('名字（可选）')}</span>
-          <input value={name} onChange={e => setName(e.target.value)} placeholder={t('比如我的口播风格')} />
+          <input value={name} onChange={e => setName(e.target.value)} placeholder={t('比如我的公众号风格')} />
         </label>
         <div className="md-form-foot">
           <span style={{ flex: 1 }} />
           <button type="button" className="md-btn" onClick={onClose}>{t('取消')}</button>
-          <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? <span className="md-shimmer">{t('正在提炼…')}</span> : t('提炼风格')}</button>
+          <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? <span className="md-shimmer">{t('正在打开…')}</span> : t('交给创作会话提炼')}</button>
         </div>
       </form>
     </Dialog>

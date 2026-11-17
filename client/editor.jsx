@@ -1,7 +1,9 @@
-// 编辑界面：点开一条灵感进到这里改标题和正文。成稿入口不绑在这里，改完存盘就走工作台的操作历史。
+// 编辑界面：点开一条灵感进到这里改标题和正文。成稿在创作会话里发生(ADR 0006):
+// 这里只留「引用到对话 / 去创作会话」两条出路,改完存盘就走工作台的操作历史。
 // Markdown 编辑器是自带的：高亮、行号、查找替换、实时预览都在下面这两个组件里，不依赖第三方编辑器。
 import React from 'react'
-import { closeItem, dispatchOps, openProduce, setDesk, undo, useDesk } from './desk.js'
+import { closeItem, dispatchOps, setDesk, undo, useDesk } from './desk.js'
+import { openWritingSession, referenceIntoDraft } from './session-link.js'
 import { plural, t } from './i18n.js'
 import { Icon, IconButton } from './ui.jsx'
 import { SPRING_SOFT, escapeHtml, fmtDate, reducedMotion, renderMarkdown, textLength } from './util.js'
@@ -239,7 +241,8 @@ export function Editor() {
         <span style={{ flex: 1 }} />
         {canUndo ? <IconButton icon="undo" label={t('撤销上一步')} onClick={undo} /> : null}
         <IconButton icon="trash" label={t('删除这条灵感')} onClick={remove} />
-        <button type="button" className="md-btn" onClick={() => openProduce(item.id)}><Icon name="bolt" size={14} />{t('去成稿')}</button>
+        <button type="button" className="md-btn" onClick={() => referenceIntoDraft([item.id])}><Icon name="link" size={14} />{t('引用到对话')}</button>
+        <button type="button" className="md-btn" onClick={() => openWritingSession([item.id])}><Icon name="bolt" size={14} />{t('去创作会话')}</button>
         {dirty ? <button type="button" className="md-btn is-primary" onClick={save}>{t('保存')}</button> : null}
       </header>
       <MarkdownEditor title={title} onTitle={setTitle} value={body} onChange={setBody} label={t('灵感正文')} placeholder={t('想到什么就写什么。')} />

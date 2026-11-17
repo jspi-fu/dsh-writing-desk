@@ -1,15 +1,18 @@
 // dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
+// 成稿主战场在 DSH 创作会话(ADR 0006):这里注册看板、校样浮层与素材接驳条。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
 import { CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
+import { DockRail } from './dock.jsx'
 import { Editor } from './editor.jsx'
+import { ProofOverlay } from './proof.jsx'
 import { RetagDialog } from './retag.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
-import { ProduceView } from './produce.jsx'
+import { setSessionWorkspace } from './session-link.js'
 import css from './styles.css'
 import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
@@ -170,7 +173,6 @@ function Desk() {
   const ready = useDesk(s => Boolean(s.state))
   const error = useDesk(s => s.error)
   const view = useDesk(s => s.view)
-  const produceId = useDesk(s => s.produceId)
   const canUndo = useDesk(s => s.canUndo)
   const rootRef = React.useRef(null)
   const [width, setWidth] = React.useState(1600)
@@ -205,7 +207,7 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, produceId: null, produceSources: null, selection: null })}>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, proofId: null, selection: null })}>
                 {entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}
               </button>
             ))}
@@ -219,10 +221,7 @@ function Desk() {
         <main className="md-content" key={view}>
           {error ? (
             <div className="md-page"><p className="md-muted">{t('工作台加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={loadDesk}>{t('重试')}</button></div>
-          ) : ready ? (
-            // 统一成稿工作面占住主区域,关闭后回到原来的视图;不是浮层,点灵感也不会再进 Studio
-            produceId ? <ProduceView /> : <Active />
-          ) : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
+          ) : ready ? <Active /> : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
         </main>
         {ready ? <Editor /> : null}
       </div>
@@ -231,6 +230,8 @@ function Desk() {
       {ready ? <CapsuleView /> : null}
       {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
+      {/* 校样浮层由 desk store 的 proofId 门控,常挂载——内容页成稿卡与签收栏都点开它 */}
+      <ProofOverlay />
       <Menu />
       <Toast />
     </div>
@@ -245,7 +246,42 @@ export const inject = ['slots']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
+  mountComposerDock(ctx)
+  mountWorkspace(ctx)
   mountBetterSidebar(ctx)
+}
+
+/**
+ * 素材接驳条挂进宿主对话输入区下方的 conversation.composer.dock 槽位。
+ * 旧宿主没有这个槽位(或 slots.inject 不存在)时整段静默跳过——降级为纯看板。
+ */
+function mountComposerDock(ctx) {
+  try {
+    if (typeof ctx.slots?.inject !== 'function') return
+    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
+      name: 'conversation.composer.dock', id: 'writing-desk-dock',
+    }, DockRail))
+  } catch (error) {
+    console.warn('[dsh-writing-desk] composer dock skipped:', error)
+  }
+}
+
+/**
+ * 能力检测(ADR 0006 宿主版本):uiWorkspace 是软依赖,拿不到时
+ * 「去创作会话」降级为 toast,看板与校样浮层照常可用。
+ */
+function mountWorkspace(ctx) {
+  const register = (inner) => {
+    const workspace = inner.uiWorkspace ?? inner.get?.('uiWorkspace')
+    setSessionWorkspace(workspace)
+  }
+  try {
+    if (typeof ctx.inject === 'function') ctx.inject(['uiWorkspace'], register)
+    else register(ctx)
+  } catch (error) {
+    console.warn('[dsh-writing-desk] uiWorkspace unavailable:', error)
+    setSessionWorkspace(null)
+  }
 }
 
 /**

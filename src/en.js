@@ -1,4 +1,5 @@
 // Host 英文词典：key 是中文原文，{name} 是占位符。
+// 成稿在创作会话里发生(ADR 0006):生图、分镜、口播等流水线词条随流水线一起退役。
 export const EN = {
   // 请求与文件
   未授权: 'Not authorized',
@@ -14,47 +15,10 @@ export const EN = {
   拒绝跨站请求: 'Cross-site request refused',
   操作: 'Action',
 
-  // 订阅生图工具
-  生图来源无效: 'Invalid image source',
-  生图协议无效: 'Invalid image protocol',
-  '百炼返回错误：{message}': 'Bailian returned an error: {message}',
-  '万相返回错误：{message}': 'Wan returned an error: {message}',
-  '万相没有返回任务 ID': 'Wan did not return a task ID',
-  '查询万相任务失败：{message}': 'Couldn’t check the Wan task: {message}',
-  '万相任务没有返回图片：{message}': 'The Wan task returned no image: {message}',
-  '万相任务失败：{message}': 'The Wan task failed: {message}',
-  万相任务已取消: 'The Wan task was cancelled',
-  万相任务不存在或已过期: 'The Wan task does not exist or has expired',
-  '万相任务状态异常：{status}': 'Unexpected Wan task status: {status}',
-  未知原因: 'unknown reason',
-  '未找到订阅生图工具，或默认执行器不支持直接调用；请检查插件和执行器后刷新工作台': 'No subscription image tool found, or the default executor does not support direct calls. Check the plugin and executor, then refresh Writing Desk',
-  '订阅生图工具不支持这个尺寸': 'This size is not supported by the subscription image tool',
-  '订阅生图工具不支持这个质量': 'This quality is not supported by the subscription image tool',
-  '当前工具执行器不支持直接生图调用，请使用原生工具执行器或 HTTP 生图': 'The current tool executor does not support direct image calls. Use a native tool executor or HTTP images',
-  '生图工具失败：{reason}': 'Image tool failed: {reason}',
-  生图工具没有返回图片: 'The image tool returned no image',
-  生图工具返回的图片路径无效: 'The image tool returned an invalid image path',
-
-  // 模型
-  当前没有可用模型: 'No model is available',
-  模型调用失败: 'The model call failed',
-  '模型没有返回 JSON': 'The model did not return JSON',
-
   // 风格
   '{url}：页面上几乎没有文字，可能需要登录': '{url}: there is almost no text on the page. It may require sign-in.',
   '{url}：{error}': '{url}: {error}',
-  '抓不到内容。{reason}。可以把内容直接贴进来。': 'Couldn\'t get the content. {reason}. You can paste the text in directly.',
-  '内容太少了，至少贴一段完整的文字': 'That is too little text. Paste at least one full paragraph.',
-  链接: 'Links',
-  内容和链接: 'Text and links',
-  内容: 'Text',
-  '提炼风格需要文字模型：{error}': 'Learning a style needs a text model: {error}',
-  '提炼风格「{name}」': 'Learn style "{name}"',
-  未命名风格: 'Untitled style',
   手动: 'Manual',
-
-  无标题: 'Untitled',
-  未知状态: 'unknown status',
 
   // 收藏
   '收藏《{title}》': 'Save "{title}"',
@@ -68,34 +32,13 @@ export const EN = {
   '这不是网页（{type}）': 'This isn\'t a web page ({type})',
   未知类型: 'unknown type',
 
-  // 保存成稿与生图设置
+  // 保存与发布交接
   还没有可以保存的成稿: 'Nothing drafted to save yet',
-  // 发布交接(工单 #9)
   '还没有可以导出的成稿': 'Nothing drafted to export yet',
   导出发布包: 'Export publish pack',
   '《{title}》已发布': '"{title}" marked as published',
-  封面不是有效的图片: 'The cover isn\'t a valid image',
   还没有保存过: 'Not saved yet',
-  '先填好接口地址、模型和密钥': 'Fill in the endpoint, model and key first',
-  '接口地址要以 http:// 或 https:// 开头': 'The endpoint must start with http:// or https://',
-  '附加参数要是一个 JSON 对象': 'Extra parameters must be a JSON object',
   未命名: 'Untitled',
-
-  // 生图
-  '密钥无效或没有这个模型的权限（{status}）': 'The key is invalid or can\'t use this model ({status})',
-  '接口地址或模型不对（404）': 'Wrong endpoint or model (404)',
-  '请求太频繁或额度不足（429）': 'Too many requests or out of quota (429)',
-  '生图服务返回 {status}：{detail}': 'The image service returned {status}: {detail}',
-  '生图服务返回 {status}': 'The image service returned {status}',
-  '下载图片失败（{status}）': 'Couldn\'t download the image ({status})',
-  生图服务没有返回图片: 'The image service didn\'t return an image',
-  图片太大: 'The image is too large',
-  返回的内容不是图片: 'What came back isn\'t an image',
-  '生图超时，可以重试': 'Image generation timed out. You can retry.',
-  '连不上生图服务：{reason}': 'Can\'t reach the image service: {reason}',
-  '图片地址不对：{reason}': 'The image URL is invalid: {reason}',
-  '生图服务返回的图片地址无法识别：{url}': 'The image service returned an image URL that can\'t be used: {url}',
-  '生图服务只返回了它本机的文件路径，没有可下载的地址': 'The image service only returned a file path on its own machine, with no URL to download from',
 
   // 回执
   '找不到对象：{id}': 'Not found: {id}',
@@ -111,9 +54,6 @@ export const EN = {
   '取消《{title}》的排期': 'Unscheduled "{title}"',
   状态无效: 'Invalid status',
   '《{title}》状态改为「{status}」': 'Moved "{title}" to {status}',
-  草稿内容无效: 'Invalid draft',
-  '保存《{title}》的脚本': 'Saved the script for "{title}"',
-  '保存《{title}》的文章': 'Saved the article for "{title}"',
   这条灵感还没有成稿: 'This idea hasn\'t been drafted yet',
   '修改《{title}》': 'Edited "{title}"',
   目标读者: 'Target reader',
@@ -130,15 +70,11 @@ export const EN = {
   '更新风格「{name}」': 'Updated style "{name}"',
   '删除风格「{name}」': 'Deleted style "{name}"',
   不再使用特定风格: 'No longer using a specific style',
-  之后写成文章: 'Drafting as articles from now on',
-  之后写成口播脚本: 'Drafting as video scripts from now on',
   '之后按「{name}」的风格写': 'Writing in the "{name}" style from now on',
   'Skill 需要名字和规则': 'A writing rule needs a name and a rule',
   '沉淀规则「{name}」': 'Added writing rule "{name}"',
   '更新规则「{name}」': 'Updated writing rule "{name}"',
   '删除规则「{name}」': 'Deleted writing rule "{name}"',
-  数据需要平台: 'Numbers need a platform',
-  '记录 {platform} 数据 {views} 阅读': 'Logged {views} views on {platform}',
   已清空全部示例数据: 'Cleared all sample data',
   '不支持的操作：{op}': 'Unsupported operation: {op}',
 
@@ -149,28 +85,13 @@ export const EN = {
   待发布: 'Ready',
   已发布: 'Published',
 
-  // 成稿
-  中景: 'Medium shot',
-  找不到这条灵感: 'Can\'t find this idea',
-  模型返回了空内容: 'The model returned nothing',
-  '没有连上文字模型，先给你一份结构草稿。可以到 DeepSeek Harness 设置里检查模型。': 'No text model is connected, so here\'s an outline to start from. Check the model in DeepSeek Harness settings.',
-  还没有接入生图模型: 'No image model is connected yet',
-  目标无效: 'Invalid target',
-  找不到这张图: 'Can\'t find this image',
-  '上次成稿被中断了，可以重新开始': 'The last draft was interrupted. You can start it again.',
-
-  // 洞察与写作规则
-  '{hour} 点前后发布': 'Publish around {hour}:00',
-  '默认把内容排在 {hour}:00 前后发布。': 'Schedule posts around {hour}:00 by default.',
-  '这个时段 {n} 篇平均 {avg} 阅读': '{n} posts in this slot average {avg} views',
-  '这个时段 {n} 篇平均 {avg} 互动': '{n} posts in this slot average {avg} engagements',
-  初稿写短一些: 'Shorter first drafts',
-  '你通常把 AI 初稿删到原来的 {pct}%，以后初稿控制得更紧凑。': 'You usually cut AI drafts to {pct}% of their length, so first drafts should be tighter.',
-  '来自 {n} 次成稿修改': 'From {n} edits of finished pieces',
-  成稿反馈: 'Edit feedback',
-  初稿多给细节: 'More detail in first drafts',
-  '你通常把 AI 初稿扩写到原来的 {pct}%，以后初稿多给具体细节和例子。': 'You usually expand AI drafts to {pct}% of their length, so first drafts should bring more specific details and examples.',
-  '把成稿修改沉淀为规则': 'Distill your edits into rules',
+  // 成稿输入与会话写回(ADR 0006)
+  '把 {n} 条灵感交给了创作会话': 'Sent {n} idea(s) to a writing session',
+  '会话写回与你的修改冲突,已暂存到校样浮层等你裁决': 'The session write-back conflicts with your edits. It\'s staged in the proof overlay for you to settle',
+  '会话写回了《{title}》': 'The session wrote back "{title}"',
+  没有待裁决的写回: 'No staged write-back to settle',
+  已接受会话的写回: 'Accepted the session write-back',
+  '已保留你的修改,会话那版没有写入': 'Kept your edits; the session version wasn\'t written',
 
   // 导出 Skill
   '还没有你自己的风格或规则。示例规则和模板不会被导出': 'You don\'t have your own style or writing rules yet. Sample rules and presets are never exported.',

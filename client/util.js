@@ -134,7 +134,7 @@ export function computeStreak(items, now = new Date()) {
 /** 成稿之后，卡片显示封面和最终标题。 */
 export function displayItem(item) {
   const production = item.production
-  if (!production?.title || production.status === 'running') return item
+  if (!production?.title) return item
   const src = production.cover?.src
   return { ...item, title: production.title, ...(src ? { kind: 'image', media: { src, w: 3, h: 2 } } : {}) }
 }

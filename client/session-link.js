@@ -4,13 +4,15 @@
 // - index.jsx 经 ctx.inject(['uiWorkspace']) 软依赖注入 startSession。
 // 其余模块(canvas/capsule/editor/style)只调这里的函数,不直接碰宿主对象。
 import { resolveProduceInput } from '../src/produce-input.js'
-import { getDesk, setDesk, t, toast } from './desk.js'
-import { plural } from './i18n.js'
+import { getDesk, setDesk, toast } from './desk.js'
+import { t } from './i18n.js'
 
 const PRESET_WRITING = 'writing'
 
 // dock 注册进来的输入面:setDraft 替换整段草稿,getDraft 读最近一次渲染的草稿镜像
 let composer = null
+// dock 注册的矩形读取器:画布拖拽据此判断松手是否落在接驳条上
+let dockRect = null
 // index.jsx 注入的 uiWorkspace(拿不到时 openWritingSession 降级为 toast)
 let workspace = null
 
@@ -21,6 +23,17 @@ export function setComposer(handle) {
 
 export function getComposer() {
   return composer
+}
+
+/** dock 挂载时登记自己的矩形;卸载时传 null。 */
+export function registerDockRect(getter) {
+  dockRect = getter
+}
+
+/** 指针落点是否在接驳条上:画布拖拽在松手时用它让位,不做移出胶囊等副作用。 */
+export function overDock(x, y) {
+  const rect = typeof dockRect === 'function' ? dockRect() : null
+  return Boolean(rect) && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
 }
 
 /** index.jsx 能力检测:uiWorkspace 可用就记下来,capabilities.session 同步进 desk store。 */
@@ -52,7 +65,8 @@ export function endRefDrag() {
  */
 export function referenceEntries(input) {
   const state = getDesk().state ?? { items: [], capsules: [] }
-  const normalized = typeof input === 'string' ? { itemIds: [input] } : input ?? {}
+  // 字符串/数组 = 单个或多个灵感 ID(画布拖拽、右键);对象 = { itemIds?, capsuleIds? }
+  const normalized = Array.isArray(input) ? { itemIds: input } : typeof input === 'string' ? { itemIds: [input] } : input ?? {}
   let sourceIds = []
   try {
     sourceIds = resolveProduceInput(state, normalized).sourceIds
@@ -78,10 +92,10 @@ export function referenceEntries(input) {
 export function referenceText(ids) {
   const { items, capsules } = referenceEntries(ids)
   const lines = [
-    ...items.map(item => `[灵感] 《${item.title}》(${item.id})`),
-    ...capsules.map(capsule => `[胶囊] 《${capsule.name}》(${plural(capsule.count, '1 条', '{n} 条').replace('{n}', capsule.count)})`),
+    ...items.map(item => `[${t('灵感')}] 《${item.title}》(${item.id})`),
+    ...capsules.map(capsule => `[${t('胶囊')}] 《${capsule.name}》(${capsule.count} ${t('条')})`),
   ]
-  return lines.length ? `引用素材:\n${lines.join('\n')}` : ''
+  return lines.length ? `${t('引用素材')}:\n${lines.join('\n')}` : ''
 }
 
 /**
@@ -98,15 +112,15 @@ export function referenceIntoDraft(ids) {
   const block = referenceText(ids)
   if (!block) return null
   const entry = { items, capsules, ids: sourceIds }
-  if (composer) {
-    const existing = typeof composer.getDraft === 'function' ? composer.getDraft() : null
-    const next = existing?.trim() ? `${existing.replace(/\s+$/, '')}\n\n${block}` : block
-    composer.setDraft(next)
-    toast(t('已插入引用,补一句意图再回车'))
-  } else {
-    // 没有输入面(旧宿主或接驳条未挂载):只在 toast 里给出路
-    toast(t('已插入引用,补一句意图再回车'))
+  if (!composer) {
+    // 没有输入面(旧宿主,接驳条没挂载):引用没地方落,给出路与说明
+    toast(t('请先在 DSH 里打开创作模式'))
+    return null
   }
+  const existing = typeof composer.getDraft === 'function' ? composer.getDraft() : null
+  const next = existing?.trim() ? `${existing.replace(/\s+$/, '')}\n\n${block}` : block
+  composer.setDraft(next)
+  toast(t('已插入引用,补一句意图再回车'))
   return entry
 }
 

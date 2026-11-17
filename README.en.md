@@ -1,17 +1,17 @@
 <h1 align="center">Writing Desk</h1>
 
-<p align="center"><b>A DeepSeek Harness plugin. Capture an idea, then draft the article, title, cover image and illustrations.</b></p>
+<p align="center"><b>A plugin for DeepSeek Harness. Capture a spark of an idea, drag it into a writing session, and edit, schedule and ship the piece from your desk.</b></p>
 
 <p align="center">
   <a href="#get-started">Install</a> ·
-  <a href="#what-it-costs">What it costs</a> ·
+  <a href="#does-it-cost-money">Does it cost money</a> ·
   <a href="#faq">FAQ</a> ·
-  <a href="README.md">简体中文</a>
+  <a href="README.md">中文</a>
 </p>
 
 <p align="center">
-  <img alt="DeepSeek Harness 0.2.x" src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.x-111?style=flat-square">
-  <img alt="Mac desktop and web" src="https://img.shields.io/badge/Mac%20desktop-web-111?style=flat-square">
+  <img alt="DeepSeek Harness 0.2.2" src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.2-111?style=flat-square">
+  <img alt="Mac desktop &amp; web" src="https://img.shields.io/badge/Mac%20desktop-web-111?style=flat-square">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/MIT-open%20source-111?style=flat-square"></a>
   <a href="https://github.com/jspi-fu/dsh-writing-desk/stargazers"><img alt="Star" src="https://img.shields.io/github/stars/jspi-fu/dsh-writing-desk?style=flat-square&color=111&label=Star"></a>
 </p>
@@ -20,82 +20,75 @@
 
 ## What it is
 
-Writing Desk is a page in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) right sidebar. It opens on a wall of your ideas, one line each. Open one, click **Draft it**, and you get an article, a headline, a cover image and illustrations. Edit the draft in place and undo any step. Then drag the finished piece onto the calendar, publish it, and come back for the numbers.
+A page that lives in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sidebar. Open it and you get an idea wall — one sentence, one idea; related cards bundle into capsules, and dragging a capsule into the chat hands the material to a writing session that drafts the piece in your voice. What comes back lands on your desk: proof it against the layout of each platform, edit in place, put it on the calendar, then copy it out or save it as a folder.
 
-There are five pages: **Ideas · Content · Schedule · Insights · Styles**. The interface is available in English and Chinese. By default it follows the DeepSeek Harness language, and you can lock it to either one in the plugin settings. When the interface is in English, articles and titles are written in English. The web version also works in a phone browser.
+Four pages: **Ideas · Content · Schedule · Styles**. The interface comes in Chinese and English; it follows DeepSeek Harness's language by default and can be pinned in settings. Switch to English and pieces are written in English too. The web version opens in a mobile browser.
 
-Built for **RedNote, WeChat Official Accounts and Zhihu** first, with general support for other platforms.
+Built for **RedNote (Xiaohongshu), WeChat official accounts and Zhihu**, and other text-and-image platforms.
 
-Writing Desk has no built-in chat assistant and does not stand up a separate agent. Generation runs on the model you've configured in DeepSeek Harness. Writing rules can be exported as a DSH Skill for the harness to reuse. More writing actions will be wired into DSH's own session as Skills / tools over time.
+The writing itself happens in a DSH writing session: generation uses the model you configured in DeepSeek Harness, and your writing rules plus the craft method are served to the session as skills. The desk makes no model calls of its own — it keeps the data, the boards and the human checkpoints.
 
 <br>
 
-## Draft it in one click
+## The writing session
 
-The layout appears as soon as you open an idea. The title, cover image, article and illustrations are generated in parallel and appear as each one is ready.
+**Drag it in and go.** Drag an idea card or a capsule onto the dock below the chat input and a reference lands in your draft — add one sentence of intent ("make it a RedNote note, keep it casual") and press Enter. No dragging? Right-click a card for "reference in chat" or "open a writing session".
 
-**Note or article, your call.** A note uses short blocks, made for RedNote. An article is written in full paragraphs, made for WeChat Official Accounts and Zhihu. Both get a headline, and both stay close to the style and reference you chose.
+**Intent first.** The session condenses your material into an intent sheet — purpose, audience, the one judgment the piece serves, lines you must keep, what it will not do — and waits for your confirmation before writing. Then it reads the draft and reports findings without touching a word; you choose what gets fixed, and only then it polishes.
 
-**Edit on the page.** Edit the article paragraph by paragraph and copy it with one click; the title, cover text and illustrations can each be regenerated, and every step can be undone.
+**Written back in stages.** First draft, review findings and the polished final each land on the desk as they finish, and every landing leaves a snapshot. Fields you edited by hand are never silently overwritten — a conflict waits for you in the proof view.
 
-**Take it with you.** Copy the article, or save the whole piece (cover and illustrations) to one folder.
+**The proof view.** Open a piece from the Content page and it lays out like the platform: RedNote's narrow column, a WeChat article, a Zhihu answer (approximate previews). Edit the title, cover text and body in place; roll back from the version list; copy, save a folder, export a publish bundle, or schedule from the footer.
+
+**Rules grow with you.** The session proposes rules from how you edit its drafts; you turn them on in Styles, and from then on every piece follows them.
 
 <br>
 
 ## The idea wall
 
-**One line, one idea.** Text, links, images, videos and quotes all become cards. They line up on the wall by time, and cards on the same thread can fold into a capsule.
+**One sentence, one idea.** Text, links, images, videos, quotes — paste it and it becomes a card, laid out on the wall by time. Cards on the same thread fold into a capsule.
 
-**Related ideas come to you.** Type "agent" and press Enter. Your new idea is saved, and every earlier idea that mentions agents moves next to it, sorted by relevance.
+**Related ideas gather.** Type "agent" in the middle and hit Enter: the new idea is captured, and earlier ones that mention agent move up next to it.
 
 <br>
 
 ## Schedule
 
-**One calendar for ideas and posts.** Each day you capture an idea gets a stamp, so you can see your streak. Drag a finished piece from the side list onto a day to schedule it. Your next post is always pinned in the top right.
-
-<br>
-
-## Insights
-
-**See what worked, and keep doing it.** Enter numbers by hand, paste a CSV, or import your own account. You'll see daily reads, a breakdown by platform and your top pieces in one place.
-
-Turn a suggestion into a writing rule with one click and it applies to everything you write next. Rules can be exported as a DeepSeek Harness skill.
+**One calendar, two things.** A stamp for every day you captured something, and finished pieces dragged onto a day to schedule them. The next post is always in the corner.
 
 <br>
 
 ## Styles
 
-**Pick a voice.** Fifteen creator presets in eight categories: tech, travel and food, lifestyle, opinion, tutorials, reviews, stories and news. Pick one and start writing.
+**Pick whose voice.** Creator presets across gadget, travel, lifestyle, opinion, how-to, reviews, stories and news — pick one and start writing.
 
-**Or use your own.** Import your account or paste a few of your posts, and Writing Desk learns your style into a card you can edit.
+**Or your own.** Paste a few pieces you wrote (or their links) and the writing session distills them into a personal style card you can edit anytime.
 
-The content board shows where every piece stands: idea, outline, draft, ready or published.
+Writing rules live in Styles: the session proposes, you confirm. Confirmed rules flow into every writing session in real time, and can be exported as a DeepSeek Harness Skill.
+
+The Content page sorts everything into Ideas, Written, Ready and Published; pieces written back by the session announce themselves on the intake bar.
 
 <br>
 
-<a id="get-started"></a>
 ## Get started
 
-Requires DeepSeek Harness `0.2.1-rc.5` or later in the `0.2.x` line. Tested on `0.2.2-rc.1`, desktop and web.
+Requires DeepSeek Harness `0.2.2-rc.2` or later `0.2.x`, verified on the `0.2.2-rc.3` desktop build. Drag-to-chat and one-click session start enable themselves when the host supports them; on older hosts the desk falls back to plain boards.
 
-**1. Install.** Open **Plugins** in the DeepSeek Harness sidebar and switch on the experimental index support: on DSH `0.2.2` and later it is **Custom plugin indexes** under **Experimental plugins**; on the `0.2.1` line it is **Custom plugin markets**, under **More** beside **Experimental plugins**. The page then shows the **Installed** and **Discover** tabs.
-
-Switch to **Discover** and add this index URL — once is enough:
+**1. Install.** Open "Plugins" in the Harness sidebar and enable the experimental index: on DSH `0.2.2` and later it is "Custom plugin index" under "Experimental plugins". Switch to "Discover" and add this index URL (once is enough):
 
 ```
 https://raw.githubusercontent.com/jspi-fu/dsh-writing-desk/main/index.json
 ```
 
-If github.com is hard to reach from your network, use this CDN mirror instead — it can lag up to 12 hours behind the latest release:
+If GitHub is unreachable, use this CDN mirror at the cost of being up to 12 hours behind the latest release:
 
 ```
 https://cdn.jsdelivr.net/gh/jspi-fu/dsh-writing-desk@main/index.json
 ```
 
-**Writing Desk** shows up in the list; install it from there. It installs the same `dsh-writing-desk` npm package, the index just saves typing the package name.
+"Writing Desk" appears in the list — click install. It installs the same npm package `dsh-writing-desk`; the index just saves you typing the package name.
 
-Without the index, go to Plugins → Add plugin, enter `dsh-writing-desk`, and install. You can also install from the command line. Quit the desktop app completely (⌘Q) first and reopen it afterwards. For the web version, restart `dsh web`. If the `dsh` command isn't available in your terminal, choose "Manage dsh command" from the desktop app's menu.
+Alternatively, enter `dsh-writing-desk` under "Plugins" → "Add plugin", or use the command line. Quit the desktop app fully (⌘Q) before installing and reopen it; on the web version restart `dsh web` after installing. No `dsh` in your terminal? Pick "Manage dsh command" in the desktop menu first.
 
 ```bash
 dsh plugin --profile desktop add dsh-writing-desk
@@ -105,71 +98,32 @@ dsh plugin --profile desktop add dsh-writing-desk
 dsh plugin --profile web add dsh-writing-desk
 ```
 
-**2. Update.** When a new version comes out, the Plugins page shows an update — click it; a command-line install runs the same command again. Writing Desk also checks npm itself (at most once an hour, reading only the version number): when a newer version exists the top bar shows `↑ vX.Y.Z`, Settings shows the version you are on, and the badge opens the npm page with the upgrade command. To install offline, download `dsh-writing-desk-*.tgz` from [Releases](https://github.com/jspi-fu/dsh-writing-desk/releases/latest) and use `"file:$PWD/dsh-writing-desk-VERSION.tgz"` in place of the package name.
+**2. Update.** When a new version ships, the plugin page shows an update button; re-run the command above for CLI installs. The desk also checks npm for the latest version (at most hourly, version number only): an `↑ v Newest` badge appears in the header, the current version sits at the bottom of settings, and the badge links to the npm page. For offline installs, grab `dsh-writing-desk-*.tgz` from [Releases](https://github.com/jspi-fu/dsh-writing-desk/releases/latest) and set the package name to `"file:$PWD/dsh-writing-desk-<version>.tgz"`.
 
-**3. Open.** **Writing Desk** appears in the right sidebar. On first launch it's filled with sample data so you can explore every page. Click **Clear sample data** in the top right when you're ready to start with your own.
+**3. Open.** "Writing Desk" appears in the sidebar. Everything you see first is sample data — hit "Sample data · Clear" to make it yours.
 
 To uninstall, replace `add` with `remove dsh-writing-desk`. Your content stays in `~/.dsh/writing-desk/`.
 
 <br>
 
-<a id="what-it-costs"></a>
-## What it costs
+## Does it cost money
 
-The plugin is free and ships with no API keys. Anything that uses a model runs on your own accounts.
+The plugin is free and open source, with no keys bundled. Where a model is involved, it uses the account you configured in DeepSeek Harness.
 
-| | What it uses | Without it |
+| | What it uses | Notes |
 | --- | --- | --- |
-| **Article** | The model you've set up in DeepSeek Harness | A structural outline only |
-| **Cover image, illustrations** | Your image API key, or a registered DSH subscription image tool, selected in settings | The article still works, and the cover is made from text |
-| **Account import** (optional) | Monid, a third-party data service billed per request. Under a cent per TikTok, Instagram or X account; about $0.02 for RedNote. Zhihu is not supported | Enter numbers by hand, or paste posts to learn a style |
-
-Images work with any service compatible with the OpenAI Images API (`POST {endpoint}/images/generations`), and with Alibaba Bailian: Qwen-Image uses the sync endpoint, while Wan 2.5 and earlier use the async task API. OpenAI, xAI, Volcengine Ark, Zhipu, SiliconFlow, Alibaba Bailian, Bailian Token Plan and Bailian Wan (async) come pre-filled, or you can add a custom endpoint. Click **Generate test image** to check that it works. Each draft makes a cover image and several illustrations by default, and you can change that; you can also uncheck **Draw images** before **Draft it** to get text only this time, and draw individual images later. Your key is stored only in the local `settings.json` (file mode 600). It never goes into your content data and is never sent to the text model.
+| **Writing** | The model you configured in DeepSeek Harness | Happens in the writing session, billed to your account |
+| **Cover & figures** | Image tools available in DSH (e.g. subscription image tools) | Called by the session while writing; without one the text still works and the cover falls back to type-only |
 
 <br>
 
-### Use DSH generation tools
-
-Reuse subscription image generation made available to DSH by a plugin. For example, if a plugin lets you generate images in DSH with a ChatGPT (GPT) subscription, Writing Desk can reuse that capability without a separate image API key. Subscriptions from other services also require plugin-provided image generation supported by Writing Desk; signing in or connecting a chat model alone does not enable it. Currently supports `dsh-plugin-subscriptions`, which controls service and account selection and fallback.
-
-In Settings, choose **DSH generation tools** as the image source to reuse `image_generate` registered by `dsh-plugin-subscriptions` (including its collision alias). No additional API key is needed. Existing HTTP settings (including size and quality) are preserved; tool size and quality are configured separately, and Image API remains the default. Detection only confirms a compatible registration and a direct-call schema from the default executor, not sign-in or quota; **Generate test image** makes a real request and consumes subscription quota. Name/schema checks do not authenticate plugin identity; enable only trusted tool plugins.
-
-The host must support `tools.executable()`, `tools.selectExecutor().describe()` and standalone `tools.execute()` batches (public contracts verified against DSH 0.2.2-rc.1). Calls go through the host execution pipeline without reading credentials or importing subscription-plugin internals. Only images inside the DSH home `plugins/subscriptions/images/` directory are imported into the existing Writing Desk asset workflow. Discovery currently checks only `dsh_subscriptions_image_generate` and `image_generate`, not arbitrary tool names. Other plugins must also match the parameters, output structure and output directory even when the name matches. Tools registered only in an Agent-private scope are unavailable.
-
-This is an independent background service operation, not a call on behalf of the visible chat session: it does not inherit that session's restrictions, historical toggles or account affinity. Global host tool policies and current subscription-tool preferences still apply. Approval-required calls without a suitable session fail closed. The tool owns provider/account selection and fallback (for example, Grok may be used when ChatGPT is logged out); Writing Desk never falls back to HTTP or adds retries to tool requests.
-
-A pure Code Mode / PTC executor currently rejects direct root image-tool calls and is detected as unavailable. Use a native executor supporting direct calls or HTTP images. Missing tools or unsupported host APIs do not affect existing HTTP functionality.
-
-## Import your own account
-
-In Styles or Insights, click **Import account** and paste your profile link. Supported: RedNote, Douyin, Bilibili, TikTok, Instagram and X. Zhihu and WeChat Official Accounts are not supported for import yet; you can still schedule posts for them, and paste content or public links to learn a style. Your latest public posts and their engagement go into Content and Insights, and Writing Desk learns your style from them. Importing again only refreshes the numbers.
-
-The first time, connect [Monid](https://monid.ai) in three steps:
-
-1. In a new DeepSeek Harness session, send `set up https://monid.ai/SKILL.md`. It installs the Monid command-line tool.
-2. Sign up at [app.monid.ai](https://app.monid.ai/access/api-keys) and create an API key.
-3. In your terminal, run `monid keys add -k YOUR_KEY -l main`. Don't paste the key into a chat.
-
-The plugin only runs the local `monid` command and never sees your key.
-
-<br>
-
-<a id="faq"></a>
 ## FAQ
 
 <details>
-<summary><b>Can I import someone else's account?</b></summary>
+<summary><b>Can it publish directly?</b></summary>
 <br>
 
-Import only accounts you own. Profile links are sent to Monid and its data providers, so check that this fits your platform's terms. Only public data is available: RedNote and Douyin don't show view counts publicly, so Insights uses engagement instead. RedNote body text is around 100 characters, Douyin gives the caption, and Bilibili mostly titles, so the learned style can be edited by hand. Zhihu, WeChat Official Accounts, WeChat Channels and YouTube can't be imported yet; you can still schedule posts for them, and paste content or public links to learn a style.
-
-</details>
-
-<details>
-<summary><b>Can it post for me?</b></summary>
-<br>
-
-No. Platforms don't offer a common publishing API, so copy the article or save the folder and post it yourself. Saved folders go to `~/Documents/Writing Desk/` by default and include the article, cover image and illustrations.
+No. Platforms have no unified API. Copy the piece or save the folder and publish yourself; the folder defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside.
 
 </details>
 
@@ -177,7 +131,7 @@ No. Platforms don't offer a common publishing API, so copy the article or save t
 <summary><b>Where is my data?</b></summary>
 <br>
 
-Everything stays on your computer in `~/.dsh/writing-desk/`, shared by the desktop and web versions. No cloud and no sign-up.
+All on this machine in `~/.dsh/writing-desk/`, shared by the desktop and web versions. No cloud, no accounts.
 
 </details>
 
@@ -185,15 +139,7 @@ Everything stays on your computer in `~/.dsh/writing-desk/`, shared by the deskt
 <summary><b>Does it work without an image model?</b></summary>
 <br>
 
-Yes. The article and title are written as usual, and the cover is made from the cover text. Connect an image model to draw the cover and illustrations too.
-
-</details>
-
-<details>
-<summary><b>Do I have to generate images every time?</b></summary>
-<br>
-
-No. Uncheck **Draw images** next to **Draft it** and that draft gets only the title, cover text and article; you can also change the default in settings. Add images later with **Draw cover** or **Draw this** on any single image. Without an image model, drawing is skipped anyway and the saved cover is composed from text.
+Yes. The body and title work as usual and the cover becomes a type-only card. Once an image tool is available on the session side, covers and figures render too.
 
 </details>
 
@@ -201,7 +147,7 @@ No. Uncheck **Draw images** next to **Draft it** and that draft gets only the ti
 <summary><b>Is there a chat assistant in the desk?</b></summary>
 <br>
 
-No. Writing Desk has no built-in chat assistant or agent. Article generation runs on the model you've configured in DeepSeek Harness, and writing rules can be exported as a DSH Skill for the harness to reuse. More ways to wire writing actions into the harness are on the way.
+Not in the desk itself. Writing happens in a DeepSeek Harness writing session — DSH's own chat, not a built-in assistant. The desk shuttles material, rules and drafts between the session and your boards; the writing is done by the model you configured in DSH.
 
 </details>
 
@@ -209,7 +155,7 @@ No. Writing Desk has no built-in chat assistant or agent. Article generation run
 <summary><b>Is this made by DeepSeek?</b></summary>
 <br>
 
-No. It's a community plugin. Articles are written by the model you've set up in DeepSeek Harness and billed to your own account.
+No, it is a community plugin. Pieces are generated by the model you configured in DeepSeek Harness, billed to your own account.
 
 </details>
 
@@ -218,49 +164,46 @@ No. It's a community plugin. Articles are written by the model you've set up in 
 ## Development
 
 ```bash
-npm install && npm test        # host logic tests
-npm run watch                  # rebuild when client/ changes
-npm run index                  # refresh index.json after a release
-scripts/dev-sandbox.sh         # run the web version in an isolated DSH_HOME
-node scripts/mock-llm.mjs      # mock text and image models, no quota used
-npm pack                       # build the installable tgz
+npm install && npm test        # Host logic tests
+npm run watch                  # Rebuild client/ on change
+npm run index                  # Refresh index.json after a release
+scripts/dev-sandbox.sh         # Run the web build in an isolated DSH_HOME
+npm pack                       # Build an installable tgz
 ```
 
-`index.json` is the plugin market index; `npm run index` refreshes its version and publish time from the latest npm release, so run it once after every release.
+`index.json` is the marketplace index; `npm run index` refreshes its version and release time from npm after each release.
 
-`scripts/mock-monid.mjs` is a fake `monid` command that returns made-up content, so you can test the import flow for free. Wrap it as an executable named `monid` and put it first on your `PATH`.
-
-| Path | Contents |
+| Directory | Contents |
 | --- | --- |
-| `client/` | UI: idea wall, studio, content, schedule, insights, styles, settings |
-| `src/` | Host routes, drafting pipeline, prompts, image generation, style learning, Monid import, local storage |
-| `scripts/` | Bundling, sandbox, mock models, sample asset generation, market index |
-| `assets/` | Sample images and videos, all generated by `scripts/gen-assets.py` |
+| `client/` | UI: idea wall, content, schedule, styles, proof view, dock rail |
+| `src/` | Host API, state machine, harness tools & skills, local storage |
+| `scripts/` | Packaging, sandbox, sample assets, marketplace index |
+| `assets/` | Sample images and videos, all drawn by `scripts/gen-assets.py` |
 
 Restart DeepSeek Harness after changing `src/`.
 
-**Security:** Every route is authenticated by the host. Model output and fetched content are reduced to known fields with length limits, and only allow-listed operations run. Pasted links can't reach localhost or private networks. `monid` runs without a shell, and account IDs must match fixed formats. Please report vulnerabilities privately through [Security Advisories](https://github.com/jspi-fu/dsh-writing-desk/security/advisories/new).
+**Security:** every endpoint passes Host authentication; model output and fetched external content are field-filtered and length-capped, operations run through whitelists, and pasted links can never reach localhost or the internal network. Please report vulnerabilities privately via [Security Advisories](https://github.com/jspi-fu/dsh-writing-desk/security/advisories/new).
 
 <br>
 
-## Thanks
+## Credits
 
-This project is a second development of the community plugin `dsh-media-desk` (Media Desk). Thanks to the original author [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3) and the following people for their early testing, troubleshooting and code contributions:
+This project began as a fork of the community plugin `dsh-media-desk`, thanks to the original author [蜗牛的科技笔记](https://www.xiaohongshu.com/user/profile/5faedce8000000000101c8a3) and everyone who tested, debugged and contributed back then:
 
 - [secountAiAccount](https://github.com/secountAiAccount)
 - [isxiaokunos](https://github.com/isxiaokunos)
-- [townmi (Harry Tang)](https://github.com/townmi)
+- [townmi（Harry Tang）](https://github.com/townmi)
 - [zach22-1999](https://github.com/zach22-1999)
-- [chenxupeng1990-eng](https://github.com/chenxupeng1990-eng)
+- [chenxupeng1999-eng](https://github.com/chenxupeng1999-eng)
 - [dsh-agent-sixtyseven](https://github.com/dsh-agent-sixtyseven)
 - [smallflycar](https://github.com/smallflycar)
 - [cofftea114](https://github.com/cofftea114)
 - [Feahter](https://github.com/Feahter)
-- [TerryWang9112 (Terry)](https://github.com/TerryWang9112)
-- [ytzhangFTD](https://github.com/ytzhangFTD)
+- [TerryWang9112（Terry）](https://github.com/TerryWang9112)
+- [ytzhangFTD（小虾米）](https://github.com/ytzhangFTD)
 - [giuliano1101](https://github.com/giuliano1101)
 - [wmaly13](https://github.com/wmaly13)
 
-Also thanks to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) team for the open plugin system.
+And thanks to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) team for the open plugin system.
 
-<p align="center"><sub><a href="LICENSE">MIT</a> · A community plugin, not affiliated with DeepSeek. DeepSeek Harness and its marks belong to their respective owners.</sub></p>
+<p align="center"><sub><a href="LICENSE">MIT</a> · A community plugin, not affiliated with DeepSeek. DeepSeek Harness's name and marks belong to their owners.</sub></p>

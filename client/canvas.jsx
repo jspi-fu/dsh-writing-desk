@@ -1,11 +1,13 @@
 // 首页：一句话记一个灵感。灵感按时间排成信息流，可以归到胶囊里。
 // 几张卡片拖到一起就收成一个胶囊，标签在底部 dockbar 当选题资料架取用。
+// 成稿迁移到创作会话(ADR 0006):卡片拖到接驳条/右键引用,没有本地成稿入口。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
 import { CapsuleCard, CapsulePreview, itemMatchesFilters } from './capsule.jsx'
-import { captureFiles, captureUrl, clearSelection, dispatchOps, EMPTY_LIST, getDesk, openCapsule, openItem, openProduce, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
+import { captureFiles, captureUrl, clearSelection, dispatchOps, EMPTY_LIST, getDesk, openCapsule, openItem, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
+import { endRefDrag, openWritingSession, overDock, referenceIntoDraft, startRefDrag } from './session-link.js'
 import { plural, t } from './i18n.js'
-import { Icon, IconButton } from './ui.jsx'
+import { Icon, IconButton, openMenuAt } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
 import { isScheduled, panelState } from '../src/state.js'
 import { relatedIdeas } from './related.js'
@@ -129,7 +131,7 @@ function Feed() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [items, kind, tag, related, capsuleOf, liftedIds])
 
-  // 拖到另一张卡上合成胶囊，拖到胶囊上收进去。
+  // 拖到另一张卡上合成胶囊，拖到胶囊上收进去,拖到接驳条上引用进对话。
   const startFeedCardDrag = (event, cellEl, item) => {
     if (event.button !== 0 || event.target.closest('input,textarea,button')) return
     const startX = event.clientX
@@ -153,6 +155,8 @@ function Feed() {
       if (!moved) {
         moved = true
         suppressClick.current = true
+        // 拖起即通知接驳条显形;落点由 dock 自己判断
+        startRefDrag([item.id])
         cellEl.classList.add('is-feed-dragging')
         const cardEl = cellEl.querySelector('.md-card')
         ghost = cardEl?.cloneNode(true) ?? cellEl.cloneNode(true)
@@ -190,10 +194,13 @@ function Feed() {
       window.removeEventListener('pointerup', onUp)
       ghost?.remove()
       cellEl.classList.remove('is-feed-dragging')
+      endRefDrag()
       const made = overCellEl
       const toCapsule = overCapsuleEl
       clearTargets()
       if (!moved) return
+      // 松手落在接驳条上:引用已由 dock 落进草稿,画布收手
+      if (overDock(e.clientX, e.clientY)) return
       setTimeout(() => { suppressClick.current = false }, 0)
       if (made) {
         await dispatchOps([{ op: 'add_capsule', itemIds: [item.id, made.dataset.feedCard] }], { label: t('聚合胶囊') })
@@ -225,6 +232,8 @@ function Feed() {
       if (!moved) {
         moved = true
         suppressClick.current = true
+        // 拖起即通知接驳条显形;落点由 dock 自己判断
+        startRefDrag([item.id])
         ghost = thumbEl.cloneNode(true)
         ghost.className = `${ghost.className} md-capsule-drag-ghost`
         Object.assign(ghost.style, { left: `${e.clientX - grabX}px`, top: `${e.clientY - grabY}px`, width: `${rect.width}px`, height: `${rect.height}px` })
@@ -239,7 +248,10 @@ function Feed() {
       window.removeEventListener('pointerup', onUp)
       ghost?.remove()
       thumbEl.classList.remove('is-ghosted')
+      endRefDrag()
       if (!moved) return
+      // 松手落在接驳条上:引用已由 dock 落进草稿,不移出胶囊
+      if (overDock(e.clientX, e.clientY)) return
       setTimeout(() => { suppressClick.current = false }, 0)
       const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-capsule]')
       if (target?.dataset.capsule === capsule.id) return
@@ -254,6 +266,14 @@ function Feed() {
     }
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
+  }
+
+  // 卡片右键:引用进对话或直接去创作会话(成稿入口的右键辅路)
+  const openCardMenu = (item, event) => {
+    openMenuAt(event, [
+      { label: t('引用到对话'), icon: 'link', onSelect: () => referenceIntoDraft([item.id]) },
+      { label: t('去创作会话'), icon: 'bolt', onSelect: () => openWritingSession([item.id]) },
+    ])
   }
   return (
     <div className="md-wall-scroll">
@@ -284,7 +304,7 @@ function Feed() {
             style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}
             onPointerDown={event => startFeedCardDrag(event, event.currentTarget, item)}
           >
-            <Card item={item} onOpen={openCard} selected={pickedItems.has(item.id)} />
+            <Card item={item} onOpen={openCard} onContextMenu={openCardMenu} selected={pickedItems.has(item.id)} />
           </div>
         ))}
       </div>
@@ -309,10 +329,11 @@ export function HomeView() {
     <div className="md-home">
       <Feed />
       {picked ? (
-        // 多选后的浮动工具条:四种成稿输入里的「多灵感 / 多胶囊」从这里进统一成稿入口
+        // 多选后的浮动工具条:把选中的一批引用进对话,或直接带去创作会话
         <div className="md-selectbar" role="toolbar" aria-label={t('已选灵感')}>
           <span>{t('已选 {n} 项', { n: picked })}</span>
-          <button type="button" className="md-btn is-primary" onClick={() => openProduce({ itemIds: selection.items, capsuleIds: selection.capsules })}><Icon name="bolt" size={14} />{t('一键成稿')}</button>
+          <button type="button" className="md-btn" onClick={() => referenceIntoDraft({ itemIds: selection.items, capsuleIds: selection.capsules })}><Icon name="link" size={14} />{t('引用到对话')}</button>
+          <button type="button" className="md-btn is-primary" onClick={() => openWritingSession({ itemIds: selection.items, capsuleIds: selection.capsules })}><Icon name="bolt" size={14} />{t('去创作会话')}</button>
           <IconButton icon="close" label={t('清除')} onClick={clearSelection} />
         </div>
       ) : null}
@@ -335,7 +356,8 @@ export function HomeView() {
         {tag ? (
           <>
             <IconButton icon="pen" label={t('给这批灵感改标签')} onClick={() => openRetag(tagged)} />
-            <IconButton icon="bolt" label={t('这批灵感一起成稿')} onClick={() => openProduce({ itemIds: tagged })} />
+            <IconButton icon="link" label={t('引用到对话')} onClick={() => referenceIntoDraft({ itemIds: tagged })} />
+            <IconButton icon="bolt" label={t('去创作会话')} onClick={() => openWritingSession({ itemIds: tagged })} />
             <IconButton icon="close" label={t('不看这个标签了')} onClick={() => setDesk({ tagFilter: null })} />
           </>
         ) : null}

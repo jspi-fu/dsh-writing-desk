@@ -75,11 +75,22 @@ export const CORE = {
   '回去改标签': 'Back to tags',
   '不变': 'Unchanged',
   '给这批灵感改标签': 'Retag these ideas',
-  '这批灵感一起成稿': 'Draft these ideas together',
   '不看这个标签了': 'Stop filtering by this tag',
   '已选 {n} 项': '{n} selected',
   '已选灵感': 'Selected ideas',
   '清除': 'Clear',
+
+  // 会话连接(ADR 0006):引用指针、去创作会话
+  '引用到对话': 'Reference in chat',
+  '去创作会话': 'Open writing session',
+  '引用素材': 'Reference material',
+  '没有可引用的灵感': 'No ideas to reference',
+  '没有可提炼的内容': 'Nothing to learn from',
+  '请先在 DSH 里打开创作模式': 'Open the writing mode in DSH first',
+  '已插入引用,补一句意图再回车': 'References added — say what you want, then press Enter',
+  '已打开创作会话,引用放在了输入框': 'Writing session opened; the references are in the composer',
+  '已打开创作会话,材料贴在了输入框': 'Writing session opened; the material is in the composer',
+  '无标题': 'Untitled',
 
   // 通用
   '取消': 'Cancel',

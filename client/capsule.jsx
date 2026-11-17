@@ -3,7 +3,8 @@
 // 浮层靠左右两侧翻页、顶部居中的标题改名,右键解散或移出。成员灵感仍独立存在,只是不再单独出现在灵感流里。
 import React from 'react'
 import { Card } from './card.jsx'
-import { closeCapsule, dispatchOps, EMPTY_LIST, getDesk, openItem, openProduce, useDesk } from './desk.js'
+import { closeCapsule, dispatchOps, EMPTY_LIST, getDesk, openItem, useDesk } from './desk.js'
+import { endRefDrag, openWritingSession, overDock, referenceIntoDraft, startRefDrag } from './session-link.js'
 import { t } from './i18n.js'
 import { Icon, openMenuAt } from './ui.jsx'
 import { capsuleMembers, displayItem } from './util.js'
@@ -18,11 +19,12 @@ export function itemMatchesFilters(item, tag, kind) {
   return (!tag || (item.tags ?? []).includes(tag)) && (kind === 'all' || displayItem(item).kind === kind)
 }
 
-/** 右键菜单:解散胶囊,或在成员身上顺手把它移出;整体成稿挪进这里,浮层上就不再摆按钮。 */
-export function openCapsuleMenu(event, capsule, { item = null, onProduce } = {}) {
+/** 右键菜单:解散胶囊,或在成员身上顺手把它移出;引用与会话也在这里,浮层上就不再摆按钮。 */
+export function openCapsuleMenu(event, capsule, { item = null } = {}) {
   openMenuAt(event, [
     ...(item ? [{ label: t('移出胶囊'), icon: 'upRight', onSelect: () => removeFromCapsule(capsule, item.id) }] : []),
-    { label: t('整体成稿'), icon: 'bolt', onSelect: () => (onProduce ? onProduce() : openProduce({ capsuleIds: [capsule.id] })) },
+    { label: t('引用到对话'), icon: 'link', onSelect: () => referenceIntoDraft({ capsuleIds: [capsule.id] }) },
+    { label: t('去创作会话'), icon: 'bolt', onSelect: () => openWritingSession({ capsuleIds: [capsule.id] }) },
     { label: t('解散胶囊'), icon: 'trash', danger: true, onSelect: () => dissolveCapsule(capsule) },
   ])
 }
@@ -205,6 +207,8 @@ export function CapsuleView() {
       if (!moved) {
         moved = true
         suppressClick.current = true
+        // 拖起即通知接驳条显形;落点由 dock 自己判断
+        startRefDrag([item.id])
         setDraggingId(item.id)
         ghost = tileEl.cloneNode(true)
         ghost.className = `${ghost.className} md-capsule-drag-ghost`
@@ -227,6 +231,7 @@ export function CapsuleView() {
     const onUp = (e) => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      endRefDrag()
       const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-capsule-tile]')
       const view = viewRef.current?.getBoundingClientRect()
       const outside = !view || e.clientX < view.left || e.clientX > view.right || e.clientY < view.top || e.clientY > view.bottom
@@ -235,6 +240,8 @@ export function CapsuleView() {
       const after = overRect ? e.clientX > overRect.left + overRect.width / 2 : false
       clearDrag()
       if (!moved) return
+      // 松手落在接驳条上:引用已由 dock 落进草稿,不移出胶囊
+      if (overDock(e.clientX, e.clientY)) return
       setTimeout(() => { suppressClick.current = false }, 0)
       if (over && over.dataset.capsuleTile !== id) reorder(id, over.dataset.capsuleTile, after)
       else if (outside) removeFromCapsule(capsule, id)
@@ -263,7 +270,7 @@ export function CapsuleView() {
 
   const openMenuFor = (event, item) => {
     if (getDesk().menu) return
-    openCapsuleMenu(event, capsule, { item, onProduce: () => { close(); openProduce({ capsuleIds: [capsule.id] }) } })
+    openCapsuleMenu(event, capsule, { item })
   }
 
   const pageItems = members.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
