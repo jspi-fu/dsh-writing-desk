@@ -1,6 +1,6 @@
 {
   "name": "dsh-writing-desk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DeepSeek Harness 插件。一句话记灵感，一键做出图文正文、标题、封面首图和配图。",
   "type": "module",
   "main": "src/host.js",
