@@ -17,7 +17,7 @@ export function statusLabel(status) {
 
 const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
-  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', pos: 'pos', score: 'num',
+  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', score: 'num',
   contentOrigin: 'origin',
 }
 const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
@@ -59,7 +59,6 @@ function coerce(type, value) {
     case 'num': return Number.isFinite(value) ? value : undefined
     case 'url': return value === null || value === '' ? null : isHttpUrl(value) ? value : undefined
     case 'date': return value === null ? null : typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : undefined
-    case 'pos': return value && [value.x, value.y].every(Number.isFinite) ? { x: value.x, y: value.y, r: Number.isFinite(value.r) ? value.r : 0 } : undefined
     case 'media': {
       if (value === null) return null
       if (!value || typeof value.src !== 'string') return undefined
@@ -114,33 +113,74 @@ function fmtShort(iso) {
 // 时间戳统一取 applyOps 传进来的 now。
 
 /** 胶囊成员:去重后逐个对着 items 校验,不存在的 ID 拒收,避免胶囊挂上空引用。 */
-function capsuleMembers(state, rawIds) {
+function capsuleIds(state, rawIds) {
   const ids = [...new Set(coerce('ids', rawIds) ?? [])]
-  if (!ids.length) throw new Error(tr('胶囊至少要收进一条灵感'))
   const known = new Set(state.items.map(row => row.id))
   const missing = ids.filter(id => !known.has(id))
   if (missing.length) throw new Error(tr('灵感 {ids} 不存在，收不进胶囊', { ids: missing.join('、') }))
   return ids
 }
 
+/** 默认名字:用第一条成员的标题,没标题就用正文开头;都没有才退回「新胶囊」。
+ *  标题先取第一句,名字短一点更像文件夹上的标签,而不是整条灵感的回显。 */
+function defaultCapsuleName(state, itemIds) {
+  const first = state.items.find(row => row.id === itemIds[0])
+  const raw = String(first?.title || first?.body || '').trim()
+  const clause = raw.split(/[。！？!?，,、：:；;\n]/)[0].trim()
+  return short(clause || raw, 18) || tr('新胶囊')
+}
+
+/** 解散只删集合关系：成员灵感原样留在灵感流里，不再需要坐标。 */
+function releaseCapsule(state, capsule) {
+  state.capsules = (state.capsules ?? []).filter(row => row.id !== capsule.id)
+}
+
+/** 灵感唯一归属:把要收进胶囊的灵感从别的胶囊摘掉,原胶囊不足两个就自动解散。 */
+function detachFromOtherCapsules(state, itemIds, keepId) {
+  const moving = new Set(itemIds)
+  for (const capsule of [...(state.capsules ?? [])]) {
+    if (capsule.id === keepId || !capsule.itemIds.some(id => moving.has(id))) continue
+    const remaining = capsule.itemIds.filter(id => !moving.has(id))
+    if (remaining.length < 2) {
+      capsule.itemIds = remaining
+      releaseCapsule(state, capsule)
+    } else {
+      capsule.itemIds = remaining
+    }
+  }
+}
+
 const handlers = {
   add_capsule(state, op, now) {
-    const itemIds = capsuleMembers(state, op.itemIds)
-    const name = typeof op.name === 'string' && op.name.trim() ? op.name.trim().slice(0, 60) : tr('新胶囊')
+    const itemIds = capsuleIds(state, op.itemIds)
+    if (itemIds.length < 2) throw new Error(tr('胶囊至少要收进两条灵感'))
+    detachFromOtherCapsules(state, itemIds, null)
+    const fields = pick(CAPSULE_FIELDS, op)
+    const name = typeof fields.name === 'string' && fields.name.trim() ? fields.name.trim().slice(0, 60) : defaultCapsuleName(state, itemIds)
     const capsule = { id: newId('cap'), name, itemIds, createdAt: now }
     state.capsules.unshift(capsule)
     return { text: tr('把 {n} 条灵感收进胶囊《{name}》', { n: itemIds.length, name }), target: capsule.id, kind: 'capsule' }
   },
   update_capsule(state, op) {
     const capsule = findById(state.capsules ?? [], op.id)
-    if (op.itemIds !== undefined) capsule.itemIds = capsuleMembers(state, op.itemIds)
-    if (typeof op.name === 'string' && op.name.trim()) capsule.name = op.name.trim().slice(0, 60)
+    const fields = pick(CAPSULE_FIELDS, op)
+    if (op.itemIds !== undefined) {
+      const next = capsuleIds(state, op.itemIds)
+      detachFromOtherCapsules(state, next.filter(id => !capsule.itemIds.includes(id)), capsule.id)
+      capsule.itemIds = next
+      if (next.length < 2) {
+        const name = capsule.name
+        releaseCapsule(state, capsule)
+        return { text: tr('胶囊《{name}》成员不足两个，已自动解散', { name }), kind: 'capsule', target: op.id }
+      }
+    }
+    if (typeof fields.name === 'string' && fields.name.trim()) capsule.name = fields.name.trim().slice(0, 60)
     return { text: tr('更新胶囊《{name}》', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
   },
   // 解散只删集合关系:成员灵感原样保留,还能单独打开
   delete_capsule(state, op) {
     const capsule = findById(state.capsules ?? [], op.id)
-    state.capsules = state.capsules.filter(row => row.id !== op.id)
+    releaseCapsule(state, capsule)
     return { text: tr('解散胶囊《{name}》，{n} 条灵感仍在', { name: capsule.name, n: capsule.itemIds.length }), kind: 'capsule' }
   },
   add_item(state, op, now) {
@@ -151,12 +191,6 @@ const handlers = {
     if (!item.title && !item.body && !item.media) throw new Error(tr('灵感内容为空'))
     // 只贴了图或视频也要有个名字，卡片和回执才有东西可显示
     if (!item.title) item.title = short(item.body, 28) || (item.media ? tr(item.kind === 'video' ? '{date}的视频' : '{date}的图片', { date: fmtShort(now) }) : '')
-    // 新灵感落在首屏文字旁边，一眼就能看到，也不会打乱已有布局
-    if (!item.pos && !item.parentId) {
-      const n = state.items.filter(row => !row.parentId && row.pos).length
-      const scale = 1 + (n % 6) * 0.2
-      item.pos = { x: Math.round(Math.cos(n * 2.39996) * 580 * scale), y: Math.round(Math.sin(n * 2.39996) * 340 * scale), r: ((n % 5) - 2) * 1.2 }
-    }
     // 先落库再经 reducer 迁移状态元组(工单 #5):一律先落成灵感,再按参数走与
     // schedule_item / set_status 完全同一批事件——同参数下先建后改的终态一致,自愈照常跑。
     const { status, scheduledAt } = item
@@ -174,7 +208,7 @@ const handlers = {
     if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
     if (scheduledAt !== undefined) reduce(state, scheduledAt ? { type: 'schedule', id: item.id, scheduledAt, at: now } : { type: 'unschedule', id: item.id, at: now })
     if (status !== undefined) reduce(state, { type: 'setStatus', id: item.id, status, at: now })
-    const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])].filter(key => key !== 'pos')
+    const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])]
     return names.length ? { text: tr('更新《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' } : null
   },
   delete_item(state, op) {
@@ -182,10 +216,17 @@ const handlers = {
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
     state.metrics = state.metrics.filter(row => row.itemId !== op.id)
-    // 成员灵感删了就从胶囊里摘掉;删光的胶囊没有意义,顺手解散
-    state.capsules = (state.capsules ?? [])
-      .map(capsule => capsule.itemIds.includes(op.id) ? { ...capsule, itemIds: capsule.itemIds.filter(id => id !== op.id) } : capsule)
-      .filter(capsule => capsule.itemIds.length > 0)
+    // 成员灵感删了就从胶囊里摘掉;剩一个的胶囊没有存在意义,自动解散
+    for (const capsule of [...(state.capsules ?? [])]) {
+      if (!capsule.itemIds.includes(op.id)) continue
+      const remaining = capsule.itemIds.filter(id => id !== op.id)
+      if (remaining.length < 2) {
+        capsule.itemIds = remaining
+        releaseCapsule(state, capsule)
+      } else {
+        capsule.itemIds = remaining
+      }
+    }
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
   schedule_item(state, op, now) {
@@ -358,10 +399,16 @@ const handlers = {
     const ids = new Set(state.items.map(row => row.id))
     for (const row of state.items) if (row.parentId && !ids.has(row.parentId)) row.parentId = null
     state.metrics = state.metrics.filter(row => !row.itemId || ids.has(row.itemId))
-    // 胶囊里挂着的示例成员摘掉;空了的胶囊跟着清掉
-    state.capsules = (state.capsules ?? [])
-      .map(capsule => ({ ...capsule, itemIds: capsule.itemIds.filter(id => ids.has(id)) }))
-      .filter(capsule => capsule.itemIds.length > 0)
+    // 胶囊里挂着的示例成员摘掉;不足两个成员的胶囊按自动解散处理
+    for (const capsule of [...(state.capsules ?? [])]) {
+      const remaining = capsule.itemIds.filter(id => ids.has(id))
+      if (remaining.length < 2) {
+        capsule.itemIds = remaining
+        releaseCapsule(state, capsule)
+      } else {
+        capsule.itemIds = remaining
+      }
+    }
     state.sampleCleared = true
     return { text: tr('已清空全部示例数据') }
   },

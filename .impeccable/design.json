@@ -1,0 +1,151 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-18",
+  "title": "Design System: 图文创作台（dsh-writing-desk）",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "墨黑 Primary", "canonical": "var(--dsw-alias-button-primary-fill)", "tonalRamp": ["#0d0e10", "#17181c", "#2a2c33", "#43464e", "#5f636d", "#7e828c", "#a3a6af", "#d6d8dd"] },
+      "accent": { "role": "secondary", "displayName": "强调 Accent", "canonical": "var(--dsw-alias-link)", "tonalRamp": ["#3d2a99", "#6b5cff", "#8a7bff", "#a49aff", "#bdb5ff", "#d3ceff", "#e6e3ff", "#f4f2ff"] },
+      "card": { "role": "neutral", "displayName": "纸白 Card", "canonical": "var(--dsw-alias-bg-layer-2)", "tonalRamp": ["#e2e4e8", "#ebedf0", "#eef0f3", "#f1f3f5", "#f4f5f7", "#f7f8fa", "#fafbfc", "#ffffff"] },
+      "status-outline": { "role": "tertiary", "displayName": "构思 琥珀", "canonical": "#d39a2c" },
+      "status-draft": { "role": "tertiary", "displayName": "草稿 蓝", "canonical": "#4176e6" },
+      "status-ready": { "role": "tertiary", "displayName": "待发布 紫", "canonical": "#8a5fe0" },
+      "status-published": { "role": "tertiary", "displayName": "已发布 绿", "canonical": "#2fa36c" },
+      "danger": { "role": "tertiary", "displayName": "危险 红", "canonical": "#d13c35" }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Hero 一句话", "purpose": "首屏 33px 细体长句，全系统最大的字号。" },
+      "serif": { "displayName": "宋体仪式感", "purpose": "只给作品本身：金句、稿面标题、题字。" },
+      "latin-serif": { "displayName": "衬线拉丁数字", "purpose": "统计大数与日期，常配 tabular-nums。" }
+    },
+    "shadows": [
+      { "name": "elevation-soft", "value": "var(--dsw-elevation-soft)（宿主令牌）", "purpose": "卡片、面板、输入条的常驻柔影。" },
+      { "name": "elevation-prominent", "value": "var(--dsw-elevation-prominent)（宿主令牌）", "purpose": "dockbar、对话框、菜单、toast。" },
+      { "name": "pile-deep", "value": "0 16px 36px -14px rgb(0 0 0 / .16)", "purpose": "卡堆与纸面板的外层空间感，负 spread 收边。" },
+      { "name": "overlay-deep", "value": "0 30px 90px -30px rgb(0 0 0 / .45)", "purpose": "居中大浮层。" }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(.2, .8, .2, 1)", "purpose": "状态过渡默认缓动（--ease）。" },
+      { "name": "ease-spring", "value": "cubic-bezier(.2, 1.3, .4, 1)", "purpose": "弹层、拖拽落定、hover 抬起。" },
+      { "name": "md-rise", "value": "translateY(8px) + fade, .45-.6s", "purpose": "一切入场；列表逐项 22ms 延迟。" },
+      { "name": "md-pop", "value": "scale(.94) translateY(10px) → 0, .35-.4s spring", "purpose": "对话框与菜单弹入。" },
+      { "name": "md-develop", "value": "opacity 0 + blur(10px) + scale(1.03) → 0, .9s", "purpose": "生成图片的显影。" }
+    ],
+    "breakpoints": [
+      { "name": "bento-wide", "value": "@container 1040px：分镜排 3 列" },
+      { "name": "workspace-narrow", "value": "@container 760px：工作区单列" },
+      { "name": "hero-stack", "value": "@container 620px：hero 折叠单列" },
+      { "name": "mobile", "value": "@container md-root 560px：顶栏收纳、hero 24px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "墨黑主按钮：面板主行动，36px 高，active 轻缩。",
+      "html": "<button class='ds-btn-primary'>一键成稿</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; gap:6px; height:36px; padding:0 14px; border:0; border-radius:12px; background:#17181c; color:#fff; font-size:13px; line-height:20px; white-space:nowrap; cursor:pointer; transition:background .15s, transform .25s cubic-bezier(.2,.8,.2,1); } .ds-btn-primary:hover { background:#2a2c33; } .ds-btn-primary:active { transform:scale(.97); } .ds-btn-primary:focus-visible { outline:2px solid #6b5cff; outline-offset:2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "纸白次按钮：.5px 发丝描边，hover 抬灰。",
+      "html": "<button class='ds-btn-ghost'>预览</button>",
+      "css": ".ds-btn-ghost { display:inline-flex; align-items:center; gap:6px; height:36px; padding:0 14px; border:.5px solid rgba(0,0,0,.14); border-radius:12px; background:#fff; color:#1f2329; font-size:13px; cursor:pointer; transition:background .15s; } .ds-btn-ghost:hover { background:rgba(0,0,0,.05); } .ds-btn-ghost:focus-visible { outline:2px solid #6b5cff; outline-offset:2px; }"
+    },
+    {
+      "name": "Round Primary Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "签名圆钮（dockbar「记下灵感」）：hover 旋转 90°。",
+      "html": "<button class='ds-round' aria-label='记下灵感'>＋</button>",
+      "css": ".ds-round { display:inline-flex; align-items:center; justify-content:center; width:40px; height:40px; border:0; border-radius:50%; background:#17181c; color:#fff; font-size:18px; cursor:pointer; transition:transform .3s cubic-bezier(.2,.8,.2,1), background .15s; } .ds-round:hover { background:#2a2c33; transform:rotate(90deg); } .ds-round:focus-visible { outline:2px solid #6b5cff; outline-offset:2px; }"
+    },
+    {
+      "name": "Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "类型/标签筛选 chip：透明底，选中墨黑。",
+      "html": "<div style='display:flex;gap:4px'><button class='ds-chip'>全部</button><button class='ds-chip ds-chip-on'>#设计</button></div>",
+      "css": ".ds-chip { height:30px; padding:0 11px; border:0; border-radius:12px; background:none; color:#86909c; font-size:12.5px; cursor:pointer; transition:background .15s,color .15s; } .ds-chip:hover { color:#1f2329; background:rgba(0,0,0,.05); } .ds-chip-on { color:#fff; background:#17181c; } .ds-chip:focus-visible { outline:2px solid #6b5cff; outline-offset:2px; }"
+    },
+    {
+      "name": "Idea Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "灵感卡：20px 圆角纸面 + 内嵌相纸媒体 + 状态点页脚。",
+      "html": "<article class='ds-card'><div class='ds-card-media'></div><div class='ds-card-title'>老城立面：被时间改写的设计系统</div><footer class='ds-card-foot'><span class='ds-dot' style='background:#d39a2c'></span><span class='ds-card-src'>街拍</span><span class='ds-card-time'></span></footer></article>",
+      "css": ".ds-card { display:block; width:236px; border-radius:20px; background:#fff; box-shadow:0 6px 20px -8px rgba(0,0,0,.14); overflow:hidden; transition:transform .4s cubic-bezier(.2,1.3,.4,1); } .ds-card:hover { transform:translateY(-3px); } .ds-card-media { height:120px; margin:6px 6px 0; border-radius:14px; background:linear-gradient(120deg,#1a1b3a,#4a2f6b 58%,#d9745a); } .ds-card-title { padding:10px 14px 0; font-size:13px; line-height:19px; font-weight:500; color:#1f2329; } .ds-card-foot { display:flex; align-items:center; gap:6px; padding:8px 14px 12px; min-height:36px; color:#86909c; font-size:11.5px; } .ds-dot { flex:none; width:7px; height:7px; border-radius:50%; } .ds-card-src { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }"
+    },
+    {
+      "name": "Capsule Pile",
+      "kind": "custom",
+      "refersTo": "capsule-pile",
+      "description": "签名组件：胶囊异形卡堆，352px 白纸两列，成员卡原字号重排，纸堆边缘折叠。",
+      "html": "<div class='ds-pile'><div class='ds-pile-grid'><div class='ds-pile-card'><div class='ds-pile-media'></div><div class='ds-pile-title'>一份给独立开发者的定价地图</div></div><div class='ds-pile-card'><div class='ds-pile-media ds-pile-paper'></div><div class='ds-pile-title'>发布前 10 分钟检查清单</div></div><div class='ds-pile-card'><div class='ds-pile-media' style='background:#f6e2d5'></div><div class='ds-pile-title'>好的选题不是想出来的</div></div><div class='ds-pile-card'><div class='ds-pile-media' style='background:#dfe7fb'></div><div class='ds-pile-title'>增长的台阶</div></div></div><div class='ds-pile-fold'><i></i><i></i></div><div class='ds-pile-name'>AI 变现观察</div></div>",
+      "css": ".ds-pile { width:352px; padding:12px 12px 10px; border-radius:18px; background:#fff; box-shadow:0 6px 20px -8px rgba(0,0,0,.14), 0 16px 36px -14px rgba(0,0,0,.16); box-sizing:border-box; } .ds-pile-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; } .ds-pile-card { border-radius:14px; background:#fff; box-shadow:0 6px 20px -8px rgba(0,0,0,.14); overflow:hidden; } .ds-pile-card:nth-child(4n+1) { transform:rotate(-.5deg); } .ds-pile-card:nth-child(4n+3) { transform:rotate(.4deg); } .ds-pile-media { height:112px; background:linear-gradient(120deg,#1a1b3a,#4a2f6b 58%,#d9745a); } .ds-pile-paper { background:#f4f5f7; } .ds-pile-title { padding:8px 12px 10px; font-size:13px; line-height:19px; font-weight:500; color:#1f2329; } .ds-pile-fold { display:flex; flex-direction:column; gap:3px; padding:0 6px; } .ds-pile-fold i { height:7px; border-radius:4px; background:#fff; box-shadow:0 2px 3px -1px rgba(0,0,0,.14), inset 0 .5px 0 rgba(255,255,255,.9); } .ds-pile-fold i:last-child { width:calc(100% - 12px); margin:0 auto; opacity:.8; } .ds-pile-name { text-align:center; padding:10px 4px 0; font-size:12.5px; font-weight:600; color:#1f2329; }"
+    },
+    {
+      "name": "Stamp",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "签名母题：4:5 齿孔邮票，色纸衬线文字票，hover 轻旋。",
+      "html": "<div class='ds-stamp is-type' style='background:#f6e2d5'><i>好</i></div>",
+      "css": ".ds-stamp { --s:9px; --hole:2.4px; position:relative; display:block; width:96px; aspect-ratio:4/5; overflow:hidden; background:#f6e2d5; -webkit-mask:radial-gradient(circle var(--hole), transparent 97%, #000) calc(var(--s)/-2) calc(var(--s)/-2) / var(--s) var(--s), linear-gradient(#000 0 0) center / calc(100% - var(--s)) calc(100% - var(--s)) no-repeat; mask:radial-gradient(circle var(--hole), transparent 97%, #000) calc(var(--s)/-2) calc(var(--s)/-2) / var(--s) var(--s), linear-gradient(#000 0 0) center / calc(100% - var(--s)) calc(100% - var(--s)) no-repeat; filter:drop-shadow(0 1px 1px rgba(0,0,0,.1)); transition:transform .35s cubic-bezier(.2,1.4,.4,1); } .ds-stamp:hover { transform:scale(1.08) rotate(-2deg); } .ds-stamp.is-type { display:flex; align-items:center; justify-content:center; } .ds-stamp.is-type i { font-style:normal; font-family:'Songti SC','Noto Serif SC',Georgia,serif; font-size:30px; color:rgba(0,0,0,.62); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "表单输入：36px 高、.5px 描边，focus 边框转墨黑。",
+      "html": "<input class='ds-input' placeholder='给这堆灵感起个名'>",
+      "css": ".ds-input { height:36px; width:220px; padding:0 11px; border:.5px solid rgba(0,0,0,.14); border-radius:12px; background:#fff; color:#1f2329; font-size:13.5px; outline:0; box-sizing:border-box; } .ds-input:focus { border-color:#1f2329; } .ds-input::placeholder { color:#a9b0b8; }"
+    },
+    {
+      "name": "Dialog",
+      "kind": "custom",
+      "refersTo": "dialog",
+      "description": "28px 圆角纸面对话框，prominent 影，弹性弹入。",
+      "html": "<div class='ds-dialog'><div class='ds-dialog-head'><h2>解散胶囊</h2></div><p style='font-size:13px;color:#4e5560;margin:0 0 16px'>成员会回到灵感流里。</p><div style='display:flex;gap:6px;justify-content:flex-end'><button class='ds-btn-ghost' style='height:28px;padding:0 10px;font-size:12px;border-radius:8px'>取消</button><button class='ds-btn-primary' style='height:28px;padding:0 10px;font-size:12px;border-radius:8px;background:#d13c35'>解散</button></div></div>",
+      "css": "@keyframes ds-pop { from { opacity:0; transform:scale(.94) translateY(10px); } } .ds-dialog { width:320px; padding:18px 20px 20px; border-radius:28px; background:#fff; box-shadow:0 18px 50px -16px rgba(0,0,0,.28); animation:ds-pop .4s cubic-bezier(.2,1.3,.4,1) both; box-sizing:border-box; } .ds-dialog-head h2 { margin:0 0 10px; font-size:17px; line-height:24px; font-weight:500; color:#1f2329; } .ds-btn-primary { display:inline-flex; align-items:center; height:36px; padding:0 14px; border:0; border-radius:12px; background:#17181c; color:#fff; font-size:13px; cursor:pointer; } .ds-btn-ghost { display:inline-flex; align-items:center; height:36px; padding:0 14px; border:.5px solid rgba(0,0,0,.14); border-radius:12px; background:#fff; color:#1f2329; font-size:13px; cursor:pointer; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "书桌上的编辑部",
+    "overview": "整个系统是一张安静的书桌。内容永远放在「纸」上——白底、柔影、小圆角的面板；玻璃只做桌面陈设——顶栏导航、底部 dock、悬浮工具条这些「桌面本身」的物件；文字的仪式感交给衬线体——金句、稿面标题、题词票。它是一份给个人创作者的编辑工具：先收集灵感（邮票、卡堆），再把它们写成一篇图文（稿面），最后排期发布（日历上的小邮票）。密度中等偏高但呼吸从容，动效克制而「活」，明暗主题由宿主切换、颜色全部经语义别名取用。",
+    "keyCharacteristics": [
+      "纸面承载内容，玻璃只做 chrome（桌面陈设）",
+      "衬线双声部：宋体给中文的仪式感，Iowan/Palatino 给数字的编辑味",
+      "状态色是全系统唯一的高饱和色，成稿进度一目了然",
+      "邮票是灵魂母题：齿孔遮罩、4:5 票面、色纸衬线首字",
+      "一切缩略重排字号，绝不整体缩放（No-Scale Rule）"
+    ],
+    "rules": [
+      { "name": "宿主令牌至上", "body": "任何新颜色先问 --dsw-alias-* 有没有对应位；本地常量只允许「状态色、色纸 tone、氛围渐变」三张白名单。", "section": "colors" },
+      { "name": "色纸 Tone Rule", "body": "文字类内容的「底图」从六张色纸里轮转（tone-0..5），同一容器内不重复相邻，替代任何插画装饰。", "section": "colors" },
+      { "name": "衬线只给内容的仪式感", "body": "按钮文案、表单、导航永远无衬线；金句、标题、题字、统计大数才允许衬线。判断标准：这段字是不是「作品的一部分」。", "section": "typography" },
+      { "name": "The No-Scale Rule", "body": "任何缩略场景都按容器宽度重排文字到真实字号（≥11px），禁止 transform: scale 缩小整卡。", "section": "typography" },
+      { "name": "玻璃只做桌面陈设", "body": "backdrop-filter 只允许出现在 chrome 层：顶栏导航、dockbar、工具条。内容面板一律实心纸白——纸不透明。", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 取色先查 --dsw-alias-* 别名；本地常量限于状态色、tone 色纸、氛围渐变三张白名单。",
+      "Do 圆角走 4 / 8 / 12 / 16 / 20 / 28 阶梯（卡堆 18px 是唯一例外），圆形必配 corner-shape: round。",
+      "Do 内容放纸面（--card）、chrome 才许玻璃（blur + saturate + 发丝 inset 边）。",
+      "Do 衬线只给「作品的一部分」：金句、稿面标题、题字、统计大数（衬线拉丁 + tabular-nums）。",
+      "Do 缩略一律按容器重排真实字号（≥11px），媒体用固定高度 + object-fit: cover 裁切。",
+      "Do 交互反馈用位移：hover translateY(-1~-3px)、active scale(.97)、弹层 md-pop 弹性进场。",
+      "Do 状态用 7px 圆点或小徽章表达，且永远是同一组四色。"
+    ],
+    "donts": [
+      "Don't 对内容面板使用毛玻璃或半透明底（glass 只属于顶栏、dock、工具条）。",
+      "Don't 用 transform: scale 缩小含文字的卡片（No-Scale Rule）；也不给格子强行套固定宽高比去裁正文。",
+      "Don't 自造颜色或引入品牌色块；主色就是墨黑。",
+      "Don't 用零偏移彩色光晕、渐变文字、硬投影（4px 4px 0）——柔影必须带 offset 与 blur。",
+      "Don't 引入第三方图标库或位图图标；新图标照 Icon 系统规格画 path。",
+      "Don't 给列表/卡片加 1px 以上彩色 border-left 当强调；强调用状态点、描边或反白。",
+      "Don't 在 mask（齿孔）元素上用 box-shadow——会被遮罩吃掉，改用 filter: drop-shadow。"
+    ]
+  }
+}

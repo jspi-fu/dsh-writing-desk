@@ -1,6 +1,6 @@
 // 通用小组件：图标、按钮、对话框、提示。
 import React from 'react'
-import { setDesk, undo, useDesk } from './desk.js'
+import { closeMenu, openMenu, setDesk, undo, useDesk } from './desk.js'
 import { t } from './i18n.js'
 
 const PATHS = {
@@ -62,8 +62,67 @@ export function IconButton({ icon, label, onClick, active, tone, size = 16, clas
   )
 }
 
-export function Segmented({ value, options, onChange, label }) {
+// 右键菜单:胶囊用它承载「解散」「移出」。坐标相对 .md-root,由 Menu 自己贴边校正。
+export function openMenuAt(event, items) {
+  event.preventDefault()
+  event.stopPropagation()
+  const root = event.currentTarget.closest('.md-root')?.getBoundingClientRect()
+  openMenu({ x: Math.round(event.clientX - (root?.left ?? 0)), y: Math.round(event.clientY - (root?.top ?? 0)) }, items)
+}
+
+export function Menu() {
+  const menu = useDesk(s => s.menu)
+  const ref = React.useRef(null)
+  React.useEffect(() => {
+    if (!menu) return undefined
+    const onPointerDown = event => { if (!ref.current?.contains(event.target)) closeMenu() }
+    const onKey = event => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      closeMenu()
+    }
+    window.addEventListener('pointerdown', onPointerDown, true)
+    window.addEventListener('keydown', onKey, true)
+    window.addEventListener('resize', closeMenu)
+    window.addEventListener('wheel', closeMenu, true)
+    ref.current?.querySelector('button')?.focus()
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown, true)
+      window.removeEventListener('keydown', onKey, true)
+      window.removeEventListener('resize', closeMenu)
+      window.removeEventListener('wheel', closeMenu, true)
+    }
+  }, [menu])
+  React.useLayoutEffect(() => {
+    const el = ref.current
+    if (!el || !menu) return
+    const root = el.closest('.md-root')?.getBoundingClientRect()
+    const maxX = (root?.width ?? window.innerWidth) - el.offsetWidth - 8
+    const maxY = (root?.height ?? window.innerHeight) - el.offsetHeight - 8
+    el.style.left = `${Math.max(8, Math.min(menu.x, maxX))}px`
+    el.style.top = `${Math.max(8, Math.min(menu.y, maxY))}px`
+  }, [menu])
+  if (!menu) return null
   return (
+    <div className="md-menu" role="menu" ref={ref} style={{ left: menu.x, top: menu.y }}>
+      {menu.items.map(item => (
+        <button
+          key={item.label}
+          type="button"
+          role="menuitem"
+          className={item.danger ? 'is-danger' : ''}
+          onClick={() => { closeMenu(); item.onSelect() }}
+        >
+          {item.icon ? <Icon name={item.icon} size={14} /> : null}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+export function Segmented({ value, options, onChange, label }) {  return (
     <div className="md-seg" role="radiogroup" aria-label={label}>
       {options.map(option => (
         <button key={option.value} type="button" role="radio" aria-checked={value === option.value} className={value === option.value ? 'is-on' : ''} onClick={() => onChange(option.value)} title={option.title ?? option.label}>

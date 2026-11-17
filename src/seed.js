@@ -109,6 +109,21 @@ const SKILLS_EN = [
   ['Use readers\' words in the title', 'Lift exact phrases from the comments into the title. They get more clicks than your own summary.', 'Example: needs more data to confirm'],
 ]
 
+/** 胶囊旧数据迁移:去重归属、少于两个成员的胶囊解散;旧版遗留的坐标字段顺手清掉。 */
+function migrateCapsules(state) {
+  const seen = new Set()
+  for (const capsule of [...state.capsules]) {
+    delete capsule.pos
+    capsule.itemIds = capsule.itemIds.filter(id => {
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+    if (capsule.itemIds.length < 2) state.capsules = state.capsules.filter(row => row.id !== capsule.id)
+  }
+  for (const item of state.items) delete item.pos
+}
+
 export function migrateState(state) {
   // 重构前的 state 是另一套字段（cards/boxes/works…），没有 items。
   // 客户端新版全用 items/people/angles/skills/accounts/metrics/styles，把旧对象直接
@@ -121,6 +136,7 @@ export function migrateState(state) {
   if (state.activeStyleId === undefined) state.activeStyleId = null
   // 胶囊是后来才有的实体:旧状态文件补一个空集合,避免读取方对着 undefined
   if (!Array.isArray(state.capsules)) state.capsules = []
+  migrateCapsules(state)
   // 加入英文之前的数据都是中文示例
   if (state.sampleLang === undefined) state.sampleLang = 'zh'
   if (state.sampleLang === 'en') stashChineseLeftovers(state)

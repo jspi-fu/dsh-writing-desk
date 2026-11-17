@@ -12,7 +12,7 @@ Status: accepted（2026-11-16 讨论达成共识；本轮只更新文档，未�
 
 灵感墙、成稿流水线、排期、复盘、风格，以及提示词、生图、状态机、多语言、导出，都是本插件代码（`src/` 约 4000 行 + `client/` 24 个文件）。DSH 核心没有「灵感墙」「生成图文」这类领域服务。
 
-但插件并非与宿主持割裂：`agentDefaultModel.currentSelection()`（`src/ai.js:17`）、`llm.prepareCall/stream`（`src/ai.js:25,40-64`）、`webServer.register`（`src/host.js:369`）、`connection.requestRejection`（`src/host.js:349-352`）、`tools` 执行管线（`src/image-tool.js:16-26,80`）、`slots`/`betterSidebar`（`client/index.jsx:191-234`）、模块加载器与宿主 React（`scripts/build.mjs:17,21`）均来自宿主。单独拎出来跑，只剩领域算法。
+但插件并非与宿主持割裂：`agentDefaultModel.currentSelection()`（`src/ai.js:17`）、`llm.prepareCall/stream`（`src/ai.js:25,40-64`）、`webServer.register`（`src/host.js:369`）、`connection.requestRejection`（`src/host.js:349-352`）、`tools` 执行管线（`src/image-tool.js:16-26,80`）、`slots`/`betterSidebar`（`client/index.jsx`）、模块加载器与宿主 React（`scripts/build.mjs:17,21`）均来自宿主。单独拎出来跑，只剩领域算法。
 
 ### 2. DSH 没有「原生 vs 插件」的能力墙
 
@@ -31,7 +31,7 @@ DSH 架构文档明说没有可 patch 的特权核心，model adapter、tool reg
 
 ### 4. DSH 没有可复用的内置编辑器
 
-存在的是配置编辑器（只改 `cordis.patch.yml`）、聊天输入框草稿（不可复用）、只读 Markdown 预览、agent 命令行式 `str_replace_editor`、`shell.overlay` 浮层容器。本机唯一可交互编辑器是第三方插件 `dsh-better-sidebar` 的 `ctx.betterSidebar`（CodeMirror 6，`src/client/TextEditor.tsx:19-22,386-418`），且是文件制、按 mtime 写回。工作台自己也已经依赖 `betterSidebar` 做侧栏挂载。
+存在的是配置编辑器（只改 `cordis.patch.yml`）、聊天输入框草稿（不可复用）、只读 Markdown 预览、agent 命令行式 `str_replace_editor`、`shell.overlay` 浮层容器。本机唯一可交互编辑器是第三方插件 `dsh-better-sidebar` 的 `ctx.betterSidebar`（CodeMirror 6，`src/client/TextEditor.tsx:19-22,386-418`），且是文件制、按 mtime 写回。工作台只挂 `betterSidebar` 的右侧栏页面，不再向 `slots` 注册左侧栏入口（同一个页面不重复出现在两处）。
 
 ### 5. Wechatsync 只到草稿箱，无可靠程序化回写
 

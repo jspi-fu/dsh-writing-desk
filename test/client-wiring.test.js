@@ -12,7 +12,7 @@ const DIR = new URL('../client/', import.meta.url)
 const WIRED = [
   ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish', 'feedbackSkills'], name => `${name}(`],
   ['./editor.jsx', ['Editor'], name => `<${name}`],
-  ['./capsule.jsx', ['CapsuleCard', 'CapsuleDialog'], name => `<${name}`],
+  ['./capsule.jsx', ['CapsuleCard', 'CapsuleView'], name => `<${name}`],
   ['./produce.jsx', ['ProduceView'], name => `<${name}`],
   ['./retag.jsx', ['RetagDialog'], name => `<${name}`],
 ]

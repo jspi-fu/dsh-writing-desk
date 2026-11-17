@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { relatedIdeas, relatedLayout, terms } from '../client/related.js'
+import { relatedIdeas, terms } from '../client/related.js'
 
 const items = [
   { id: 'a', title: 'Agents vs. chatbots, explained', tags: ['AI'], createdAt: '2026-11-01' },
@@ -23,13 +23,4 @@ test('relatedIdeas：中文按整段和两字片段，成稿标题也算，常�
   assert.deepEqual(relatedIdeas(items, '怎么办'), [])
   assert.ok(terms('AI 产品怎么定价').some(row => row.term === 'ai'))
   assert.ok(!terms('AI 产品怎么定价').some(row => row.term === '怎么'))
-})
-
-test('relatedLayout：左右交替排成列，同一侧不重叠，太高就往外开一列', () => {
-  const cards = Array.from({ length: 6 }, (_, i) => ({ id: `c${i}`, w: 220, h: 300 }))
-  const spots = relatedLayout(cards)
-  assert.ok(spots.c0.x < 0 && spots.c1.x > 0)
-  const left = ['c0', 'c2', 'c4'].map(id => spots[id])
-  for (const a of left) for (const b of left) if (a !== b && a.x === b.x) assert.ok(Math.abs(a.y - b.y) >= 300)
-  assert.ok(new Set(left.map(p => p.x)).size === 2)
 })

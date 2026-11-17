@@ -20,7 +20,7 @@
 
 ## What it is
 
-Writing Desk is a page in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sidebar. It opens on a wall of your ideas, one line each. Open one, click **Draft it**, and you get an article, a headline, a cover image and illustrations. Edit the draft in place and undo any step. Then drag the finished piece onto the calendar, publish it, and come back for the numbers.
+Writing Desk is a page in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) right sidebar. It opens on a wall of your ideas, one line each. Open one, click **Draft it**, and you get an article, a headline, a cover image and illustrations. Edit the draft in place and undo any step. Then drag the finished piece onto the calendar, publish it, and come back for the numbers.
 
 There are five pages: **Ideas · Content · Schedule · Insights · Styles**. The interface is available in English and Chinese. By default it follows the DeepSeek Harness language, and you can lock it to either one in the plugin settings. When the interface is in English, articles and titles are written in English. The web version also works in a phone browser.
 
@@ -44,7 +44,7 @@ The layout appears as soon as you open an idea. The title, cover image, article 
 
 ## The idea wall
 
-**One line, one idea.** Text, links, images, videos and quotes all become cards. Spread them out on an infinite canvas, or switch to a feed sorted by date.
+**One line, one idea.** Text, links, images, videos and quotes all become cards. They line up on the wall by time, and cards on the same thread can fold into a capsule.
 
 **Related ideas come to you.** Type "agent" and press Enter. Your new idea is saved, and every earlier idea that mentions agents moves next to it, sorted by relevance.
 
@@ -107,7 +107,7 @@ dsh plugin --profile web add dsh-writing-desk
 
 **2. Update.** When a new version comes out, the Plugins page shows an update — click it; a command-line install runs the same command again. Writing Desk also checks npm itself (at most once an hour, reading only the version number): when a newer version exists the top bar shows `↑ vX.Y.Z`, Settings shows the version you are on, and the badge opens the npm page with the upgrade command. To install offline, download `dsh-writing-desk-*.tgz` from [Releases](https://github.com/jspi-fu/dsh-writing-desk/releases/latest) and use `"file:$PWD/dsh-writing-desk-VERSION.tgz"` in place of the package name.
 
-**3. Open.** **Writing Desk** appears in the sidebar. On first launch it's filled with sample data so you can explore every page. Click **Clear sample data** in the top right when you're ready to start with your own.
+**3. Open.** **Writing Desk** appears in the right sidebar. On first launch it's filled with sample data so you can explore every page. Click **Clear sample data** in the top right when you're ready to start with your own.
 
 To uninstall, replace `add` with `remove dsh-writing-desk`. Your content stays in `~/.dsh/writing-desk/`.
 

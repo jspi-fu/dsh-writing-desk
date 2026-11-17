@@ -65,13 +65,8 @@ export const STUDIO = {
   '记下一个灵感，或贴一个链接': 'Capture an idea or paste a link',
   '记下': 'Add',
   '写一句话、贴一个链接，或者把图片和视频拖进来。': 'Type a thought, paste a link, or drop in images and videos.',
-  '缩小': 'Zoom out',
-  '回到中心': 'Recenter',
   '放大': 'Zoom in',
   '灵感视图': 'Idea layout',
-  '展示方式': 'Layout',
-  '散落': 'Freeform',
-  '信息流': 'Feed',
   '聚合胶囊': 'Group into capsule',
   '收进胶囊': 'Add to capsule',
 

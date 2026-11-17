@@ -1,4 +1,4 @@
-// 灵感卡片：散落、瀑布流复用同一张卡。
+// 灵感卡片：灵感流与胶囊共用同一张卡。
 import React from 'react'
 import { isDrafted, isScheduled, panelState } from '../src/state.js'
 import { setDesk } from './desk.js'

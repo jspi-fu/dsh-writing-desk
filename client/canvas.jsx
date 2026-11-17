@@ -1,74 +1,19 @@
-// 首页：一句话记一个灵感。灵感可以散落在空间里，也可以按时间排成信息流。
+// 首页：一句话记一个灵感。灵感按时间排成信息流，可以归到胶囊里。
 // 几张卡片拖到一起就收成一个胶囊，标签在底部 dockbar 当选题资料架取用。
 import React from 'react'
 import { Card, openCapture } from './card.jsx'
-import { CapsuleCard } from './capsule.jsx'
+import { CapsuleCard, CapsulePreview, itemMatchesFilters } from './capsule.jsx'
 import { captureFiles, captureUrl, clearSelection, dispatchOps, EMPTY_LIST, getDesk, openCapsule, openItem, openProduce, openRetag, setDesk, toggleSelect, useDesk } from './desk.js'
 import { plural, t } from './i18n.js'
-import { Icon, IconButton, Segmented } from './ui.jsx'
+import { Icon, IconButton } from './ui.jsx'
 import { MiniStamps } from './stamps.jsx'
-import { cardSize, scatterLayout } from './layout.js'
 import { isScheduled, panelState } from '../src/state.js'
-import { relatedIdeas, relatedLayout } from './related.js'
+import { relatedIdeas } from './related.js'
 import { tagShelf } from './tags.js'
-import { SPRING_SOFT, capsuleMembers, computeStreak, displayItem, hash, posterOf, reducedMotion, isIdea } from './util.js'
+import { capsuleMembers, computeStreak, displayItem, posterOf, isIdea } from './util.js'
 
-// 标签过滤的同一个口径:画布散落、信息流和底部 dockbar 三处共用
+// 标签过滤的同一个口径:灵感流、胶囊和底部 dockbar 共用
 const matchesTag = (item, tag) => !tag || (item.tags ?? []).includes(tag)
-
-function useCamera(stageRef, worldRef) {
-  const cam = React.useRef({ x: 0, y: 0, s: 1, vx: 0, vy: 0, vs: 0, tx: 0, ty: 0, ts: 1, raf: 0 })
-  const apply = React.useCallback(() => {
-    const c = cam.current
-    const world = worldRef.current
-    const stage = stageRef.current
-    if (!world || !stage) return
-    world.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) scale(${c.s})`
-    world.style.setProperty('--px', `${c.x / c.s}px`)
-    world.style.setProperty('--py', `${c.y / c.s}px`)
-    stage.style.setProperty('--grid-x', `${c.x}px`)
-    stage.style.setProperty('--grid-y', `${c.y}px`)
-    stage.style.setProperty('--grid-size', `${28 * c.s}px`)
-  }, [stageRef, worldRef])
-  const tick = React.useCallback(() => {
-    const c = cam.current
-    const k = c.stiffness ?? 90
-    const d = c.damping ?? 17
-    const dt = 1 / 60
-    c.vx += (k * (c.tx - c.x) - d * c.vx) * dt
-    c.vy += (k * (c.ty - c.y) - d * c.vy) * dt
-    c.vs += (k * (c.ts - c.s) - d * c.vs) * dt
-    c.x += c.vx * dt
-    c.y += c.vy * dt
-    c.s += c.vs * dt
-    apply()
-    const idle = Math.abs(c.tx - c.x) < 0.2 && Math.abs(c.ty - c.y) < 0.2 && Math.abs(c.ts - c.s) < 0.0005 && Math.abs(c.vx) + Math.abs(c.vy) < 0.5
-    if (idle) {
-      Object.assign(c, { x: c.tx, y: c.ty, s: c.ts, vx: 0, vy: 0, vs: 0, raf: 0 })
-      apply()
-      return
-    }
-    c.raf = requestAnimationFrame(tick)
-  }, [apply])
-  const flyTo = React.useCallback((target, { instant = false, stiffness = 90, damping = 17 } = {}) => {
-    const c = cam.current
-    Object.assign(c, { tx: target.x, ty: target.y, ts: target.s, stiffness, damping })
-    if (instant || reducedMotion()) {
-      cancelAnimationFrame(c.raf)
-      Object.assign(c, { x: c.tx, y: c.ty, s: c.ts, vx: 0, vy: 0, vs: 0, raf: 0 })
-      apply()
-      return
-    }
-    if (!c.raf) c.raf = requestAnimationFrame(tick)
-  }, [apply, tick])
-  const halt = React.useCallback(() => {
-    const c = cam.current
-    cancelAnimationFrame(c.raf)
-    Object.assign(c, { raf: 0, vx: 0, vy: 0, vs: 0, tx: c.x, ty: c.y, ts: c.s })
-  }, [])
-  React.useEffect(() => () => cancelAnimationFrame(cam.current.raf), [])
-  return { cam, flyTo, halt }
-}
 
 function Inline({ src }) {
   if (!src) return <span className="md-inline-pic is-empty" />
@@ -133,360 +78,11 @@ function openCapsuleCard(capsule, event) {
   openCapsule(capsule.id)
 }
 
-function Node({ item, pos, index, entered, onOpen, tone, selected }) {
-  const ref = React.useRef(null)
-  React.useLayoutEffect(() => {
-    if (entered.current.has(item.id)) return
-    entered.current.add(item.id)
-    const el = ref.current?.firstElementChild
-    if (!el || reducedMotion()) return
-    const k = 0.25
-    el.animate([
-      { transform: `translate(${-pos.x * k}px, ${-pos.y * k}px) scale(.8) rotate(${(hash(item.id) % 20) - 10}deg)`, opacity: 0 },
-      { transform: 'none', opacity: 1 },
-    ], { duration: SPRING_SOFT.duration + 200, easing: SPRING_SOFT.easing, delay: Math.min(index * 32, 620), fill: 'backwards' })
-  }, [entered, index, item.id, pos.x, pos.y])
-  const size = cardSize(item)
-  return (
-    <div ref={ref} className={`md-node${tone ? ` is-${tone}` : ''}`} data-node={item.id} style={{ left: pos.x, top: pos.y, width: size.w, '--r': `${pos.r ?? 0}deg`, '--d': pos.d ?? 0 }}>
-      <div className="md-pop"><Card item={item} onOpen={onOpen} selected={selected} /></div>
-    </div>
-  )
-}
-
 function originOf(event) {
   const rect = event.currentTarget.getBoundingClientRect()
   return { x: rect.left, y: rect.top, w: rect.width, h: rect.height }
 }
 
-function Scatter() {
-  const items = useDesk(s => s.state.items)
-  const capsules = useDesk(s => s.state.capsules ?? EMPTY_LIST)
-  const stageRef = React.useRef(null)
-  const worldRef = React.useRef(null)
-  const { cam, flyTo, halt } = useCamera(stageRef, worldRef)
-  const dragPos = React.useRef({})
-  const [, force] = React.useReducer(v => v + 1, 0)
-  const entered = React.useRef(new Set())
-  const suppressClick = React.useRef(false)
-
-  const kind = useDesk(s => s.kindFilter)
-  const tag = useDesk(s => s.tagFilter)
-  const related = useDesk(s => s.related)
-  const selection = useDesk(s => s.selection)
-  const pickedItems = React.useMemo(() => new Set(selection?.items ?? []), [selection])
-  const pickedCapsules = React.useMemo(() => new Set(selection?.capsules ?? []), [selection])
-  const roots = React.useMemo(() => items.filter(isIdea), [items])
-  const shown = React.useMemo(() => roots.filter(i => matchesTag(i, tag) && (kind === 'all' || displayItem(i).kind === kind)), [roots, kind, tag])
-  const rootKey = roots.map(i => `${i.id}:${i.pos ? `${i.pos.x},${i.pos.y}` : ''}:${i.production?.cover?.src ?? ''}`).join('|')
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = React.useMemo(() => scatterLayout(roots), [rootKey])
-
-  const relatedSpots = React.useMemo(() => {
-    if (!related) return {}
-    const byId = new Map(roots.map(i => [i.id, i]))
-    return relatedLayout(related.ids.filter(id => byId.has(id)).map(id => ({ id, ...cardSize(byId.get(id)) })))
-  }, [related, roots])
-
-  const posOf = React.useCallback((item) => {
-    if (dragPos.current[item.id]) return dragPos.current[item.id]
-    if (related) {
-      // 相关的围在中间那句话四周，刚记下的那条放在正上方，不被底部工具条挡住
-      if (item.id === related.newId) return { x: 0, y: -200 - cardSize(item).h / 2, r: 0, d: 0 }
-      const spot = relatedSpots[item.id]
-      if (spot) return { ...spot, r: 0, d: 0 }
-    }
-    if (item.pos) return { d: 0, ...item.pos }
-    return layout[item.id] ?? { x: 0, y: 0, r: 0, d: 0 }
-  }, [layout, related, relatedSpots])
-
-  // 胶囊卡停在成员的质心:成员怎么挪,胶囊就跟着挪,不用再存一份坐标
-  const capsulePos = (capsule) => {
-    const pts = capsuleMembers(capsule, items).map(posOf)
-    if (!pts.length) return { x: 0, y: 0, r: 0, d: 0 }
-    const x = Math.round(pts.reduce((sum, p) => sum + p.x, 0) / pts.length)
-    const y = Math.round(pts.reduce((sum, p) => sum + p.y, 0) / pts.length)
-    return { x, y, r: 0, d: 0 }
-  }
-
-  // 拉出相关卡片后，镜头缩放到能把它们和中间那句话一起装下
-  React.useEffect(() => {
-    if (!related) return
-    const byId = new Map(roots.map(i => [i.id, i]))
-    let half = { x: 300, y: 240 }
-    for (const [id, p] of Object.entries(relatedSpots)) {
-      const size = cardSize(byId.get(id))
-      half = { x: Math.max(half.x, Math.abs(p.x) + size.w / 2), y: Math.max(half.y, Math.abs(p.y) + size.h / 2) }
-    }
-    const fresh = related.newId && byId.get(related.newId)
-    if (fresh) half.y = Math.max(half.y, 200 + cardSize(fresh).h)
-    const home = frameHome()
-    const { w, h } = stageBox()
-    flyTo({ ...home, s: Math.min(home.s, (w - 80) / (half.x * 2), (h - 150) / (half.y * 2)) })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [relatedSpots, related?.newId])
-
-  const toneOf = (item) => {
-    if (!related) return null
-    if (item.id === related.newId || related.ids.includes(item.id)) return 'related'
-    return 'dim'
-  }
-
-  const stageBox = React.useCallback(() => {
-    const el = stageRef.current
-    return el ? { w: el.clientWidth, h: el.clientHeight } : { w: 1000, h: 700 }
-  }, [])
-
-  const frameHome = React.useCallback(() => {
-    const { w, h } = stageBox()
-    return { x: w / 2, y: h / 2 + 8, s: w < 760 ? 0.66 : w < 1040 ? 0.8 : w < 1400 ? 0.92 : 1 }
-  }, [stageBox])
-
-  React.useLayoutEffect(() => {
-    flyTo(frameHome(), { instant: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // 新记下的灵感可能落在屏幕外：相机带过去，让人看到它去了哪里
-  const known = React.useRef(null)
-  React.useEffect(() => {
-    const previous = known.current
-    known.current = new Set(roots.map(i => i.id))
-    if (!previous) return
-    const added = roots.find(i => !previous.has(i.id))
-    if (!added) return
-    if (related && !related.newId) {
-      setDesk({ related: { ...related, newId: added.id } })
-      return
-    }
-    const p = posOf(added)
-    const size = cardSize(added)
-    const { w, h } = stageBox()
-    const c = cam.current
-    const margin = 90
-    const left = c.tx + c.ts * (p.x - size.w / 2)
-    const right = c.tx + c.ts * (p.x + size.w / 2)
-    const top = c.ty + c.ts * (p.y - size.h / 2)
-    const bottom = c.ty + c.ts * (p.y + size.h / 2)
-    const dx = left < margin ? margin - left : right > w - margin ? w - margin - right : 0
-    const dy = top < margin ? margin - top : bottom > h - margin ? h - margin - bottom : 0
-    if (dx || dy) flyTo({ x: c.tx + dx, y: c.ty + dy, s: c.ts })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roots])
-
-  React.useEffect(() => {
-    const el = stageRef.current
-    if (!el) return undefined
-    let last = el.clientWidth
-    const observer = new ResizeObserver(() => {
-      const delta = el.clientWidth - last
-      last = el.clientWidth
-      if (!delta) return
-      const c = cam.current
-      flyTo({ x: c.tx + delta / 2, y: c.ty, s: c.ts }, { stiffness: 140, damping: 24 })
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [cam, flyTo])
-
-  const openCard = React.useCallback((item, event) => {
-    // Shift/Ctrl+点选进多选,凑一批直接成稿(工单 #6);普通点击照常进编辑界面
-    if (event?.shiftKey || event?.ctrlKey || event?.metaKey) return toggleSelect('item', item.id)
-    if (suppressClick.current) return
-    openItem(item.id, originOf(event))
-  }, [])
-
-  const onPointerDown = (event) => {
-    if (event.button !== 0 || event.target.closest('input,textarea,button:not(.md-card),.md-toolrow,.md-ministamps')) return
-    const cardEl = event.target.closest('[data-node]')
-    const startX = event.clientX
-    const startY = event.clientY
-    const c = cam.current
-    let moved = false
-    suppressClick.current = false
-    halt()
-    if (cardEl) {
-      const id = cardEl.dataset.node
-      const origin = posOf(items.find(i => i.id === id))
-      // 拖到别的卡片或胶囊上会收进同一个胶囊:拖动途中盯着指针下面是哪张卡
-      let drop = null
-      const clearDrop = () => {
-        drop?.el.classList.remove('is-drop')
-        drop = null
-      }
-      const onMove = (e) => {
-        const dx = (e.clientX - startX) / c.s
-        const dy = (e.clientY - startY) / c.s
-        if (!moved && Math.hypot(dx, dy) < 4) return
-        if (!moved) {
-          moved = true
-          cardEl.classList.add('is-dragging')
-          // 被拖的卡盖在指针下面,不关掉它的命中就永远探不到想落上去的卡片或胶囊
-          cardEl.style.pointerEvents = 'none'
-          suppressClick.current = true
-        }
-        const next = { x: origin.x + dx, y: origin.y + dy, r: origin.r, d: 0 }
-        dragPos.current[id] = next
-        cardEl.style.left = `${next.x}px`
-        cardEl.style.top = `${next.y}px`
-        const el = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-node], [data-capsule]')
-        const targetEl = el && el.dataset.node !== id ? el : null
-        if (targetEl !== drop?.el) {
-          clearDrop()
-          if (targetEl) {
-            targetEl.classList.add('is-drop')
-            drop = { el: targetEl, kind: targetEl.dataset.capsule ? 'capsule' : 'item', id: targetEl.dataset.capsule || targetEl.dataset.node }
-          }
-        }
-      }
-      const onUp = async () => {
-        window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
-        cardEl.classList.remove('is-dragging')
-        cardEl.style.pointerEvents = ''
-        const target = drop
-        clearDrop()
-        if (!moved) return
-        setTimeout(() => { suppressClick.current = false }, 0)
-        if (target?.kind === 'item') {
-          // 松手收进胶囊:建好立刻打开命名,名可以先不填
-          delete dragPos.current[id]
-          force()
-          const data = await dispatchOps([{ op: 'add_capsule', itemIds: [id, target.id] }], { label: t('聚合胶囊') })
-          if (data?.receipts?.[0]?.target) openCapsule(data.receipts[0].target)
-          return
-        }
-        if (target?.kind === 'capsule') {
-          const capsule = getDesk().state.capsules.find(row => row.id === target.id)
-          if (capsule && !capsule.itemIds.includes(id)) {
-            delete dragPos.current[id]
-            force()
-            await dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: [...capsule.itemIds, id] }], { label: t('收进胶囊') })
-            return
-          }
-        }
-        const next = dragPos.current[id]
-        await dispatchOps([{ op: 'update_item', id, pos: { x: Math.round(next.x), y: Math.round(next.y), r: next.r } }], { undoable: false, silent: true })
-        delete dragPos.current[id]
-        force()
-      }
-      window.addEventListener('pointermove', onMove)
-      window.addEventListener('pointerup', onUp)
-      return
-    }
-    // 点胶囊开对话框,不做画布平移
-    if (event.target.closest('[data-capsule]')) return
-    const baseX = c.x
-    const baseY = c.y
-    let lastX = startX
-    let lastY = startY
-    let lastT = performance.now()
-    let vx = 0
-    let vy = 0
-    stageRef.current.classList.add('is-panning')
-    const onMove = (e) => {
-      if (Math.hypot(e.clientX - startX, e.clientY - startY) > 4) moved = true
-      const now = performance.now()
-      const dt = Math.max(now - lastT, 1)
-      vx = (e.clientX - lastX) / dt
-      vy = (e.clientY - lastY) / dt
-      lastX = e.clientX
-      lastY = e.clientY
-      lastT = now
-      flyTo({ x: baseX + e.clientX - startX, y: baseY + e.clientY - startY, s: c.s }, { instant: true })
-    }
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
-      stageRef.current?.classList.remove('is-panning')
-      if (moved) flyTo({ x: c.x + vx * 180, y: c.y + vy * 180, s: c.s }, { stiffness: 42, damping: 13 })
-    }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
-  }
-
-  const zoomAt = React.useCallback((factor, cx, cy, instant = true) => {
-    const c = cam.current
-    const s = Math.max(0.3, Math.min(2.2, c.ts * factor))
-    const k = s / c.ts
-    flyTo({ x: cx - (cx - c.tx) * k, y: cy - (cy - c.ty) * k, s }, { instant, stiffness: 160, damping: 24 })
-  }, [cam, flyTo])
-
-  React.useEffect(() => {
-    const el = stageRef.current
-    if (!el) return undefined
-    const onWheel = (event) => {
-      event.preventDefault()
-      const rect = el.getBoundingClientRect()
-      if (event.ctrlKey || event.metaKey) {
-        zoomAt(Math.exp(-event.deltaY * 0.01), event.clientX - rect.left, event.clientY - rect.top)
-      } else {
-        const c = cam.current
-        flyTo({ x: c.tx - event.deltaX, y: c.ty - event.deltaY, s: c.ts }, { instant: true })
-      }
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [cam, flyTo, zoomAt])
-
-  // 键盘 Tab 到屏幕外的卡片时，相机跟过去
-  const onFocusIn = (event) => {
-    const node = event.target.closest?.('[data-node]')
-    if (!node || !event.target.matches(':focus-visible')) return
-    const stageRect = stageRef.current.getBoundingClientRect()
-    const rect = node.getBoundingClientRect()
-    const c = cam.current
-    const margin = 72
-    let dx = 0
-    let dy = 0
-    if (rect.left < stageRect.left + margin) dx = stageRect.left + margin - rect.left
-    else if (rect.right > stageRect.right - margin) dx = stageRect.right - margin - rect.right
-    if (rect.top < stageRect.top + margin) dy = stageRect.top + margin - rect.top
-    else if (rect.bottom > stageRect.bottom - margin) dy = stageRect.bottom - margin - rect.bottom
-    if (dx || dy) flyTo({ x: c.tx + dx, y: c.ty + dy, s: c.ts })
-  }
-
-  const center = () => {
-    const { w, h } = stageBox()
-    return [w / 2, h / 2]
-  }
-
-  return (
-    <div
-      className="md-stage"
-      ref={stageRef}
-      onPointerDown={onPointerDown}
-      onFocus={onFocusIn}
-      onKeyDown={(event) => { if (event.key === 'Escape' && related) setDesk({ related: null }) }}
-      onDragOver={e => e.preventDefault()}
-      onDrop={(event) => {
-        event.preventDefault()
-        const files = [...(event.dataTransfer?.files ?? [])]
-        if (files.length) captureFiles(files)
-      }}
-    >
-      <div className="md-world" ref={worldRef}>
-        <div className="md-hero-anchor"><Hero /></div>
-        {shown.map((item, index) => <Node key={item.id} item={item} pos={posOf(item)} index={index} entered={entered} onOpen={openCard} tone={toneOf(item)} selected={pickedItems.has(item.id)} />)}
-        {capsules.map(capsule => {
-          const pos = capsulePos(capsule)
-          return (
-            <div key={capsule.id} className="md-node is-capsule" style={{ left: pos.x, top: pos.y, width: 216, '--r': '0deg', '--d': 0 }}>
-              <div className="md-pop"><CapsuleCard capsule={capsule} items={items} selected={pickedCapsules.has(capsule.id)} onOpen={openCapsuleCard} /></div>
-            </div>
-          )
-        })}
-      </div>
-      <div className="md-toolrow md-toolrow-right" onPointerDown={e => e.stopPropagation()}>
-        <IconButton icon="zoomOut" label={t('缩小')} onClick={() => zoomAt(0.8, ...center(), false)} />
-        <IconButton icon="target" label={t('回到中心')} onClick={() => flyTo(frameHome())} />
-        <IconButton icon="zoomIn" label={t('放大')} onClick={() => zoomAt(1.25, ...center(), false)} />
-      </div>
-    </div>
-  )
-}
-
-/** 信息流：原来的瀑布流卡片，按时间从新到旧排。胶囊排成一条资料架横在最上面。 */
 function Feed() {
   const items = useDesk(s => s.state.items)
   const capsules = useDesk(s => s.state.capsules ?? EMPTY_LIST)
@@ -496,13 +92,34 @@ function Feed() {
   const selection = useDesk(s => s.selection)
   const pickedItems = React.useMemo(() => new Set(selection?.items ?? []), [selection])
   const pickedCapsules = React.useMemo(() => new Set(selection?.capsules ?? []), [selection])
+  const suppressClick = React.useRef(false)
+  const [preview, setPreview] = React.useState(null)
   const openCard = (item, event) => {
+    if (suppressClick.current) return
     if (event?.shiftKey || event?.ctrlKey || event?.metaKey) return toggleSelect('item', item.id)
     openItem(item.id, originOf(event))
   }
+  const openCapsuleCardLocal = (capsule, event) => {
+    if (suppressClick.current) return
+    openCapsuleCard(capsule, event)
+  }
+  const capsuleOf = React.useMemo(() => {
+    const map = new Map()
+    for (const capsule of capsules) for (const id of capsule.itemIds) map.set(id, capsule.id)
+    return map
+  }, [capsules])
+  const filtering = Boolean(tag) || kind !== 'all'
+  const liftedIds = React.useMemo(() => {
+    if (!related) return new Set()
+    return new Set(related.ids.filter(id => capsuleOf.has(id)))
+  }, [related, capsuleOf])
+  const visibleCapsules = capsules.filter(capsule => {
+    const members = capsuleMembers(capsule, items).filter(item => !liftedIds.has(item.id))
+    return members.length && (!filtering || members.some(item => itemMatchesFilters(item, tag, kind)))
+  })
   const rank = id => (related ? related.ids.indexOf(id) : -1)
   const sorted = React.useMemo(() => items
-    .filter(i => isIdea(i) && matchesTag(i, tag) && (kind === 'all' || displayItem(i).kind === kind))
+    .filter(i => isIdea(i) && (!capsuleOf.has(i.id) || liftedIds.has(i.id)) && matchesTag(i, tag) && (kind === 'all' || displayItem(i).kind === kind))
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     // 有相关的灵感时排在最前面，按相关程度
     .sort((a, b) => {
@@ -510,18 +127,163 @@ function Feed() {
       const rb = rank(b.id)
       return (ra < 0 ? 99 : ra) - (rb < 0 ? 99 : rb)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }), [items, kind, tag, related])
+    }), [items, kind, tag, related, capsuleOf, liftedIds])
+
+  // 拖到另一张卡上合成胶囊，拖到胶囊上收进去。
+  const startFeedCardDrag = (event, cellEl, item) => {
+    if (event.button !== 0 || event.target.closest('input,textarea,button')) return
+    const startX = event.clientX
+    const startY = event.clientY
+    const startRect = cellEl.getBoundingClientRect()
+    const grabX = startX - startRect.left
+    const grabY = startY - startRect.top
+    let moved = false
+    let ghost = null
+    let overCapsuleEl = null
+    let overCellEl = null
+    const clearTargets = () => {
+      overCapsuleEl?.classList.remove('is-drop')
+      overCapsuleEl = null
+      overCellEl?.classList.remove('is-capsule-target')
+      overCellEl = null
+      setPreview(null)
+    }
+    const onMove = (e) => {
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return
+      if (!moved) {
+        moved = true
+        suppressClick.current = true
+        cellEl.classList.add('is-feed-dragging')
+        const cardEl = cellEl.querySelector('.md-card')
+        ghost = cardEl?.cloneNode(true) ?? cellEl.cloneNode(true)
+        ghost.className = `${ghost.className} md-feed-drag-ghost`
+        Object.assign(ghost.style, { left: `${e.clientX - grabX}px`, top: `${e.clientY - grabY}px`, width: `${startRect.width}px`, height: `${startRect.height}px` })
+        document.body.appendChild(ghost)
+      }
+      if (ghost) {
+        ghost.style.left = `${e.clientX - grabX}px`
+        ghost.style.top = `${e.clientY - grabY}px`
+      }
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      const capsuleEl = el?.closest('[data-capsule]')
+      const cellTarget = el?.closest('[data-feed-card]')
+      if (capsuleEl !== overCapsuleEl) {
+        overCapsuleEl?.classList.remove('is-drop')
+        overCapsuleEl = capsuleEl
+        overCapsuleEl?.classList.add('is-drop')
+      }
+      const nextCell = cellTarget && cellTarget.dataset.feedCard !== item.id ? cellTarget : null
+      if (nextCell !== overCellEl) {
+        overCellEl?.classList.remove('is-capsule-target')
+        overCellEl = nextCell
+        overCellEl?.classList.add('is-capsule-target')
+        if (overCellEl) {
+          const rect = overCellEl.getBoundingClientRect()
+          setPreview({ x: Math.round(rect.left + rect.width / 2), y: Math.round(rect.top + rect.height / 2) })
+        } else {
+          setPreview(null)
+        }
+      }
+    }
+    const onUp = async (e) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      ghost?.remove()
+      cellEl.classList.remove('is-feed-dragging')
+      const made = overCellEl
+      const toCapsule = overCapsuleEl
+      clearTargets()
+      if (!moved) return
+      setTimeout(() => { suppressClick.current = false }, 0)
+      if (made) {
+        await dispatchOps([{ op: 'add_capsule', itemIds: [item.id, made.dataset.feedCard] }], { label: t('聚合胶囊') })
+        return
+      }
+      if (toCapsule) {
+        const capsule = getDesk().state.capsules.find(row => row.id === toCapsule.dataset.capsule)
+        if (capsule && !capsule.itemIds.includes(item.id)) {
+          await dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: [...capsule.itemIds, item.id] }], { label: t('收进胶囊') })
+        }
+      }
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
+
+  const startFeedThumbDrag = (event, item, capsule) => {
+    if (event.button !== 0 || event.target.closest('button')) return
+    const thumbEl = event.currentTarget
+    const startX = event.clientX
+    const startY = event.clientY
+    const rect = thumbEl.getBoundingClientRect()
+    const grabX = startX - rect.left
+    const grabY = startY - rect.top
+    let moved = false
+    let ghost = null
+    const onMove = (e) => {
+      if (!moved && Math.hypot(e.clientX - startX, e.clientY - startY) < 5) return
+      if (!moved) {
+        moved = true
+        suppressClick.current = true
+        ghost = thumbEl.cloneNode(true)
+        ghost.className = `${ghost.className} md-capsule-drag-ghost`
+        Object.assign(ghost.style, { left: `${e.clientX - grabX}px`, top: `${e.clientY - grabY}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+        document.body.appendChild(ghost)
+        thumbEl.classList.add('is-ghosted')
+      }
+      ghost.style.left = `${e.clientX - grabX}px`
+      ghost.style.top = `${e.clientY - grabY}px`
+    }
+    const onUp = async (e) => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      ghost?.remove()
+      thumbEl.classList.remove('is-ghosted')
+      if (!moved) return
+      setTimeout(() => { suppressClick.current = false }, 0)
+      const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-capsule]')
+      if (target?.dataset.capsule === capsule.id) return
+      const remaining = capsule.itemIds.filter(id => id !== item.id)
+      const ops = []
+      if (target) {
+        const targetCapsule = getDesk().state.capsules.find(row => row.id === target.dataset.capsule)
+        if (targetCapsule) ops.push({ op: 'update_capsule', id: targetCapsule.id, itemIds: [...targetCapsule.itemIds, item.id] })
+      }
+      ops.push({ op: 'update_capsule', id: capsule.id, itemIds: remaining })
+      await dispatchOps(ops, { label: t('移出胶囊') })
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
   return (
     <div className="md-wall-scroll">
       <div className="md-feed-hero"><Hero /></div>
-      {capsules.length ? (
+      {preview ? <CapsulePreview preview={preview} fixed /> : null}
+      {visibleCapsules.length ? (
         <div className="md-capsule-strip">
-          {capsules.map(capsule => <CapsuleCard key={capsule.id} capsule={capsule} items={items} selected={pickedCapsules.has(capsule.id)} onOpen={openCapsuleCard} />)}
+          {visibleCapsules.map(capsule => (
+            <CapsuleCard
+              key={capsule.id}
+              capsule={capsule}
+              items={items}
+              selected={pickedCapsules.has(capsule.id)}
+              onOpen={openCapsuleCardLocal}
+              onItemPointerDown={startFeedThumbDrag}
+              filter={filtering ? item => itemMatchesFilters(item, tag, kind) : null}
+              hiddenIds={liftedIds.size ? liftedIds : null}
+            />
+          ))}
         </div>
       ) : null}
       <div className="md-wall">
         {sorted.map((item, index) => (
-          <div key={item.id} className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`} style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}>
+          <div
+            key={item.id}
+            className={`md-wall-cell${rank(item.id) >= 0 ? ' is-related' : ''}`}
+            data-feed-card={item.id}
+            style={{ animationDelay: `${Math.min(index * 22, 400)}ms` }}
+            onPointerDown={event => startFeedCardDrag(event, event.currentTarget, item)}
+          >
             <Card item={item} onOpen={openCard} selected={pickedItems.has(item.id)} />
           </div>
         ))}
@@ -535,18 +297,17 @@ const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '�
 const KIND_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'image', label: '图片' }, { value: 'video', label: '视频' }, { value: 'web', label: '网页' }, { value: 'quote', label: '金句' }, { value: 'note', label: '笔记' }]
 
 export function HomeView() {
-  const mode = useDesk(s => s.mode)
   const kind = useDesk(s => s.kindFilter)
   const tag = useDesk(s => s.tagFilter)
   const items = useDesk(s => s.state.items)
   const selection = useDesk(s => s.selection)
   const picked = (selection?.items.length ?? 0) + (selection?.capsules.length ?? 0)
-  // 标签就是选题资料架:挑一个标签,画布上只留这批灵感,还能顺手给它们批量改标签、一起成稿
+  // 标签就是选题资料架:挑一个标签,灵感流里只留这批灵感,还能顺手给它们批量改标签、一起成稿
   const shelf = React.useMemo(() => tagShelf(items).slice(0, 9), [items])
   const tagged = React.useMemo(() => items.filter(i => tag && matchesTag(i, tag)).map(i => i.id), [items, tag])
   return (
     <div className="md-home">
-      {mode === 'feed' ? <Feed /> : <Scatter />}
+      <Feed />
       {picked ? (
         // 多选后的浮动工具条:四种成稿输入里的「多灵感 / 多胶囊」从这里进统一成稿入口
         <div className="md-selectbar" role="toolbar" aria-label={t('已选灵感')}>
@@ -556,13 +317,6 @@ export function HomeView() {
         </div>
       ) : null}
       <div className="md-dockbar" role="toolbar" aria-label={t('灵感视图')}>
-        <Segmented
-          label={t('展示方式')}
-          value={mode}
-          onChange={value => setDesk({ mode: value })}
-          options={[{ value: 'scatter', icon: 'scatter', title: t('散落') }, { value: 'feed', icon: 'wall', title: t('信息流') }]}
-        />
-        <span className="md-dockbar-sep" />
         <div className="md-chips">
           {KIND_OPTIONS.map(option => (
             <button type="button" key={option.value} className={kind === option.value ? 'is-on' : ''} onClick={() => setDesk({ kindFilter: option.value })}>{t(option.label)}</button>

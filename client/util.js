@@ -33,16 +33,6 @@ export function hash(text) {
   return h >>> 0
 }
 
-export function seeded(seed) {
-  let s = seed || 1
-  return () => {
-    s = Math.imul(s ^ (s >>> 15), 2246822507)
-    s = Math.imul(s ^ (s >>> 13), 3266489909)
-    s ^= s >>> 16
-    return (s >>> 0) / 4294967296
-  }
-}
-
 export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** 把弹簧响应采样成 CSS linear() 缓动，WAAPI 和 CSS 都能用。 */

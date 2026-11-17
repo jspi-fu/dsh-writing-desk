@@ -1,7 +1,7 @@
 // dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
-import { CapsuleDialog } from './capsule.jsx'
+import { CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
 import { Editor } from './editor.jsx'
@@ -12,9 +12,9 @@ import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
 import { ProduceView } from './produce.jsx'
 import css from './styles.css'
-import { lang, subscribeLang, t, useLang } from './i18n.js'
+import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
-import { Dialog, FormDialog, Icon, IconButton, Toast } from './ui.jsx'
+import { Dialog, FormDialog, Icon, IconButton, Menu, Toast } from './ui.jsx'
 
 const PANEL_ID = 'writing-desk'
 
@@ -232,9 +232,10 @@ function Desk() {
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
-      {ready ? <CapsuleDialog /> : null}
+      {ready ? <CapsuleView /> : null}
       {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
+      <Menu />
       <Toast />
     </div>
   )
@@ -248,28 +249,12 @@ export const inject = ['slots']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
-  // 侧栏的名字只在注册时读一次，换语言时重新注册
-  ctx.effect(() => {
-    let release = null
-    const mount = () => {
-      release?.()
-      release = ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
-        name: 'sidebar.panellist',
-        id: PANEL_ID,
-        order: 5,
-        label: () => t('图文创作台'),
-      }, PanelIcon))
-    }
-    mount()
-    const off = subscribeLang(mount)
-    return () => { off(); release?.() }
-  }, 'dsh-writing-desk: sidebar entry')
   mountBetterSidebar(ctx)
 }
 
 /**
- * 装了 dsh-better-sidebar 就再挂一个右侧栏的页面（#10）：左侧栏被别的插件整个接管时，
- * 这是唯一还点得到的入口。没装就什么都不做——它是软依赖，不进顶层的 inject。
+ * 入口只挂在右侧栏（dsh-better-sidebar 的页面槽位）：左侧栏不再注册，避免同一个工作台
+ * 在两处重复出现。没装 better-sidebar 就什么都不做——它是软依赖，不进顶层的 inject。
  */
 function mountBetterSidebar(ctx) {
   const register = inner => {

@@ -8,8 +8,8 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', mode: 'scatter', focusId: null, sheetOrigin: null, produceId: null, produceSources: null, query: '', kindFilter: 'all', related: null,
-  capsuleId: null, retag: null, tagFilter: null, selection: null,
+  view: 'home', focusId: null, sheetOrigin: null, produceId: null, produceSources: null, query: '', kindFilter: 'all', related: null,
+  capsuleId: null, retag: null, tagFilter: null, selection: null, menu: null,
   live: {}, settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
 }
 // getSnapshot 稳定性:useDesk 选择器缺字段时回落到这同一个数组引用,
@@ -105,6 +105,15 @@ export function openCapsule(id) {
 
 export function closeCapsule() {
   setDesk({ capsuleId: null })
+}
+
+// 右键菜单:一个全局实例,坐标相对 .md-root,避免被画布/浮层的容器裁掉
+export function openMenu(at, items) {
+  setDesk({ menu: { x: at.x, y: at.y, items } })
+}
+
+export function closeMenu() {
+  setDesk({ menu: null })
 }
 
 // 批量改标签:先 diff 预览再应用,版本冲突时 Host 拒绝

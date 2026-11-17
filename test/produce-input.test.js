@@ -24,7 +24,7 @@ test('四种成稿输入归一为同一种 {sourceIds, targetId}', () => {
   const state = seed()
   applyOps(state, [
     { op: 'add_capsule', name: '甲', itemIds: ['seed_1', 'seed_2'] },
-    { op: 'add_capsule', name: '乙', itemIds: ['seed_3'] },
+    { op: 'add_capsule', name: '乙', itemIds: ['seed_3', 'seed_4'] },
   ])
   const capA = state.capsules.find(row => row.name === '甲')
   const capB = state.capsules.find(row => row.name === '乙')
@@ -37,7 +37,7 @@ test('四种成稿输入归一为同一种 {sourceIds, targetId}', () => {
   assert.deepEqual(resolveProduceInput(state, { itemIds: ['seed_1', 'seed_2'] }), { sourceIds: ['seed_1', 'seed_2'], targetId: 'seed_1' })
   // 单胶囊 / 多胶囊:解析成员,同一种输入
   assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capA.id] }), { sourceIds: ['seed_1', 'seed_2'], targetId: 'seed_1' })
-  assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capB.id, capA.id] }), { sourceIds: ['seed_3', 'seed_1', 'seed_2'], targetId: 'seed_3' })
+  assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capB.id, capA.id] }), { sourceIds: ['seed_3', 'seed_4', 'seed_1', 'seed_2'], targetId: 'seed_3' })
 })
 
 test('去重并保持给定顺序', () => {
@@ -54,13 +54,13 @@ test('去重并保持给定顺序', () => {
 
 test('已删除的灵感被过滤;全部失效时报 400', () => {
   const state = seed()
-  applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2'] }])
+  applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2', 'seed_3'] }])
   const [capsule] = state.capsules
   applyOps(state, [{ op: 'delete_item', id: 'seed_1' }])
   // 灵感 ID 失效:直接滤掉
   assert.deepEqual(resolveProduceInput(state, { itemIds: ['seed_1', 'seed_2'] }).sourceIds, ['seed_2'])
   // 胶囊成员失效:只留活着的成员
-  assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capsule.id] }).sourceIds, ['seed_2'])
+  assert.deepEqual(resolveProduceInput(state, { capsuleIds: [capsule.id] }).sourceIds, ['seed_2', 'seed_3'])
   // 一个能用的都没有:成稿无从谈起
   const err = (() => { try { resolveProduceInput(state, { itemIds: ['seed_1'] }); return null } catch (error) { return error } })()
   assert.ok(err)
