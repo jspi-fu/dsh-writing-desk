@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, writePublishTask } from './bridge.js'
+import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, writeCatalog, writePublishTask } from './bridge.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { exportForCli } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
@@ -212,6 +212,8 @@ function digestBridge(store) {
     try {
       await digestInbox(store, store.filesDir)
       await digestReceipts(store)
+      // 另一宿主进程改了 state 也不会通知这里,3 秒轮询顺手把 catalog 对齐
+      await writeCatalog(store)
     } catch { /* 投递箱损坏不应打断页面路由,下轮再试 */ }
   })().finally(() => { digesting = null })
   return digesting
@@ -242,7 +244,7 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state, canUndo: store.undo.length > 0 })
     }
     if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read()), defaultExportDir: defaultExportDir() })
-    // 设置页的桥接区块(ADR 0009):连接信息由 wdesk serve 写进 auth.json,这里只读。
+    // 设置页的桥接区块(ADR 0009):连接信息由 dswritesync serve 写进 auth.json,这里只读。
     if (path === 'bridge/status') return json(res, 200, await bridgeStatus())
     // 设置页的迁移入口:只读概览,不落库。迁移本身走下面的 POST migrate。
     if (path === 'migrate/preview') {
@@ -283,6 +285,7 @@ async function route(ctx, store, desk, req, res) {
     }
     case 'undo': {
       const label = await store.undoLast()
+      await writeCatalog(store).catch(() => {})
       return json(res, 200, { label, state: await store.read(), canUndo: store.undo.length > 0 })
     }
     case 'production/save': {
@@ -350,7 +353,11 @@ async function route(ctx, store, desk, req, res) {
       const state = await store.read()
       const item = state.items.find(row => row.id === body.id)
       if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以导出的成稿') })
-      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const exported = await exportForCli(item.production, {
+        filesDir: store.filesDir,
+        exportDir: resolveExportDir(settings.exportDir),
+        platforms: (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p)),
+      })
       const next = await store.mutate(tr('导出发布包'), (draft) => {
         const target = draft.items.find(row => row.id === body.id)
         if (target?.production) target.production.cliPath = exported.dir
@@ -358,7 +365,7 @@ async function route(ctx, store, desk, req, res) {
       }, { undoable: false })
       return json(res, 200, { ...exported, state: next })
     }
-    // 一键投递(ADR 0009):发布包导出后把任务写进 outbox,wdesk 桥监听下发给浏览器扩展。
+    // 一键投递(ADR 0009):发布包导出后把任务写进 outbox,dswritesync 桥监听下发给浏览器扩展。
     // 平台只放行桥适配器清单里的;投递本身不改状态,回执经 digestReceipts 落 dispatches。
     case 'production/dispatch': {
       const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p))
@@ -367,7 +374,7 @@ async function route(ctx, store, desk, req, res) {
       const state = await store.read()
       const item = state.items.find(row => row.id === body.id)
       if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以发布的成稿') })
-      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir), platforms })
       const articleMd = await readFile(exported.articlePath, 'utf8')
       // 任务里的图片键与正文里的相对引用一致(images/xxx),桥读文件转 data URI 后才下发扩展
       const images = Object.fromEntries(exported.imageFiles.map(ref => [ref, join(exported.dir, ref)]))
@@ -404,6 +411,13 @@ export default {
     const store = new Store()
     const settings = new Settings(store.root)
     const desk = { settings, versionCheck: createVersionCheck(), store }
+    // catalog 与 state 同源:每次写状态落盘后刷一次再回响应;结构未变时 writeCatalog 自行跳过。
+    const mutateState = store.mutate.bind(store)
+    store.mutate = async (...args) => {
+      const result = await mutateState(...args)
+      await writeCatalog(store).catch(() => {})
+      return result
+    }
     // 创作模式(ADR 0006):preset-writing 的子插件(工具与 skill)经这个服务拿到
     // 与页面路由同一份 Store 和 Settings,写回同一个 reducer。假 ctx(测试)没有
     // provide,跳过即可;真实宿主的 ctx 一定有。

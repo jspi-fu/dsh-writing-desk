@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { test } from 'node:test'
-import { EVENTS, isDrafted, isScheduled, panelState, reduce } from '../src/state.js'
+import { EVENTS, awaitingSchedule, capsuleDrafted, isDrafted, isScheduled, panelState, reduce } from '../src/state.js'
 import { migrateState } from '../src/seed.js'
 
 const NOW = '2026-11-17T10:00:00.000Z'
@@ -268,4 +268,21 @@ test('一条灵感从会话写回到发布的整个生命周期,每个节点面�
   run(entry, { type: 'publish' })
   assert.equal(panelState(entry), 'published')
   assert.equal(entry.publishedAt, NOW)
+})
+
+test('待排期口径:没挂生产、没排期、没发布才算还在托盘里', () => {
+  assert.equal(awaitingSchedule(item()), true)
+  assert.equal(awaitingSchedule(item({ scheduledAt: '2026-12-01T10:00:00.000Z' })), false)
+  assert.equal(awaitingSchedule(item({ parentId: 'piece_1' })), false)
+  assert.equal(awaitingSchedule(item({ status: 'published' })), false)
+  // 已成稿但还没排期的稿子仍然在托盘里等排期
+  assert.equal(awaitingSchedule(item({ production: { article: '正文' } })), true)
+})
+
+// 胶囊是一张卡:成稿产物只落在它的一个成员上,所以任一成员成稿就算整张胶囊成稿
+test('胶囊成稿按整张卡算:一个成员写成稿,整张胶囊就是已成稿', () => {
+  const drafted = item({ production: { article: '正文' } })
+  const idea = item({ id: 'it_2' })
+  assert.equal(capsuleDrafted([idea, drafted]), true)
+  assert.equal(capsuleDrafted([idea, item({ id: 'it_3' })]), false)
 })

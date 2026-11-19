@@ -88,22 +88,23 @@ export function SettingsDialog() {
           )}
         </div>
         <div className="md-field">
-          <span>{t('浏览器扩展(网页收发)')}</span>
-          <p className="md-migrate-hint">{t('装上「图文创作台 · 网页收发」扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金的草稿箱。')}</p>
+          <span>{t('DSwritesync 浏览器扩展')}</span>
+          <p className="md-migrate-hint">{t('装上「DSwritesync」浏览器扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金等 19 个内容平台的草稿箱。')}</p>
           {bridge === null ? null : bridge.configured ? (
             <div className="md-migrate">
               <div className="md-bridge-row">
                 <code className="md-bridge-token">{bridge.token.slice(0, 4)}…{bridge.token.slice(-4)}</code>
                 <button type="button" className="md-btn is-small" onClick={copyToken}>{t('复制 Token')}</button>
               </div>
+              <div className="md-migrate-hint">{t('服务地址 ws://127.0.0.1:{port}', { port: bridge.port ?? 9527 })}</div>
               <div className="md-migrate-hint">
                 {bridge.pending.inbox + bridge.pending.outbox + bridge.pending.receipts
                   ? t('投递箱里还有 {n} 件没消化,起一次桥或等宿主下一轮处理', { n: bridge.pending.inbox + bridge.pending.outbox + bridge.pending.receipts })
-                  : t('桥已配置。终端跑 wdesk serve 起桥,扩展即连。')}
+                  : t('桥已配置。终端跑 dswritesync serve 起桥,扩展即连。')}
               </div>
             </div>
           ) : (
-            <p className="md-migrate-hint">{t('还没配过桥:终端跑一次 wdesk serve,Token 会生成在这里,粘进扩展设置即连。')}</p>
+            <p className="md-migrate-hint">{t('还没配过桥:终端跑一次 dswritesync serve(端口 9527),Token 会生成在这里,粘进扩展设置即连。')}</p>
           )}
         </div>
         <div className="md-version">

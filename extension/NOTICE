@@ -1,25 +1,66 @@
-图文创作台 · 网页收发 (browser extension)
-Copyright (c) dsh-writing-desk contributors — MIT License
+DSwritesync — vendored Wechatsync fork
+Copyright (c) 2026 dsh-writing-desk contributors
 
-This extension includes third-party software:
+This directory contains a modified copy of Wechatsync v2 (version 2.0.10,
+commit 1230678434e180697e288106d9a9a4e11d84a028) as the build base for
+DSwritesync. See UPSTREAM.md for the exact upstream baseline.
 
-------------------------------------------------------------------------
-@mozilla/readability  (https://github.com/mozilla/readability)
-Licensed under the Apache License, Version 2.0.
-Copyright 2010-2020 Mozilla Foundation
-https://www.apache.org/licenses/LICENSE-2.0
-Bundled into page-capture.js at build time.
+Upstream project: https://github.com/wechatsync/Wechatsync
+Upstream copyright: Copyright (c) Wechatsync contributors
+Upstream license: GNU General Public License, version 3 (GPL-3.0).
+The full license text is in LICENSE.
 
-marked  (https://github.com/markedjs/marked)
-Licensed under the MIT License.
-Copyright (c) 2011-2025 Christopher Jeffrey and contributors
-Bundled into background.js at build time.
+DSwritesync modifications (since the vendored baseline):
+- Root package.json build scripts adapted from yarn to pnpm and a
+  packageManager field added.
+- DSwritesync branding: manifest/UI/binary names, project icon, and removal
+  of upstream telemetry, remote config, version checks and promotional
+  banners.
+- Browser side panel shell with Capture / Sync / Accounts / History tabs;
+  the capture UI is an independent implementation inspired by StashDock's
+  interaction and visuals (no StashDock code copied).
+- Desk protocol and CLI `serve`: an authenticated local bridge, workbench
+  mailbox adapter, capture catalog and conflict replacement; the CLI keeps
+  the upstream command surface and adds the `dswritesync` binary.
+- Chinese/English UI and CLI localization.
+- Removed the in-extension editor; kept platform adapters, CMS, sync dialog,
+  page-level FAB and the WeChat sync overlays.
 
-------------------------------------------------------------------------
-Design provenance: the capture side panel's interaction model (dirty guard,
-conflict dialog, truncation notice) and the publish adapter architecture
-(draft-only, image re-upload pipeline, WebSocket bridge) reference the publicly
-documented behaviour of StashDock (AGPL-3.0) and Wechatsync (GPL-3.0) as
-factual/interaction study; no source code was copied from either project.
-Endpoint facts for platform adapters are documented in
-docs/research/wechatsync.md with file:line references.
+All of these modifications are released under GPL-3.0 as part of this
+directory.
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, either version 3 of the License, or (at your option)
+any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
+more details.
+
+Corresponding source: the complete source for the distributed extension is
+the contents of this extension/ directory. If you distribute a built build,
+you must accompany it with this source or a written offer to provide it,
+as required by GPL-3.0 section 6.
+
+Third-party components:
+- The vendored packages declare their own third-party dependencies in their
+  package.json files; those components retain their respective licenses.
+- packages/extension/public/lib/Readability.js:
+  Copyright (c) 2010 Arc90 Inc; licensed under Apache License 2.0.
+- packages/extension/public/lib/reader.js and
+  packages/extension/src/lib/reader/reader.js:
+  Copyright (c) 2023 Apple Inc. All rights reserved; portions
+  Copyright (c) 2009 Arc90 Inc.
+
+Design provenance:
+- StashDock (AGPL-3.0) was studied only as a visual and interaction
+  reference. No StashDock source code is copied into this directory. The
+  DSwritesync capture UI will be an independent implementation.
+- Platform endpoint facts and adapter behaviour are derived from the
+  vendored Wechatsync source under GPL-3.0, not from StashDock.
+
+The rest of the dsh-writing-desk repository remains under the MIT license;
+the GPL-3.0 obligations above apply only to this extension/ directory and
+its build artifacts.

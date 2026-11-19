@@ -1,4 +1,4 @@
-// 发布交接(工单 #9、ADR 0009):把成稿导出成 wdesk CLI 能直接消费的 article.md + images/ 文件夹。
+// 发布交接(工单 #9、ADR 0009):把成稿导出成 dswritesync CLI 能直接消费的 article.md + images/ 文件夹。
 // 发布发生在浏览器扩展里、只到草稿箱,所以这里只产出文件与命令字符串:不调用平台 API、
 // 不解析 CLI 输出,是否已发布由用户确认(见 ops.js 的 publish_item)。
 // 一键投递走 production/dispatch 路由(经本地桥下发扩展),这条命令字符串是没起桥时的兜底。
@@ -11,10 +11,10 @@ import { articleWithFigures, copyAssetFile, freeFolder } from './export.js'
 /**
  * 导出发布包:成稿正文写成 article.md,封面与配图落进 images/,引用用相对路径。
  * @param {object} production - 成稿。
- * @param {{filesDir: string, exportDir: string}} options - 素材目录与导出根目录。
+ * @param {{filesDir: string, exportDir: string, platforms?: string[]}} options - 素材目录、导出根目录与目标平台。
  * @returns {Promise<{dir: string, articlePath: string, imageFiles: string[], command: string}>}
  */
-export async function exportForCli(production, { filesDir, exportDir }) {
+export async function exportForCli(production, { filesDir, exportDir, platforms }) {
   // 同一条成稿重复导出写回同一个文件夹(cliPath 由路由记在 production 上),不另开新目录
   const target = production.cliPath || freeFolder(join(exportDir, byLang('发布', 'publish')), production.title)
   await mkdir(join(target, 'images'), { recursive: true })
@@ -37,12 +37,16 @@ export async function exportForCli(production, { filesDir, exportDir }) {
   const articlePath = join(target, 'article.md')
   await writeFile(articlePath, articleWithFigures(production, figures))
 
-  // 可复制的同步命令:拼法与 wdesk sync 的参数面一致(sync <file> / --title / --cover / --dry-run)。
+  // 可复制的同步命令:拼法与 dswritesync sync 的参数面一致(sync <file> -p / --title / --cover / --dry-run)。
   // 参数统一套双引号并清掉标题里的引号,粘贴到 cmd / PowerShell / Git Bash 都能跑。
   const quote = value => `"${String(value).replace(/"/g, '')}"`
   const cover = figures[0].ref ? join(target, figures[0].ref) : null
+  const picks = (Array.isArray(platforms) ? platforms : []).filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
+  // 上游 sync 的 -p 默认 zhihu,juejin;没有平台选择时沿用它,保证命令可直接跑
+  const platformArg = (picks.length ? picks : ['zhihu', 'juejin']).join(',')
   const command = [
-    'wdesk', 'sync', quote(articlePath),
+    'dswritesync', 'sync', quote(articlePath),
+    `-p ${platformArg}`,
     production.title ? `--title ${quote(production.title)}` : null,
     cover ? `--cover ${quote(cover)}` : null,
   ].filter(Boolean).join(' ')

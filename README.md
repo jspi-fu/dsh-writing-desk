@@ -129,9 +129,11 @@ dsh plugin --profile web add dsh-writing-desk
 <summary><b>能直接发布吗？</b></summary>
 <br>
 
-能发到<b>草稿箱</b>。装上<a href="extension/">「图文创作台 · 网页收发」浏览器扩展</a>并在终端跑 <code>wdesk serve</code> 后，校样浮层里可以一键把成稿投递到公众号、知乎、掘金的草稿箱（用你自己的登录态、走平台官方 Web 接口，正文与图片由扩展转存）。各平台没有统一的正式发布接口，草稿到你确认后才算发布；小红书适配器立项二期。
+能发到<b>草稿箱</b>。装上 <a href="extension/">DSwritesync</a> 并在终端跑 <code>dswritesync serve</code> 后，工作台设置页会显示桥接 Token；把它粘进扩展设置，校样浮层就能一键把成稿投递到 20 个平台的草稿箱（公众号、知乎、掘金、微博、B 站、豆瓣、百家号、搜狐号、CSDN、思否、语雀、雪球、人人都是产品经理、51CTO、慕课手记、开源中国、博客园、东方财富、阿里云开发者社区、小红书；多数平台用你自己的登录态走官方 Web 接口，小红书走页面自动化，正文与图片由扩展转存）。各平台没有统一的正式发布接口，草稿到你确认后才算发布；小红书只保存到浏览器本地草稿箱，扩展不会点发布。
 
-没有浏览器扩展时，照旧复制正文或保存文件夹：默认在 `~/Documents/图文创作台/`，里面有图文正文、封面首图和配图，也保留可直接粘贴的 `wdesk sync` 命令。
+DSwritesync 侧栏还有「收进」（整页或选区一键收进灵感墙）与「同步」（把当前页文章送到所选平台草稿箱）；两者共用同一个设置页。
+
+没有浏览器扩展时，照旧复制正文或保存文件夹：默认在 `~/Documents/图文创作台/`，里面有图文正文、封面首图和配图，也保留可直接粘贴的 `dswritesync sync` 命令。
 
 </details>
 
@@ -175,6 +177,8 @@ dsh plugin --profile web add dsh-writing-desk
 npm install && npm test        # Host 逻辑测试
 npm run watch                  # 监听 client/ 并重新打包
 npm run index                  # 发布后更新 index.json 的版本和发布时间
+cd extension && pnpm install && pnpm build:extension  # 构建 DSwritesync 扩展
+pnpm --filter @wechatsync/cli build                   # 构建 dswritesync CLI
 scripts/dev-sandbox.sh         # 在隔离的 DSH_HOME 里跑网页版，不碰 ~/.dsh
 npm pack                       # 打出可安装的 tgz
 ```
@@ -185,12 +189,11 @@ npm pack                       # 打出可安装的 tgz
 | --- | --- |
 | `client/` | 界面：灵感墙、内容、排期、风格、校样浮层、素材接驳条 |
 | `src/` | Host 接口、状态机、harness 工具与 skill、本地存储、桥接投递箱 |
-| `extension/` | 浏览器扩展「网页收发」：网页采集进灵感墙、成稿投递到平台草稿箱（见 [extension/](extension/)） |
-| `cli/` | `wdesk` 本地桥与命令行：发布任务下发、采集投递、sync/platforms/extract（见 [cli/](cli/)） |
+| `extension/` | DSwritesync：Wechatsync 2.0.10 的 GPL-3.0 vendored fork + StashDock 式收进侧栏；扩展在 `extension/packages/extension`，CLI 在 `extension/packages/cli`（bin `dswritesync`） |
 | `scripts/` | 打包、沙盒、示例素材生成、插件市场索引 |
 | `assets/` | 示例图片和视频，全部由 `scripts/gen-assets.py` 程序绘制 |
 
-扩展与 CLI 不进 npm 插件包；`npm pack` 的产物只含插件本体。桥接架构见 [ADR 0009](docs/adr/0009-bridge-extension.md)，参考项目的研究笔记在 [docs/research/](docs/research/)。
+扩展与 CLI 不进 npm 插件包；`npm pack` 的产物只含插件本体。桥接架构见 [ADR 0010](docs/adr/0010-dswritesync-wechatsync-fork.md)（取代 ADR 0009 的实现路径），参考项目的研究笔记在 [docs/research/](docs/research/)。`extension/` 按 GPL-3.0 发布，仓库其余部分仍 MIT。
 
 改了 `src/` 要重启 DeepSeek Harness。
 

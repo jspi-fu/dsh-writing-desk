@@ -12,6 +12,7 @@ import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { SettingsDialog } from './settings.jsx'
 import { setSessionWorkspace } from './session-link.js'
+import { attachTakeIn } from './take-in.js'
 import css from './styles.css'
 import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
@@ -37,8 +38,6 @@ const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, st
  * 编辑态没有页签,按这条灵感自己的类型铺同一组字段;没有星标、没有「去创作」。
  */
 const TAG_LIMIT = 12
-const FILE_LIMIT = 10
-const FILE_TOTAL = 10 * 1024 * 1024
 
 /** 标签 chip 输入:回车/逗号入队,退格删最后一个,已有标签按使用次数给建议。 */
 function TagField({ value, onChange, suggestions }) {
@@ -125,6 +124,7 @@ function CaptureDialog() {
   const [tags, setTags] = React.useState([])
   const [rows, setRows] = React.useState([])
   const [busy, setBusy] = React.useState(false)
+  const [fileOver, setFileOver] = React.useState(false)
   const [peek, setPeek] = React.useState(null)
   const [peeking, setPeeking] = React.useState(false)
   const [conflict, setConflict] = React.useState(null)
@@ -200,17 +200,20 @@ function CaptureDialog() {
       report(err)
     }
   }
+  // 文件页签不限个数与合计体积(单个上限由宿主给)；选择器和拖进来走同一条路
+  const pushFiles = (picked) => {
+    if (!picked.length) return
+    setRows(list => [...list, ...picked.map((file, index) => ({ key: `${file.name}:${file.size}:${list.length + index}`, file, title: cleanFileName(file.name), body: '' }))])
+  }
   const takeFiles = (event) => {
     const picked = [...(event.target.files ?? [])]
     event.target.value = ''
-    if (!picked.length) return
-    const next = [...rows]
-    for (const file of picked) {
-      if (next.length >= FILE_LIMIT) { toast(t('一次最多 {n} 个文件', { n: FILE_LIMIT }), { error: true }); break }
-      if (next.reduce((sum, row) => sum + row.file.size, 0) + file.size > FILE_TOTAL) { toast(t('文件合计不能超过 10MB'), { error: true }); break }
-      next.push({ key: `${file.name}:${file.size}:${next.length}`, file, title: cleanFileName(file.name), body: '' })
-    }
-    setRows(next)
+    pushFiles(picked)
+  }
+  const takeFileDrop = (event) => {
+    event.preventDefault()
+    setFileOver(false)
+    pushFiles([...(event.dataTransfer?.files ?? [])])
   }
   const patchRow = (key, patch) => setRows(list => list.map(row => row.key === key ? { ...row, ...patch } : row))
 
@@ -313,10 +316,17 @@ function CaptureDialog() {
       <form className="md-form md-capture-form" onSubmit={save}>
         {tab === 'file' && !editing ? (
           <>
-            <button type="button" className="md-dropzone" onClick={() => fileInput.current?.click()}>
+            <button
+              type="button"
+              className={`md-dropzone ${fileOver ? 'is-over' : ''}`}
+              onClick={() => fileInput.current?.click()}
+              onDragOver={(event) => { event.preventDefault(); setFileOver(true) }}
+              onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setFileOver(false) }}
+              onDrop={takeFileDrop}
+            >
               <Icon name="upload" size={22} />
               <span>{t('选择文件，或把文件拖进来')}</span>
-              <small>{t('图片、视频、文档都行；一次最多 {n} 个，合计 10MB', { n: FILE_LIMIT })}</small>
+              <small>{t('图片、视频、文档都行；个数不限，单个上限 250MB')}</small>
             </button>
             <input ref={fileInput} type="file" hidden multiple onChange={takeFiles} />
             {rows.length ? (
@@ -434,6 +444,11 @@ function Desk() {
   const narrow = width < 1020
 
   React.useEffect(() => { loadDesk() }, [])
+  // 工作台内任意处：粘贴或拖进文件即收下；日历日格与胶囊浮层会先一步接管自己的落点
+  React.useEffect(() => {
+    if (!rootRef.current) return undefined
+    return attachTakeIn(rootRef.current)
+  }, [])
   React.useEffect(() => {
     const el = rootRef.current
     if (!el) return undefined

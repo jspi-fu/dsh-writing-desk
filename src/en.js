@@ -110,6 +110,11 @@ export const EN = {
   新胶囊: 'New capsule',
   '更新胶囊《{name}》': 'Updated capsule "{name}"',
   '胶囊《{name}》成员不足两个，已自动解散': 'Capsule "{name}" has fewer than two ideas and was dissolved automatically',
+  // 胶囊是一张卡:排期、状态、发布都按整体改(ADR 0011)
+  '把胶囊《{name}》排到 {when}': 'Scheduled capsule "{name}" for {when}',
+  '取消胶囊《{name}》的排期': 'Unscheduled capsule "{name}"',
+  '胶囊《{name}》状态改为「{status}」': 'Moved capsule "{name}" to {status}',
+  '胶囊《{name}》已发布': 'Published capsule "{name}"',
   '解散胶囊《{name}》，{n} 条灵感仍在': 'Dissolved capsule "{name}". Its {n} idea(s) are untouched',
   没有要改标签的灵感: 'No ideas to retag',
   '《{title}》没带期望版本，先看一遍改前改后再应用': '"{title}" is missing its expected revision. Review the diff before applying',

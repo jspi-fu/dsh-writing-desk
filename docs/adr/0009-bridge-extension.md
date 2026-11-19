@@ -1,6 +1,6 @@
 # 桥接扩展:一个浏览器扩展承担网页导入与多平台发布,CLI 本地桥承上启下
 
-Status: accepted(2026-11-19 目标指令定案;三份研究(docs/research/) + 真机鉴权实证;实现随本 ADR 落地)
+Status: superseded by ADR 0010(2026-11-19) for the extension/CLI implementation;投递箱、回执与「dispatches ≠ 已发布」红线仍有效。以下为实现路径的历史记录。
 
 ## 真机验证记录(2026-11-19,沙盒 web 宿主 + Edge 157 + CDP/computer-use)
 

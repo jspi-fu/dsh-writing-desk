@@ -7,7 +7,7 @@ import { dispatchOps, setDesk, toggleSelect } from './desk.js'
 import { t } from './i18n.js'
 import { Icon, openMenuAt } from './ui.jsx'
 import { absoluteUrl, categoryOf, coverOf, displayItem, fileExtOf, fileOf, fileNameOf } from './util.js'
-import { addReferenceToCurrentSession, copyReferenceForAI, openWritingSession } from './session-link.js'
+import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, openWritingSession, startRefDrag } from './session-link.js'
 
 const CATEGORY_ICON = { note: 'pen', link: 'link', file: 'folder' }
 const CATEGORY_WORD = { note: '笔记', link: '链接', file: '文件' }
@@ -122,15 +122,18 @@ export function Card({ item: raw, selected = false, compact = false, bare = fals
     event?.stopPropagation?.()
     onOpen(raw.id, event)
   }
-  // 拖拽入胶囊:拖动一张卡时把它(或已多选的那一组)一起带走
+  // 拖拽入胶囊/接驳条:拖动一张卡时把它(或已多选的那一组)一起带走
   const dragStart = (event) => {
     const ids = dragIds?.length ? dragIds : [raw.id]
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData('application/x-writing-desk-items', JSON.stringify(ids))
     event.currentTarget.classList.add('is-dragging')
+    // 接驳条据此立刻淡入:用户才看得见「这里能落」
+    startRefDrag({ itemIds: ids })
   }
   const dragEnd = (event) => {
     event.currentTarget.classList.remove('is-dragging')
+    endRefDrag()
   }
   return (
     <article

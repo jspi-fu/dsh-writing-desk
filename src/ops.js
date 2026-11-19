@@ -129,6 +129,27 @@ function defaultCapsuleName(state, itemIds) {
 }
 
 /** 解散只删集合关系：成员灵感原样留在灵感流里，不再需要坐标。 */
+/** 成员所属的胶囊;不在胶囊里返回 null(单张灵感照旧只改自己)。 */
+function capsuleOf(state, itemId) {
+  return (state.capsules ?? []).find(capsule => capsule.itemIds.includes(itemId)) ?? null
+}
+
+/**
+ * 胶囊是一张卡:排期、状态、发布都按整体走,成员不许被拆散。
+ * 返回这次动作要一起改的灵感——不在胶囊里就只有它自己。
+ */
+function capsuleRows(state, item) {
+  const capsule = capsuleOf(state, item.id)
+  return { capsule, rows: capsule ? state.items.filter(row => capsule.itemIds.includes(row.id)) : [item] }
+}
+
+/** 会话写回只落在胶囊的一个成员上;其余成员的状态跟着对齐,免得一张卡里几种状态。 */
+function syncCapsuleStatus(state, item) {
+  const capsule = capsuleOf(state, item.id)
+  if (!capsule) return
+  for (const row of state.items) if (row.id !== item.id && capsule.itemIds.includes(row.id)) row.status = item.status
+}
+
 function releaseCapsule(state, capsule) {
   state.capsules = (state.capsules ?? []).filter(row => row.id !== capsule.id)
 }
@@ -196,7 +217,15 @@ const handlers = {
     state.items.unshift(item)
     if (scheduledAt) reduce(state, { type: 'schedule', id: item.id, scheduledAt, at: now })
     if (status && status !== 'idea') reduce(state, { type: 'setStatus', id: item.id, status, at: now })
-    return { text: tr('记下灵感《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
+    // 收下时直接落进胶囊(拖进胶囊浮层):胶囊不在就当普通灵感,整批收下仍是一条撤销记录
+    const capsule = op.capsuleId ? (state.capsules ?? []).find(row => row.id === op.capsuleId) : null
+    if (capsule) {
+      detachFromOtherCapsules(state, [item.id], capsule.id)
+      capsule.itemIds = [...capsule.itemIds, item.id]
+    }
+    return capsule
+      ? { text: tr('把《{title}》收进胶囊《{name}》', { title: short(item.title), name: capsule.name }), target: item.id, kind: 'item' }
+      : { text: tr('记下灵感《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   update_item(state, op, now) {
     const item = findById(state.items, op.id)
@@ -204,10 +233,19 @@ const handlers = {
     Object.assign(item, fields)
     // 标签是手动分类:每写一次就前进一版,批量改标签的乐观锁靠它发现"预览之后又手动改过"
     if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
-    if (scheduledAt !== undefined) reduce(state, scheduledAt ? { type: 'schedule', id: item.id, scheduledAt, at: now } : { type: 'unschedule', id: item.id, at: now })
-    if (status !== undefined) reduce(state, { type: 'setStatus', id: item.id, status, at: now })
+    // 胶囊成员的状态与排期跟着整体走,单独改一张会把一张卡拆成两种状态
+    const { capsule, rows } = capsuleRows(state, item)
+    if (scheduledAt !== undefined) {
+      for (const row of rows) reduce(state, scheduledAt ? { type: 'schedule', id: row.id, scheduledAt, at: now } : { type: 'unschedule', id: row.id, at: now })
+    }
+    if (status !== undefined) {
+      for (const row of rows) reduce(state, { type: 'setStatus', id: row.id, status, at: now })
+    }
     const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])]
-    return names.length ? { text: tr('更新《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' } : null
+    if (!names.length) return null
+    return capsule
+      ? { text: tr('更新胶囊《{name}》', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
+      : { text: tr('更新《{title}》', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   delete_item(state, op) {
     const item = findById(state.items, op.id)
@@ -231,23 +269,40 @@ const handlers = {
     const when = coerce('date', op.scheduledAt)
     if (when === undefined) throw new Error(tr('排期时间无效'))
     const platform = coerce('platform', op.platform)
-    if (platform !== undefined) item.platform = platform
-    reduce(state, when ? { type: 'schedule', id: item.id, scheduledAt: when, at: now } : { type: 'unschedule', id: item.id, at: now })
+    // 胶囊排期 = 整张卡一起排;已经排过的成员也挪到这一天,否则一张胶囊摊在两处
+    const { capsule, rows } = capsuleRows(state, item)
+    for (const row of rows) {
+      if (platform !== undefined) row.platform = platform
+      reduce(state, when ? { type: 'schedule', id: row.id, scheduledAt: when, at: now } : { type: 'unschedule', id: row.id, at: now })
+    }
+    if (capsule) {
+      const text = when
+        ? tr('把胶囊《{name}》排到 {when}', { name: capsule.name, when: fmtWhen(when) }) + (platform ? ` · ${platformName(platform)}` : '')
+        : tr('取消胶囊《{name}》的排期', { name: capsule.name })
+      return { text, target: capsule.id, kind: 'capsule' }
+    }
     return { text: when ? tr('把《{title}》排到 {when}', { title: short(item.title), when: fmtWhen(when) }) + (item.platform ? ` · ${platformName(item.platform)}` : '') : tr('取消《{title}》的排期', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   set_status(state, op, now) {
     const item = findById(state.items, op.id)
     const status = coerce('status', op.status)
     if (!status) throw new Error(tr('状态无效'))
-    reduce(state, { type: 'setStatus', id: item.id, status, at: now })
-    return { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
+    const { capsule, rows } = capsuleRows(state, item)
+    for (const row of rows) reduce(state, { type: 'setStatus', id: row.id, status, at: now })
+    return capsule
+      ? { text: tr('胶囊《{name}》状态改为「{status}」', { name: capsule.name, status: statusLabel(status) }), target: capsule.id, kind: 'capsule' }
+      : { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
   },
   // 发布由用户确认(发布交接:CLI 只到草稿箱、无可靠成功信号,系统不瞎猜)。
   // 这是唯一经 reducer publish 事件写已发布状态的入口,导出与同步绝不自动调用它。
   publish_item(state, op, now) {
     const item = findById(state.items, op.id)
-    reduce(state, { type: 'publish', id: item.id, at: now })
-    return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
+    // 胶囊是一张卡,发布也一次落齐所有成员
+    const { capsule, rows } = capsuleRows(state, item)
+    for (const row of rows) reduce(state, { type: 'publish', id: row.id, at: now })
+    return capsule
+      ? { text: tr('胶囊《{name}》已发布', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
+      : { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
   // 发布投递回执(ADR 0009):浏览器扩展把成稿送进了平台草稿箱,这里只记录
   // 「投递到哪、草稿链接是什么」,绝不碰 status——是否已发布仍只由 publish_item 确认。
@@ -312,6 +367,8 @@ const handlers = {
     if (op.review && typeof op.review === 'object') event.review = op.review
     if (typeof op.note === 'string') event.note = op.note.slice(0, 200)
     reduce(state, event)
+    // 成稿产物落在胶囊的第一个成员上,其余成员的状态跟着对齐
+    syncCapsuleStatus(state, item)
     return { text: tr('会话写回了《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
   },
   // 冲突裁决:接受暂存的写回(force 语义),或丢弃它保留人工版本。都清 pendingWrite。
@@ -322,6 +379,8 @@ const handlers = {
     const { baseRev, at, ...fields } = pending
     item.production.pendingWrite = undefined
     reduce(state, { type: 'submit', id: item.id, at: now, ...fields, forceHint: true })
+    // 成稿产物落在胶囊的第一个成员上,其余成员的状态跟着对齐
+    syncCapsuleStatus(state, item)
     return { text: tr('已接受会话的写回'), target: item.id, kind: 'item' }
   },
   discard_write(state, op) {

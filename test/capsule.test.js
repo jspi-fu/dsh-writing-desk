@@ -213,3 +213,93 @@ test('tagShelf:标签按使用次数排,同名去重', () => {
     { tag: '素材', count: 1 },
   ])
 })
+
+test('收下的灵感直接落进胶囊:成为成员,回执报胶囊名', () => {
+  const state = seed()
+  applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }])
+  const capsule = state.capsules[0]
+  const { receipts, errors } = applyOps(state, [{ op: 'add_item', kind: 'note', title: '粘贴进来的截图', capsuleId: capsule.id }])
+  assert.deepEqual(errors, [])
+  const itemId = receipts[0].target
+  assert.ok(state.items.some(row => row.id === itemId), '灵感照样落库')
+  assert.deepEqual(capsule.itemIds, ['seed_1', 'seed_2', itemId], '追加在成员表末尾')
+  assert.match(receipts[0].text, /收进胶囊/)
+})
+
+test('收下时胶囊已经不在了:就当普通灵感收下,不报错', () => {
+  const state = seed()
+  const { receipts, errors } = applyOps(state, [{ op: 'add_item', kind: 'note', title: '落空的收下', capsuleId: 'cap_gone' }])
+  assert.deepEqual(errors, [])
+  assert.equal(state.capsules.length, 0)
+  assert.match(receipts[0].text, /记下灵感/)
+})
+
+// 胶囊是一张卡(ADR 0011):排期/状态/发布都按整体走,不含成员各改各的
+test('胶囊排期按整体走:排一张成员,整张胶囊一起排到那一天', () => {
+  const state = seed()
+  const capsule = applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }]).receipts.length ? state.capsules[0] : null
+  const when = '2026-11-05T09:00:00.000Z'
+  const { receipts, errors } = applyOps(state, [{ op: 'schedule_item', id: 'seed_1', scheduledAt: when }])
+  assert.deepEqual(errors, [])
+  const members = state.items.filter(row => capsule.itemIds.includes(row.id))
+  assert.equal(members.length, 2)
+  for (const member of members) {
+    assert.equal(member.scheduledAt, when, '两张成员排在同一天')
+    assert.equal(member.status, 'outline', '排期后自愈成大纲')
+  }
+  assert.match(receipts[0].text, /胶囊《周末选题》/, '回执报胶囊名,不报成员名')
+  assert.equal(receipts[0].kind, 'capsule')
+})
+
+test('胶囊手动改状态与取消排期同样按整体走', () => {
+  const state = seed()
+  applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }])
+  const capsule = state.capsules[0]
+  const members = () => state.items.filter(row => capsule.itemIds.includes(row.id))
+  const { receipts } = applyOps(state, [{ op: 'update_item', id: 'seed_2', status: 'draft' }])
+  assert.deepEqual(members().map(row => row.status), ['draft', 'draft'])
+  assert.match(receipts[0].text, /更新胶囊《周末选题》/)
+  applyOps(state, [{ op: 'schedule_item', id: 'seed_1', scheduledAt: '2026-11-05T09:00:00.000Z' }])
+  applyOps(state, [{ op: 'schedule_item', id: 'seed_1', scheduledAt: null }])
+  assert.deepEqual(members().map(row => row.scheduledAt), [null, null])
+})
+
+test('胶囊发布一次落齐所有成员;不在胶囊里的灵感照旧只改自己', () => {
+  const state = seed()
+  applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }])
+  const { receipts } = applyOps(state, [{ op: 'publish_item', id: 'seed_2' }])
+  assert.ok(state.items.filter(row => ['seed_1', 'seed_2'].includes(row.id)).every(row => row.status === 'published'))
+  assert.match(receipts[0].text, /胶囊《周末选题》已发布/)
+  assert.equal(state.items.find(row => row.id === 'seed_3').status, 'idea', '单张灵感不受影响')
+})
+
+test('示例数据从灵感/待排期开始;迁移把存量示例退回待排期,自建条目与已写成稿的不动', () => {
+  const fresh = buildSeed(NOW)
+  assert.ok(fresh.items.every(row => row.status === 'idea' && row.scheduledAt === null && row.publishedAt === null), '示例不带排期与发布')
+
+  const state = buildSeed(NOW)
+  const sample = state.items[0]
+  sample.status = 'published'
+  sample.scheduledAt = '2026-11-02T12:00:00.000Z'
+  sample.publishedAt = '2026-11-02T12:00:00.000Z'
+  const wrote = state.items[1]
+  wrote.status = 'ready'
+  wrote.scheduledAt = '2026-11-04T12:00:00.000Z'
+  wrote.production = { article: '正文', rev: 1, status: 'done' }
+  state.items.push({ id: 'own', kind: 'note', title: '自己记的', body: '', tags: [], status: 'published', personaIds: [], createdAt: NOW.toISOString(), scheduledAt: '2026-11-03T12:00:00.000Z', publishedAt: '2026-11-03T12:00:00.000Z' })
+  migrateState(state)
+  assert.equal(sample.status, 'idea')
+  assert.equal(sample.scheduledAt, null)
+  assert.equal(sample.publishedAt, null)
+  assert.equal(wrote.scheduledAt, '2026-11-04T12:00:00.000Z', '已经写成稿的示例是真实产物,保持原样')
+  const own = state.items.find(row => row.id === 'own')
+  assert.equal(own.status, 'published', '自建条目不动')
+  assert.equal(own.scheduledAt, '2026-11-03T12:00:00.000Z')
+  assert.equal(state.sampleScheduleReset, true)
+
+  // 幂等:用户之后自己排了示例条目,再迁移不该被重新清掉
+  sample.scheduledAt = '2026-12-01T12:00:00.000Z'
+  sample.status = 'outline'
+  migrateState(state)
+  assert.equal(sample.scheduledAt, '2026-12-01T12:00:00.000Z')
+})

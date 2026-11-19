@@ -77,14 +77,14 @@ test('exportForCli 写出 CLI 原生的 article.md + images/,图片引用都能�
   }
 })
 
-test('命令是可复制的 wdesk sync(ADR 0009 二开的 CLI),带真实 flag,--dry-run 是唯一差别', async () => {
+test('命令是可复制的 dswritesync sync(ADR 0010),带 -p 与真实 flag,--dry-run 是唯一差别', async () => {
   const { dir, filesDir } = await filesFixture()
   try {
     const production = published()
     production.title = '带"引号"的标题'
-    const result = await exportForCli(production, { filesDir, exportDir: join(dir, 'out') })
-    // wdesk sync <file>、--title、--cover、--dry-run;标题里的引号清掉,命令可直接粘贴
-    assert.match(result.command, /^wdesk sync ".*article\.md"/)
+    const result = await exportForCli(production, { filesDir, exportDir: join(dir, 'out'), platforms: ['zhihu', 'juejin'] })
+    // dswritesync sync <file> -p <平台>、--title、--cover、--dry-run;标题里的引号清掉,命令可直接粘贴
+    assert.match(result.command, /^dswritesync sync ".*article\.md" -p zhihu,juejin /)
     assert.match(result.command, / --title "带引号的标题" /)
     assert.match(result.command, / --cover ".*images[/\\]cover\.jpg"/)
     assert.ok(!result.command.includes('--dry-run'))
@@ -182,7 +182,7 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     const result = await post('production/export', { id: 'seed_2' })
     assert.equal(result.status, 200)
     assert.equal(result.body.articlePath, join(result.body.dir, 'article.md'))
-    assert.match(result.body.command, /^wdesk sync/)
+    assert.match(result.body.command, /^dswritesync sync/)
     assert.ok(await stat(join(result.body.dir, 'article.md')))
     assert.ok(await stat(join(result.body.dir, 'images', 'cover.jpg')))
     // 导出只是出文件:状态一动不动,已发布只等用户确认
@@ -196,6 +196,66 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     // 没有成稿的灵感拒绝导出
     const empty = await post('production/export', { id: 'seed_1' })
     assert.equal(empty.status, 400)
+  } finally {
+    if (previous === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('production/dispatch 路由:按选中平台写 outbox 任务,状态仍不动', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'writing-desk-dispatch-route-'))
+  const previous = process.env.DSH_HOME
+  process.env.DSH_HOME = dir
+  try {
+    const root = join(dir, 'writing-desk')
+    await mkdir(join(root, 'files'), { recursive: true })
+    await writeFile(join(root, 'files', 'a.jpg'), PNG)
+    const state = buildSeed(NOW)
+    const item = state.items.find(row => row.id === 'seed_2')
+    item.production = { status: 'done', stage: 'done', title: '已排期的稿', article: '正文', cover: { prompt: 'c', status: 'done', src: 'writing-desk/files/a.jpg' } }
+    item.scheduledAt = '2026-12-01T10:00:00.000Z'
+    item.status = 'ready'
+    await writeFile(join(root, 'state.json'), JSON.stringify(state))
+
+    let handler = null
+    const ctx = {
+      get: name => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
+      effect: fn => fn(),
+      webServer: { register: (options) => { handler = options.handler } },
+    }
+    hostPlugin.apply(ctx)
+    const call = (path, method, body) => new Promise((resolve) => {
+      const res = { statusCode: 0, headersSent: false, setHeader() {}, end: out => resolve({ status: res.statusCode, body: JSON.parse(out) }) }
+      const req = { url: `/writing-desk/${path}`, method, headers: { 'sec-fetch-site': 'same-origin' } }
+      if (body !== undefined) req[Symbol.asyncIterator] = function* () { yield Buffer.from(JSON.stringify(body)) }
+      handler(req, res)
+    })
+    const post = (path, body) => call(path, 'POST', body)
+
+    assert.equal((await post('settings', { exportDir: join(dir, 'out') })).status, 200)
+    // 未知平台被过滤,只把清单内的写进 outbox
+    const result = await post('production/dispatch', { id: 'seed_2', platforms: ['zhihu', 'juejin', 'xiaohongshu', 'unknown-platform'] })
+    assert.equal(result.status, 200)
+    assert.ok(result.body.operationId)
+    const after = result.body.state.items.find(row => row.id === 'seed_2')
+    assert.equal(after.status, 'ready', '投递不得改状态')
+    assert.equal(after.publishedAt, null)
+    assert.equal(after.production.cliPath, result.body.dir)
+
+    const outbox = join(dir, 'writing-desk', 'bridge', 'outbox')
+    const files = (await readdir(outbox)).filter(name => /^publish-[\w-]+\.json$/.test(name))
+    assert.equal(files.length, 1)
+    const task = JSON.parse(await readFile(join(outbox, files[0]), 'utf8'))
+    assert.equal(task.operationId, result.body.operationId)
+    assert.equal(task.itemId, 'seed_2')
+    assert.deepEqual(task.platforms, ['zhihu', 'juejin', 'xiaohongshu'])
+    assert.match(task.articleMd, /正文/)
+    assert.ok(Object.keys(task.images).length >= 1, '发布包的图片映射要带进任务')
+
+    // 没有可用平台 / 没有成稿都拒绝
+    assert.equal((await post('production/dispatch', { id: 'seed_2', platforms: ['unknown-platform'] })).status, 400)
+    assert.equal((await post('production/dispatch', { id: 'seed_1', platforms: ['zhihu'] })).status, 400)
   } finally {
     if (previous === undefined) delete process.env.DSH_HOME
     else process.env.DSH_HOME = previous

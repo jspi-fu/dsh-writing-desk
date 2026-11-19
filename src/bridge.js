@@ -1,10 +1,11 @@
-// 桥接投递箱(ADR 0009):浏览器扩展与本机 wdesk 桥进程只通过
+// 桥接投递箱(ADR 0009):浏览器扩展与本机 dswritesync 桥进程只通过
 // ~/.dsh/writing-desk/bridge/ 的文件与工作台交换数据——
 //   inbox/import-*.json    桥写,host 消化成灵感(add_item)
 //   outbox/publish-*.json  host 写,桥监听下发给扩展发布
 //   receipts/import-*.json host 写给桥的导入回执
 //   receipts/dispatch-*.json 桥写给 host 的发布回执,消化成 item.dispatches
 //   auth.json              桥写的连接信息(0600),host 只读给设置页展示
+//   catalog.json           host 原子写的标签 / URL 索引,扩展收进前读取判断冲突
 // 写路径唯一入口仍是 applyOps(红线);文件认领用原子 rename,桌面与网页两个宿主进程
 // 并发消化同一批文件不重不漏;operationId 让桥侧重试也能拿到同一份回执。
 // 扩展采集的网页内容回传后,这里仍按不可信输入对待:URL 只放行 http(s)、字段限长、
@@ -16,7 +17,8 @@ import { applyOps } from './ops.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
 
-// 平台与适配器 id 的映射(ADR 0009;小红书二期再补 xiaohongshu)
+// 平台与适配器 id 的映射:与 extension/packages/core/src/adapters/platforms 的
+// 内容适配器一致(20 个内容平台,排除 zip-download;xiaohongshu 为页面自动化草稿)。
 export const BRIDGE_ADAPTERS = {
   weixin: '公众号',
   zhihu: '知乎',
@@ -29,6 +31,15 @@ export const BRIDGE_ADAPTERS = {
   csdn: 'CSDN',
   segmentfault: '思否',
   yuque: '语雀',
+  xueqiu: '雪球',
+  woshipm: '人人都是产品经理',
+  '51cto': '51CTO',
+  imooc: '慕课手记',
+  oschina: '开源中国',
+  cnblogs: '博客园',
+  eastmoney: '东方财富',
+  aliyun: '阿里云开发者社区',
+  xiaohongshu: '小红书',
 }
 
 export function bridgePaths() {
@@ -39,6 +50,7 @@ export function bridgePaths() {
     outbox: join(root, 'outbox'),
     receipts: join(root, 'receipts'),
     auth: join(root, 'auth.json'),
+    catalog: join(root, 'catalog.json'),
   }
 }
 
@@ -113,8 +125,8 @@ function newImageName() {
   return `b${Date.now().toString(36)}${imageCounter.toString(36)}`
 }
 
-/** 校验并折算成 add_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */
-async function importOp(payload, filesDir) {
+/** 校验并折算成 add_item / update_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */
+async function importOp(payload, filesDir, draft) {
   const url = typeof payload.url === 'string' ? payload.url.trim() : ''
   try {
     const { protocol } = new URL(url)
@@ -126,8 +138,7 @@ async function importOp(payload, filesDir) {
     ? payload.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 48)).slice(0, 12)
     : []
   const cover = await normalizeCover(payload.cover, filesDir)
-  const op = {
-    op: 'add_item',
+  const fields = {
     kind: 'web',
     title: text(payload.title?.trim(), 300) || url,
     body: text(payload.body, 20000) ?? '',
@@ -136,7 +147,13 @@ async function importOp(payload, filesDir) {
     tags,
     media: cover ? { src: cover } : null,
   }
-  return op
+  // 替换只在扩展从 catalog 命中冲突并带上 replaceItemId 时发生;目标不存在就退回新增,
+  // duplicate 本身由扩展的 catalog 决定,宿主不猜。
+  const replaceItemId = typeof payload.replaceItemId === 'string' ? payload.replaceItemId : ''
+  if (replaceItemId && draft.items.some(row => row.id === replaceItemId)) {
+    return { op: 'update_item', id: replaceItemId, ...fields }
+  }
+  return { op: 'add_item', ...fields }
 }
 
 // operationId 回执记忆(借鉴 StashDock 的 capture 回执协议,ADR 0009):
@@ -156,6 +173,7 @@ function importDigest(payload) {
   return JSON.stringify([
     payload.url, payload.title, payload.body, payload.siteName,
     Array.isArray(payload.tags) ? payload.tags : [], payload.cover ?? null,
+    payload.replaceItemId ?? null,
   ])
 }
 
@@ -164,7 +182,7 @@ function dispatchDigest(payload) {
 }
 
 /**
- * 消化采集投递:逐个认领 inbox 里的文件,经 add_item 落灵感墙,写回执。
+ * 消化采集投递:逐个认领 inbox 里的文件,经 add_item / update_item 落灵感墙,写回执。
  * 双宿主并发安全(认领互斥);同一 operationId 重投靠回执记忆幂等;
  * 失败写错误回执并把文件留档(.failed),不重试。
  * @param {object} store - 工作台 Store。
@@ -189,21 +207,28 @@ export async function digestInbox(store, filesDir) {
     const operationId = name.slice('import-'.length, -'.json'.length)
     try {
       if (!payload || typeof payload.operationId !== 'string') throw new Error(tr('投递格式无效'))
-      const op = await importOp(payload, filesDir)
-      const result = await store.mutate(tr('从浏览器收下《{title}》', { title: (op.title || '').slice(0, 12) }), (draft) => {
+      const label = text(payload.title?.trim(), 12) || text(payload.url, 12) || ''
+      const result = await store.mutate(tr('从浏览器收下《{title}》', { title: label }), async (draft) => {
         const digest = importDigest(payload)
         const seen = draft.bridgeSeen?.[operationId]
         if (seen) {
           if (seen.digest !== digest) throw new Error(tr('同一编号的投递内容与上次不同,拒绝处理'))
-          return { id: seen.result?.id, replay: true }
+          return { id: seen.result?.id, replaced: seen.result?.replaced, replay: true }
         }
+        const op = await importOp(payload, filesDir, draft)
         const { receipts, errors } = applyOps(draft, [op])
         if (errors.length) throw new Error(errors[0])
-        const out = { id: receipts[0]?.target }
+        const out = { id: receipts[0]?.target, replaced: op.op === 'update_item' }
         rememberSeen(draft, operationId, digest, out)
         return out
       }, { undoable: false })
-      await writeReceipt(`import-${operationId}.json`, { ok: true, itemId: result.id, operationId, ...(result.replay ? { replay: true } : {}) })
+      await writeReceipt(`import-${operationId}.json`, {
+        ok: true,
+        itemId: result.id,
+        operationId,
+        ...(result.replaced ? { replaced: true } : {}),
+        ...(result.replay ? { replay: true } : {}),
+      })
       imported += 1
       await rm(`${file}.claiming`, { force: true })
     } catch (err) {
@@ -306,7 +331,41 @@ export async function writePublishTask(task) {
 }
 
 /**
- * 读桥的连接信息(auth.json 由 wdesk serve 写,host 只读)。
+ * 原子写 bridge/catalog.json:扩展收进前用它判断 URL 冲突并给标签建议。
+ * tags 取所有灵感的标签去重,urls 是 url → itemId;at 每次变化,结构(tags/urls)
+ * 没变就跳过写,避免 3 秒轮询把磁盘刷出无意义的时间戳。
+ * @param {object} store - 工作台 Store。
+ * @returns {Promise<boolean>} 实际写了文件返回 true,结构未变跳过返回 false。
+ */
+export async function writeCatalog(store) {
+  const paths = await ensureBridgeDirs()
+  const state = await store.read()
+  const tags = []
+  const seenTags = new Set()
+  const urlPairs = []
+  for (const item of state.items ?? []) {
+    for (const tag of Array.isArray(item.tags) ? item.tags : []) {
+      if (typeof tag !== 'string' || !tag || seenTags.has(tag)) continue
+      seenTags.add(tag)
+      tags.push(tag)
+    }
+    if (typeof item.url === 'string' && item.url) urlPairs.push([item.url, item.id])
+  }
+  // 键排序让不同 items 顺序下的同一张映射得到同一个结构,跳过判断才稳定
+  const sortedUrls = Object.fromEntries(urlPairs.sort(([a], [b]) => a.localeCompare(b)))
+  try {
+    const previous = JSON.parse(await readFile(paths.catalog, 'utf8'))
+    if (JSON.stringify([previous.tags, previous.urls]) === JSON.stringify([tags, sortedUrls])) return false
+  } catch { /* 没有旧表或旧表坏了,照常重写 */ }
+  const body = { at: new Date().toISOString(), tags, urls: sortedUrls }
+  const tmp = `${paths.catalog}.${process.pid}.tmp`
+  await writeFile(tmp, JSON.stringify(body))
+  await rename(tmp, paths.catalog)
+  return true
+}
+
+/**
+ * 读桥的连接信息(auth.json 由 dswritesync serve 写,host 只读)。
  * @returns {Promise<{configured: boolean, token?: string, port?: number, startedAt?: string}>}
  */
 export async function readBridgeAuth() {

@@ -31,7 +31,7 @@ function InPlaceText({ value, onCommit, className, label, editing }) {
   )
 }
 
-// 桥适配器清单(ADR 0009):与 src/bridge.js 的 BRIDGE_ADAPTERS 一致,小红书二期再补。
+// 桥适配器清单:与 src/bridge.js 的 BRIDGE_ADAPTERS 一致(上游公开的 19 个内容平台)。
 const DISPATCH_TARGETS = [
   { id: 'weixin', label: '公众号' },
   { id: 'zhihu', label: '知乎' },
@@ -44,6 +44,15 @@ const DISPATCH_TARGETS = [
   { id: 'csdn', label: 'CSDN' },
   { id: 'segmentfault', label: '思否' },
   { id: 'yuque', label: '语雀' },
+  { id: 'xueqiu', label: '雪球' },
+  { id: 'woshipm', label: '人人都是产品经理' },
+  { id: '51cto', label: '51CTO' },
+  { id: 'imooc', label: '慕课手记' },
+  { id: 'oschina', label: '开源中国' },
+  { id: 'cnblogs', label: '博客园' },
+  { id: 'eastmoney', label: '东方财富' },
+  { id: 'aliyun', label: '阿里云开发者社区' },
+  { id: 'xiaohongshu', label: '小红书' },
 ]
 
 /** 投递状态行:dispatches 里的逐平台结果,状态点 + 平台 + 草稿链接或错误。 */
@@ -66,7 +75,7 @@ function DispatchList({ dispatches }) {
   )
 }
 
-/** 发布确认(工单 #9、ADR 0009):一键投递给浏览器扩展,或复制 wdesk 命令兜底;
+/** 发布确认(工单 #9、ADR 0009):一键投递给浏览器扩展,或复制 dswritesync 命令兜底;
  *  之后问一句「是否视为已发布?」——投递只到草稿箱,发布与否始终由用户确认。 */
 function PublishDialog({ item, result, onClose }) {
   const [marked, setMarked] = React.useState(true)

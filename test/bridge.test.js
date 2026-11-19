@@ -6,10 +6,10 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { digestInbox, digestReceipts, bridgeStatus, writePublishTask, bridgePaths, BRIDGE_ADAPTERS } from '../src/bridge.js'
+import { digestInbox, digestReceipts, bridgeStatus, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS } from '../src/bridge.js'
 import { Store } from '../src/store.js'
 
-const root = await mkdtemp(join(tmpdir(), 'wdesk-bridge-'))
+const root = await mkdtemp(join(tmpdir(), 'dswritesync-bridge-'))
 process.env.DSH_HOME = root
 const store = new Store(join(root, 'writing-desk'))
 
@@ -63,6 +63,108 @@ test('同一 operationId 重投不产生重复卡片(认领互斥 + 文件已消
   assert.equal(hits.length, 1)
 })
 
+test('replaceItemId 命中已有灵感时走 update_item,不新增卡片,回执带 replaced', async () => {
+  const url = 'https://example.com/post/replace'
+  const payload = {
+    operationId: 'test-replace-base',
+    url,
+    title: '替换前',
+    body: '旧正文',
+    siteName: '示例站',
+    tags: ['旧标签'],
+  }
+  await dropInbox(payload)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  const before = (await store.read()).items.find(row => row.url === url)
+  assert.ok(before, '替换目标没有先落库')
+
+  const replace = {
+    operationId: 'test-replace-go',
+    replaceItemId: before.id,
+    url,
+    title: '替换后',
+    body: '新正文',
+    siteName: '新站',
+    tags: ['新标签'],
+  }
+  await dropInbox(replace)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  let state = await store.read()
+  const hits = state.items.filter(row => row.url === url)
+  assert.equal(hits.length, 1, '替换不应新增第二条卡片')
+  const item = hits[0]
+  assert.equal(item.id, before.id, '替换必须写回原卡片')
+  assert.equal(item.title, '替换后')
+  assert.equal(item.body, '新正文')
+  assert.deepEqual(item.tags, ['新标签'])
+  assert.equal(item.source, '新站')
+  let receipt = JSON.parse(await readFile(join(bridgePaths().receipts, 'import-test-replace-go.json'), 'utf8'))
+  assert.equal(receipt.ok, true)
+  assert.equal(receipt.itemId, before.id)
+  assert.equal(receipt.replaced, true)
+
+  // 同一 operationId 原样重投:复用回执,不再改一次卡片
+  await dropInbox(replace)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  state = await store.read()
+  assert.equal(state.items.filter(row => row.url === url).length, 1)
+  receipt = JSON.parse(await readFile(join(bridgePaths().receipts, 'import-test-replace-go.json'), 'utf8'))
+  assert.equal(receipt.replay, true)
+  assert.equal(receipt.itemId, before.id)
+  assert.equal(receipt.replaced, true)
+})
+
+test('replaceItemId 指向不存在的灵感时退回 add_item', async () => {
+  const url = 'https://example.com/post/replace-missing'
+  const payload = {
+    operationId: 'test-replace-missing',
+    replaceItemId: 'it_not_there',
+    url,
+    title: '没有替换目标',
+    body: '',
+  }
+  await dropInbox(payload)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  const state = await store.read()
+  const item = state.items.find(row => row.url === url)
+  assert.ok(item, '目标不存在时应新增')
+  const receipt = JSON.parse(await readFile(join(bridgePaths().receipts, 'import-test-replace-missing.json'), 'utf8'))
+  assert.equal(receipt.ok, true)
+  assert.equal(receipt.itemId, item.id)
+  assert.ok(!receipt.replaced)
+})
+
+test('catalog 原子写出标签去重与 url 映射,结构未变跳过写', async () => {
+  const state = await store.read()
+  assert.equal(await writeCatalog(store), true)
+  const first = JSON.parse(await readFile(bridgePaths().catalog, 'utf8'))
+  assert.ok(!Number.isNaN(Date.parse(first.at)))
+  const expectedTags = [...new Set(state.items.flatMap(row => Array.isArray(row.tags) ? row.tags : []))]
+  assert.deepEqual(first.tags, expectedTags)
+  const expectedUrls = Object.fromEntries(state.items
+    .filter(row => typeof row.url === 'string' && row.url)
+    .map(row => [row.url, row.id]))
+  assert.deepEqual(first.urls, expectedUrls)
+
+  // 同一结构再写:跳过,时间戳与内容都不变
+  assert.equal(await writeCatalog(store), false)
+  assert.equal(JSON.parse(await readFile(bridgePaths().catalog, 'utf8')).at, first.at)
+
+  // 新增带标签和链接的灵感后结构变化,必须重写
+  await store.mutate('catalog fixture', (draft) => {
+    draft.items.unshift({
+      id: 'it_catalog', kind: 'web', title: 'catalog fixture', body: '正文',
+      url: 'https://example.com/catalog', tags: ['新标签'], status: 'idea',
+      personaIds: [], createdAt: new Date().toISOString(),
+    })
+    return draft
+  }, { undoable: false })
+  assert.equal(await writeCatalog(store), true)
+  const next = JSON.parse(await readFile(bridgePaths().catalog, 'utf8'))
+  assert.ok(next.tags.includes('新标签'))
+  assert.equal(next.urls['https://example.com/catalog'], 'it_catalog')
+})
+
 test('非 http(s) 链接被拒绝并写错误回执', async () => {
   const operationId = 'test-import-badurl'
   await dropInbox({ operationId, url: 'file:///etc/passwd', title: '越界' })
@@ -100,11 +202,11 @@ test('发布任务写进 outbox,未知平台被过滤', async () => {
     title: '一篇稿子',
     articleMd: '# 正文',
     images: { 'images/cover.jpg': join(root, 'cover.jpg') },
-    platforms: ['zhihu', 'weixin', 'xiaohongshu'],
+    platforms: ['zhihu', 'weixin', 'xiaohongshu', 'unknown-platform'],
   })
   assert.match(task.file, /publish-[\w-]+\.json$/)
   const raw = JSON.parse(await readFile(task.file, 'utf8'))
-  assert.deepEqual(raw.platforms, ['zhihu', 'weixin'])
+  assert.deepEqual(raw.platforms, ['zhihu', 'weixin', 'xiaohongshu'])
   assert.equal(raw.itemId, 'it_x')
 })
 
@@ -155,17 +257,23 @@ test('回执里的非 http(s) 草稿链接被剥掉', async () => {
 test('bridgeStatus 读 auth 并统计队列', async () => {
   const paths = bridgePaths()
   await mkdir(paths.root, { recursive: true })
-  await writeFile(paths.auth, JSON.stringify({ token: 'secret-token', wsPort: 4527, startedAt: new Date().toISOString() }), { mode: 0o600 })
+  await writeFile(paths.auth, JSON.stringify({ token: 'secret-token', wsPort: 9527, startedAt: new Date().toISOString() }), { mode: 0o600 })
   const status = await bridgeStatus()
   assert.equal(status.configured, true)
   assert.equal(status.token, 'secret-token')
-  assert.equal(status.port, 4527)
+  assert.equal(status.port, 9527)
   assert.ok(status.pending.inbox >= 0)
 })
 
-test('适配器清单覆盖 v1 三平台 + 第二批八平台(ADR 0009)', () => {
+test('适配器清单覆盖 20 个内容平台(排除 zip-download)', () => {
   assert.deepEqual(Object.keys(BRIDGE_ADAPTERS).sort(), [
-    'baijiahao', 'bilibili', 'csdn', 'douban', 'juejin',
-    'segmentfault', 'sohu', 'weibo', 'weixin', 'yuque', 'zhihu',
+    '51cto', 'aliyun', 'baijiahao', 'bilibili', 'cnblogs', 'csdn', 'douban',
+    'eastmoney', 'imooc', 'juejin', 'oschina', 'segmentfault', 'sohu', 'weibo',
+    'weixin', 'woshipm', 'xiaohongshu', 'xueqiu', 'yuque', 'zhihu',
   ])
+  // 中文标签仍然齐全,扩展 / CLI 平台名映射不用另起一套英文 id
+  assert.equal(BRIDGE_ADAPTERS['51cto'], '51CTO')
+  assert.equal(BRIDGE_ADAPTERS.woshipm, '人人都是产品经理')
+  assert.equal(BRIDGE_ADAPTERS.aliyun, '阿里云开发者社区')
+  assert.equal(BRIDGE_ADAPTERS.xiaohongshu, '小红书')
 })

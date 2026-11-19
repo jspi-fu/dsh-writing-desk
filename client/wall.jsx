@@ -1,5 +1,5 @@
 // 灵感墙:按参考项目 StashDock 的货架重做(C 路线:参考骨架 + 稿面衬线 + 四色状态点)。
-// 从上到下:搜索 + 排序 / 缩略图时间轴(周竖线 + 计数) / 卡片货架 / 类型切换 + 标签抽屉 + 新建。
+// 从上到下:搜索 + 排序 / 缩略图那排(按排期先后,未排期的接在后面) / 卡片货架 / 类型切换 + 标签抽屉 + 新建。
 // 卡片点击是编辑,黑胶囊是创作入口;多选走封面左上圆钮,不再依赖右键。
 import React from 'react'
 import { Card, openCapture, openEditItem } from './card.jsx'
@@ -9,6 +9,7 @@ import { addReferenceToCurrentSession, copyReferenceForAI, openWritingSession } 
 import { t } from './i18n.js'
 import { Icon, IconButton, openMenuAt } from './ui.jsx'
 import { tagShelf } from './tags.js'
+import { railOrder } from './rail-order.js'
 import { capsuleMembers, categoryOf, isIdea, posterOf } from './util.js'
 
 const CATEGORY_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'note', label: '笔记' }, { value: 'file', label: '文件' }, { value: 'link', label: '链接' }]
@@ -24,29 +25,6 @@ function makeFilter({ category, tag, query }) {
     const haystack = [item.title, item.body, item.source, ...(item.tags ?? [])].join(' ').toLowerCase()
     return words.every(word => haystack.includes(word))
   }
-}
-
-/** 周一起算的一周;缩略图时间轴用它画竖线。 */
-function weekStart(iso) {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return null
-  date.setHours(0, 0, 0, 0)
-  date.setDate(date.getDate() - ((date.getDay() + 6) % 7))
-  return date
-}
-
-/** 时间轴只分两段:本周、之后。entries 进来前已排好序,所以连着收就行。 */
-function railGroups(entries) {
-  const monday = weekStart(new Date().toISOString())
-  const groups = []
-  for (const entry of entries) {
-    const start = weekStart(entry.at)
-    const isThisWeek = !!monday && !!start && start.getTime() === monday.getTime()
-    const last = groups[groups.length - 1]
-    if (last && last.isThisWeek === isThisWeek) last.entries.push(entry)
-    else groups.push({ isThisWeek, entries: [entry] })
-  }
-  return groups
 }
 
 /** 缩略图:胶囊画四格底片,灵感画封面或类型图标。 */
@@ -68,12 +46,12 @@ function Thumb({ entry }) {
   return <span className={`md-rail-glyph is-${categoryOf(entry.item)}`} aria-hidden="true"><Icon name={categoryOf(entry.item) === 'link' ? 'link' : categoryOf(entry.item) === 'file' ? 'image' : 'pen'} size={15} /></span>
 }
 
-/** 第二行:邮票风格的缩略图时间轴。左「本周」右「之后」,中间一条黑短竖杠;
+/** 第二行:邮票风格的缩略图。跟排期界面一个口径——上日历的按日期先后排在前面,
+ * 没排期的接在后面,中间一条黑短竖杠 + 竖排「未排期」;
  * 左右可滑,两侧渐隐提示到头;悬停出箭头,键盘切到哪张就把它滚到正中。 */
-function ThumbRail({ entries, onOpen, total, flat = false }) {
+function ThumbRail({ entries, cut, onOpen, total }) {
   const scroll = React.useRef(null)
-  // 按标题排的时候「本周/之后」不再成立,退化成一条不分组的时间轴
-  const groups = React.useMemo(() => (flat ? [{ isThisWeek: true, entries }] : railGroups(entries)), [entries, flat])
+  const parts = cut > 0 && cut < entries.length ? [entries.slice(0, cut), entries.slice(cut)] : [entries]
   const [edges, setEdges] = React.useState({ left: false, right: false })
   const [hover, setHover] = React.useState('')
 
@@ -142,22 +120,20 @@ function ThumbRail({ entries, onOpen, total, flat = false }) {
     )
   }
 
-  const labelSide = groups[0]?.isThisWeek ? 'left' : 'right'
   return (
     <div className="md-railbar">
       <div className="md-railstage" onPointerLeave={() => setHover('')}>
         <div className="md-railscroll" ref={scroll} onScroll={measure} onKeyDown={onKeyDown} onFocus={onFocus}>
-          {groups.map((group, index) => (
+          {parts.map((part, index) => (
             <React.Fragment key={index}>
               {index === 1 ? (
-                <span className={`md-railsplit is-${labelSide}`} aria-hidden="true">
-                  {labelSide === 'left' ? <em className="md-railsplit-label">{t('本周')}</em> : null}
+                <span className="md-railsplit" aria-hidden="true">
                   <i className="md-railsplit-bar" />
-                  {labelSide === 'right' ? <em className="md-railsplit-label">{t('本周')}</em> : null}
+                  <em className="md-railsplit-label">{t('未排期')}</em>
                 </span>
               ) : null}
               <div className="md-railgroup">
-                {group.entries.map(entry => (
+                {part.map(entry => (
                   <div className="md-rail-cell" key={`${entry.type}-${entry.id}`}>
                     <button type="button" className="md-rail" title={entry.title} aria-label={entry.title} onClick={() => onOpen(entry)}>
                       <Thumb entry={entry} />
@@ -341,7 +317,41 @@ export function Wall() {
 
   const allItemsIds = entries.filter(entry => entry.type === 'item').map(entry => entry.id)
   const allCapsuleIds = entries.filter(entry => entry.type === 'capsule').map(entry => entry.id)
+  // 缩略图那排固定按排期先后走,不跟墙上的排序
+  const rail = React.useMemo(() => railOrder(entries), [entries])
   const openEntry = (entry) => { if (entry.type === 'capsule') openCapsule(entry.id); else openEditItem(entry.id) }
+
+  // 卡到卡:把一张灵感拖到另一张上就合成胶囊,和「多选后点合成胶囊」是同一个 op
+  const [mergeOver, setMergeOver] = React.useState(null)
+  const hasItemDrag = (event) => Array.from(event.dataTransfer?.types ?? []).includes('application/x-writing-desk-items')
+  const mergeProps = (entry) => {
+    if (entry.type !== 'item') return null
+    return {
+      onDragOver: (event) => {
+        if (!hasItemDrag(event)) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'copy'
+        setMergeOver(entry.id)
+      },
+      onDragLeave: (event) => {
+        if (event.currentTarget.contains(event.relatedTarget)) return
+        setMergeOver(current => (current === entry.id ? null : current))
+      },
+      onDrop: (event) => {
+        if (!hasItemDrag(event)) return
+        event.preventDefault()
+        setMergeOver(null)
+        let ids = []
+        try {
+          const parsed = JSON.parse(event.dataTransfer.getData('application/x-writing-desk-items'))
+          if (Array.isArray(parsed)) ids = parsed.filter(id => typeof id === 'string')
+        } catch { /* 来源没按约定写数据,就当没拖 */ }
+        const fresh = ids.filter(id => id !== entry.item.id)
+        if (!fresh.length) return
+        dispatchOps([{ op: 'add_capsule', itemIds: [entry.item.id, ...fresh] }], { label: t('合成胶囊') }).then(clearSelection)
+      },
+    }
+  }
 
   // 框选:从墙面的空白处按下拖动,碰到哪张卡就选哪张(按住 Shift 追加)。
   const wallRef = React.useRef(null)
@@ -400,12 +410,12 @@ export function Wall() {
           <IconButton icon="sort" label={t('排序：{name}', { name: t(SORT_OPTIONS.find(option => option.value === sort)?.label ?? '最近添加') })} onClick={sortMenu} className="md-wall-sort" />
         </div>
 
-        <ThumbRail entries={entries} onOpen={openEntry} total={entries.length} flat={sort === 'title'} />
+        <ThumbRail entries={rail.list} cut={rail.cut} onOpen={openEntry} total={entries.length} />
 
         {entries.length ? (
           <div className="md-wall">
             {entries.map(entry => (
-              <div className="md-wall-cell" key={`${entry.type}-${entry.id}`} data-entry-id={entry.id} data-entry-type={entry.type}>
+              <div className={`md-wall-cell ${mergeOver === entry.id ? 'is-merge' : ''}`} key={`${entry.type}-${entry.id}`} data-entry-id={entry.id} data-entry-type={entry.type} {...mergeProps(entry)}>
                 {entry.type === 'capsule' ? (
                   <CapsuleCard
                     capsule={entry.capsule}

@@ -1,13 +1,47 @@
 // 素材接驳条(ADR 0006):conversation.composer.dock 槽位里的落点。
-// 平时近无(4px 占位);素材拖起时淡入虚线行;拖近转实线内衬;落手后弹素材签,
-// 整个浮层唯一的「作者时刻」。落点就是接驳条——宿主红线决定做不了全对话区高亮。
+// 平时近无(4px 占位);素材拖起时淡入虚线行;拖近转实线内衬;落手走「添加到当前会话」同一条路,
+// 引用签由宿主草稿插进去,接驳条自己不再画签条,整个浮层唯一的「作者时刻」。
 import React from 'react'
-import { claimPendingReference, endRefDrag, hasPendingReference, referenceIntoDraft, registerDockRect, setComposer } from './session-link.js'
+import { addReferenceToCurrentSession, claimPendingReference, endRefDrag, hasPendingReference, registerDockRect, setComposer } from './session-link.js'
 import { t } from './i18n.js'
 
-// 四态:dormant(近无) → listening(虚线行) → armed(实线内衬) → landed(签条) → 3s 后回落
-const LANDED_MS = 3000
-const CHIP_SLOTS = 4
+// 三态:dormant(近无) → listening(虚线行) → armed(实线内衬) → 落手回到 dormant。
+// 落手的表现交给「添加到当前会话」同一条路(引用签插进草稿),接驳条自己不再画签条。
+
+/**
+ * 落点的真实范围:接驳条 + 它所在的那块输入卡。
+ * 用户拖素材的自然目标是输入框本身,只认下面 36px 的虚线行等于让人对着空气松手;
+ * 往上找到第一层「包含输入卡」的祖先。碰到整列(超过视口 60%)就退回接驳条,
+ * 别把整片对话区都变成落点。
+ */
+function zoneRectOf(dock) {
+  if (!dock) return null
+  const own = dock.getBoundingClientRect()
+  let node = dock.parentElement
+  while (node && node !== document.body) {
+    const rect = node.getBoundingClientRect()
+    if (rect.height > window.innerHeight * 0.6) break
+    if (rect.height >= own.height + 24) return unionRect(own, rect)
+    node = node.parentElement
+  }
+  // 认不出输入卡的大小时,至少把接驳条上方一段算作落点,别让用户去瞄 4px 的虚线
+  const reach = Math.min(Math.max(240, (own.height || 4) * 8), window.innerHeight * 0.4, Math.max(own.top, 0))
+  return { left: own.left, right: own.right, top: own.top - reach, bottom: own.bottom }
+}
+
+function unionRect(a, b) {
+  return {
+    left: Math.min(a.left, b.left),
+    top: Math.min(a.top, b.top),
+    right: Math.max(a.right, b.right),
+    bottom: Math.max(a.bottom, b.bottom),
+  }
+}
+
+function pointIn(rect, event) {
+  return Boolean(rect) && event.clientX >= rect.left && event.clientX <= rect.right
+    && event.clientY >= rect.top && event.clientY <= rect.bottom
+}
 
 export function DockRail(props) {
   const inputActions = props?.inputActions
@@ -18,8 +52,6 @@ export function DockRail(props) {
   const draftRef = React.useRef(null)
   draftRef.current = draft
   const [phase, setPhase] = React.useState('dormant')
-  const [chips, setChips] = React.useState([])
-  const timerRef = React.useRef(0)
   const refRef = React.useRef(null)
   const elRef = React.useRef(null)
 
@@ -36,7 +68,7 @@ export function DockRail(props) {
     }
     setComposer(handle)
     // 画布拖拽在松手时问 overDock:登记矩形读取器,卸载时归还
-    registerDockRect(() => elRef.current?.getBoundingClientRect() ?? null)
+    registerDockRect(() => zoneRectOf(elRef.current))
     // 「创作」打开的会话:startSession 只能带纯文本,prompt 里的引用块要等这个
     // 会话的输入面挂载后换成引用签。编辑器可能晚一拍,短暂退避重试。
     let claimTimer = 0
@@ -55,35 +87,24 @@ export function DockRail(props) {
     }
   }, [inputActions])
 
+  // 落手与「添加到当前会话」按钮同一条路:引用签逐条插进草稿,不必先合成一段文字再整段替换草稿。
   const land = React.useCallback((entries) => {
-    const entry = referenceIntoDraft(entries)
-    if (!entry) return false
-    const all = [
-      ...entry.items.map(item => item.title),
-      ...entry.capsules.map(capsule => `${capsule.name} · ${capsule.count}`),
-    ]
-    setChips([...all.slice(0, CHIP_SLOTS), ...(all.length > CHIP_SLOTS ? [`+${all.length - CHIP_SLOTS}`] : [])].map(label => ({ label, rest: /^\+/.test(label) && all.length > CHIP_SLOTS })))
-    setPhase('landed')
-    clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => { setPhase('dormant'); setChips([]) }, LANDED_MS)
-    return true
+    return Boolean(addReferenceToCurrentSession(entries))
   }, [])
 
   React.useEffect(() => {
-    const inside = (event) => {
-      const rect = elRef.current?.getBoundingClientRect()
-      return Boolean(rect) && event.clientX >= rect.left && event.clientX <= rect.right
-        && event.clientY >= rect.top && event.clientY <= rect.bottom
-    }
+    // 落点判定用放大后的范围:接驳条 + 输入卡
+    const inside = (event) => pointIn(zoneRectOf(elRef.current), event)
     const takeLanding = (ids) => {
       if (!ids) return
       refRef.current = null
       land(ids)
+      setPhase('dormant')
     }
     const onDragStart = (event) => { refRef.current = event.detail?.ids ?? null; setPhase('listening') }
     const onDragEnd = () => {
       refRef.current = null
-      setPhase(p => (p === 'landed' ? p : 'dormant'))
+      setPhase('dormant')
     }
     // 指针拖拽(画布建胶囊同一路)没有原生 drop:捕获阶段先于画布的 pointerup 判定落点
     const onPointerUp = (event) => {
@@ -97,25 +118,41 @@ export function DockRail(props) {
       if (phase !== 'listening' && phase !== 'armed') return
       setPhase(inside(event) ? 'armed' : 'listening')
     }
-    // HTML5 拖拽没落在接驳条上时收回落点提示(源元素上的 dragend / 别处的 drop)
-    const resetHtml5 = () => setPhase(p => (p === 'landed' ? p : p === 'armed' || p === 'listening' ? 'dormant' : p))
-    // 跨面板的 HTML5 拖入(如内容页看板卡):整个窗口里认到我们的类型就把接驳条亮起来
+    // HTML5 拖拽没落在输入卡上时收回落点提示(源元素上的 dragend / 别处的 drop)
+    const resetHtml5 = () => setPhase(p => (p === 'armed' || p === 'listening' ? 'dormant' : p))
+    // 跨面板的 HTML5 拖入(如内容页看板卡):整个窗口里认到我们的类型就把接驳条亮起来;
+    // 指针已经压到输入卡上时直接点亮为落点——并 preventDefault,否则输入框里根本收不到 drop
     const onWindowDragOver = (event) => {
-      if (phase === 'landed') return
-      if (collectDataTransfer(event.dataTransfer, true)) setPhase(p => (p === 'dormant' ? 'listening' : p))
+      if (!collectDataTransfer(event.dataTransfer, true)) return
+      if (pointIn(zoneRectOf(elRef.current), event)) {
+        event.preventDefault()
+        setPhase('armed')
+        return
+      }
+      setPhase(p => (p === 'dormant' ? 'listening' : p))
+    }
+    // 捕捉阶段接管落手:落点可能是输入框、编辑器里的任意节点,不能只靠接驳条自己的 onDrop
+    const onWindowDrop = (event) => {
+      const refs = collectDataTransfer(event.dataTransfer)
+      if (!refs) return
+      if (!pointIn(zoneRectOf(elRef.current), event)) return
+      event.preventDefault()
+      event.stopPropagation()
+      takeLanding(refRef.current ?? refs)
     }
     window.addEventListener('wd-ref-dragstart', onDragStart)
     window.addEventListener('wd-ref-dragend', onDragEnd)
     window.addEventListener('dragend', resetHtml5)
+    window.addEventListener('drop', onWindowDrop, true)
     window.addEventListener('drop', resetHtml5, true)
     window.addEventListener('dragover', onWindowDragOver, true)
     window.addEventListener('pointerup', onPointerUp, true)
     window.addEventListener('pointermove', onPointerMove, true)
     return () => {
-      clearTimeout(timerRef.current)
       window.removeEventListener('wd-ref-dragstart', onDragStart)
       window.removeEventListener('wd-ref-dragend', onDragEnd)
       window.removeEventListener('dragend', resetHtml5)
+      window.removeEventListener('drop', onWindowDrop, true)
       window.removeEventListener('drop', resetHtml5, true)
       window.removeEventListener('dragover', onWindowDragOver, true)
       window.removeEventListener('pointerup', onPointerUp, true)
@@ -137,19 +174,8 @@ export function DockRail(props) {
         if (event.currentTarget.contains(event.relatedTarget)) return
         setPhase(p => (p === 'armed' ? 'listening' : p))
       }}
-      onDrop={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        const ids = refRef.current ?? collectDataTransfer(event.dataTransfer)
-        endRefDrag()
-        takeLanding(ids)
-      }}
     >
-      {phase === 'landed' ? (
-        <div className="md-dock-chips">
-          {chips.map((chip, i) => <span key={i} className={`md-ref-chip ${chip.rest ? 'is-rest' : ''}`}>{chip.label}</span>)}
-        </div>
-      ) : phase !== 'dormant' ? <span className="md-dock-hint">{t('拖到这里，把素材写进对话')}</span> : null}
+      {phase === 'dormant' ? null : <span className="md-dock-hint">{t('拖到这里，把素材写进对话')}</span>}
     </div>
   )
 }
@@ -163,17 +189,16 @@ function collectDataTransfer(dt, typesOnly = false) {
   const hasCapsule = types.includes('text/writing-desk-capsule')
   if (!hasRefs && !hasItem && !hasCapsule) return null
   if (typesOnly) return {}
-  let ids = []
+  let itemIds = []
   if (hasRefs) {
     try {
       const parsed = JSON.parse(dt.getData('application/x-writing-desk-items'))
-      if (Array.isArray(parsed)) ids = parsed
+      if (Array.isArray(parsed)) itemIds = parsed.filter(row => typeof row === 'string')
     } catch { /* 旧格式兜底 */ }
   }
-  ids = ids.concat(
-    ...(dt.getData('text/writing-desk-item') || '').split('\n'),
-    ...(dt.getData('text/writing-desk-capsule') || '').split('\n'),
-  )
-  ids = ids.map(row => String(row || '').trim()).filter(Boolean)
-  return ids.length ? { itemIds: ids } : null
+  const rows = (value) => String(value || '').split('\n').map(row => row.trim()).filter(Boolean)
+  itemIds = itemIds.concat(rows(dt.getData('text/writing-desk-item')))
+  // 胶囊单独成条:并进 itemIds 会被当成灵感 ID 去查,查不到整批就作废
+  const capsuleIds = rows(dt.getData('text/writing-desk-capsule'))
+  return itemIds.length || capsuleIds.length ? { itemIds, capsuleIds } : null
 }

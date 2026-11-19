@@ -7,7 +7,12 @@ import { closeCapsule, dispatchOps, EMPTY_LIST, openCapsule, setDesk, toggleSele
 import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, openWritingSession, overDock, startRefDrag } from './session-link.js'
 import { t } from './i18n.js'
 import { Dialog, Icon, openMenuAt } from './ui.jsx'
+import { takeInFiles } from './take-in.js'
 import { capsuleMembers, categoryOf, isIdea, posterOf } from './util.js'
+
+function dragHasFiles(event) {
+  return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+}
 
 /** 关闭态卡堆露出的迷你封面数:两列两行。 */
 const PILE_SLOTS = 4
@@ -53,8 +58,8 @@ export function CapsuleCard({ capsule, members, selected = false, compact = fals
     event.stopPropagation()
     openWritingSession({ capsuleIds: [capsule.id] })
   }
-  // 从灵感墙上拖一张(或多选的一组)卡压到胶囊上:松手即并入
-  const carries = (event) => Array.from(event.dataTransfer?.types ?? []).includes('application/x-writing-desk-items')
+  // 从灵感墙上拖一张(或多选的一组)卡压到胶囊上:松手即并入;拖文件进来直接收进这堆
+  const carries = (event) => Array.from(event.dataTransfer?.types ?? []).includes('application/x-writing-desk-items') || dragHasFiles(event)
   const dragOver = (event) => {
     if (!carries(event)) return
     event.preventDefault()
@@ -70,12 +75,28 @@ export function CapsuleCard({ capsule, members, selected = false, compact = fals
     event.preventDefault()
     event.stopPropagation()
     setDrop(false)
+    const files = Array.from(event.dataTransfer?.files ?? [])
+    if (files.length) {
+      takeInFiles(files, { capsuleId: capsule.id })
+      return
+    }
     let ids = []
     try { ids = JSON.parse(event.dataTransfer.getData('application/x-writing-desk-items')) } catch { ids = [] }
     const fresh = (Array.isArray(ids) ? ids : []).filter(id => typeof id === 'string' && !capsule.itemIds.includes(id))
     if (!fresh.length) return
     await dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: [...capsule.itemIds, ...fresh] }], { label: t('并入胶囊') })
     setDesk({ selection: null })
+  }
+  // 拖胶囊卡到接驳条 = 整堆添加到当前会话;dataTransfer 用胶囊专用类型,别混进灵感 ID
+  const dragStart = (event) => {
+    event.dataTransfer.effectAllowed = 'copy'
+    event.dataTransfer.setData('text/writing-desk-capsule', capsule.id)
+    event.currentTarget.classList.add('is-dragging')
+    startRefDrag({ capsuleIds: [capsule.id] })
+  }
+  const dragEnd = (event) => {
+    event.currentTarget.classList.remove('is-dragging')
+    endRefDrag()
   }
   const more = (event) => {
     event.preventDefault()
@@ -93,6 +114,9 @@ export function CapsuleCard({ capsule, members, selected = false, compact = fals
       data-capsule={capsule.id}
       tabIndex={0}
       role="button"
+      draggable
+      onDragStart={dragStart}
+      onDragEnd={dragEnd}
       onDragOver={dragOver}
       onDragLeave={dragLeave}
       onDrop={dropIn}
@@ -141,8 +165,49 @@ export function CapsuleCard({ capsule, members, selected = false, compact = fals
 }
 
 /**
+ * 胶囊名就地改:点标题变成输入框,回车或点到别处即存,Esc 还原。
+ * Host 的 update_capsule 收 name(空名忽略、截 60 字),这里只管交互,所以没有保存按钮。
+ */
+function CapsuleName({ capsule }) {
+  const [draft, setDraft] = React.useState(null)
+  const commit = () => {
+    const name = (draft ?? '').trim()
+    setDraft(null)
+    if (name && name !== capsule.name) dispatchOps([{ op: 'update_capsule', id: capsule.id, name }], { label: t('重命名胶囊') })
+  }
+  if (draft !== null) {
+    return (
+      <input
+        className="md-capsule-name-input"
+        value={draft}
+        autoFocus
+        maxLength={60}
+        aria-label={t('胶囊名字')}
+        onFocus={event => event.currentTarget.select()}
+        onChange={event => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault()
+            commit()
+          } else if (event.key === 'Escape') {
+            event.preventDefault()
+            setDraft(null)
+          }
+        }}
+      />
+    )
+  }
+  return (
+    <h3 className="md-capsule-view-name">
+      <button type="button" className="md-capsule-name-btn" title={t('点击重命名')} onClick={() => setDraft(capsule.name)}>{capsule.name}</button>
+    </h3>
+  )
+}
+
+/**
  * 胶囊浮层:卡堆放大居中,一页六张两列瀑布流,两侧翻页,成员可拖拽排序、拖出去即移出。
- * 头部是静态名字 + 张数 + 解散按钮——胶囊没有编辑,名字在第一次合成时给。
+ * 头部是名字 + 张数 + 解散按钮——名字点一下就地改,合成时先给一个默认名。
  */
 export function CapsuleView() {
   const id = useDesk(s => s.capsuleId)
@@ -152,6 +217,7 @@ export function CapsuleView() {
   const [draggingId, setDraggingId] = React.useState(null)
   const [overId, setOverId] = React.useState(null)
   const [dropOut, setDropOut] = React.useState(false)
+  const [taking, setTaking] = React.useState(false)
   const dragRef = React.useRef(null)
   const pageTimer = React.useRef(0)
   const suppressClick = React.useRef(false)
@@ -170,12 +236,14 @@ export function CapsuleView() {
   React.useEffect(() => {
     if (!id) return undefined
     const onKey = (event) => {
+      const typing = event.target.closest?.('input,textarea,select')
       if (event.key === 'Escape') {
+        if (typing) return // 正在改名:交给输入框自己还原,别把浮层关掉
         event.stopPropagation()
         closeCapsule()
         return
       }
-      if (event.target.closest?.('input,textarea,select')) return
+      if (typing) return
       if (event.key === 'ArrowLeft') setPage(current => Math.max(0, current - 1))
       if (event.key === 'ArrowRight') setPage(current => Math.min(pages - 1, current + 1))
     }
@@ -295,8 +363,23 @@ export function CapsuleView() {
     <div
       className={`md-capsule-mask ${dropOut ? 'is-drop-out' : ''}`}
       onPointerDown={event => { if (event.target === event.currentTarget) closeCapsule() }}
+      // 浮层也是落点：拖文件到浮层任何位置松手，就收进这堆(ADR 0011)
+      onDragOver={(event) => {
+        if (!dragHasFiles(event)) return
+        event.preventDefault()
+        setTaking(true)
+      }}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) setTaking(false) }}
+      onDrop={(event) => {
+        const files = Array.from(event.dataTransfer?.files ?? [])
+        if (!files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        setTaking(false)
+        takeInFiles(files, { capsuleId: capsule.id })
+      }}
     >
-      {dropOut ? <div className="md-capsule-drop-hint">{t('松手移出胶囊，放到灵感墙上')}</div> : null}
+      {dropOut ? <div className="md-capsule-drop-hint">{t('松手移出胶囊，放到灵感墙上')}</div> : taking ? <div className="md-capsule-drop-hint">{t('松手就收进这堆')}</div> : null}
       <section
         className="md-capsule-view"
         ref={viewRef}
@@ -306,7 +389,7 @@ export function CapsuleView() {
         aria-label={t('胶囊 {name}', { name: capsule.name })}
       >
         <header className="md-capsule-view-head">
-          <h3 className="md-capsule-view-name">{capsule.name}</h3>
+          <CapsuleName capsule={capsule} />
           <span className="md-capsule-view-meta">
             {t('{n} 张灵感', { n: members.length })}
             {pages > 1 ? ` · ${t('第 {page} / {pages} 页', { page: page + 1, pages })}` : ''}
@@ -314,7 +397,6 @@ export function CapsuleView() {
           <span style={{ flex: 1 }} />
           <button type="button" className="md-btn" onClick={() => setDesk({ capsuleAdd: capsule.id })}><Icon name="plus" size={13} />{t('添加灵感')}</button>
           <button type="button" className="md-btn is-danger" onClick={() => dissolveCapsule(capsule)}><Icon name="trash" size={13} />{t('解散')}</button>
-          <button type="button" className="md-icon-btn" aria-label={t('关闭')} onClick={closeCapsule}><Icon name="close" size={14} /></button>
         </header>
 
         <div className="md-pile-grid is-large">

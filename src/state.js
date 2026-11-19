@@ -34,6 +34,22 @@ export function panelState(item) {
   return 'idea'
 }
 
+/**
+ * 待排期:没挂进生产流程、没排期、没发布。待排期托盘用它收条目,胶囊卡也用它判断
+ * 「这张胶囊在托盘里还露不露」——成员排掉一张不该把整张胶囊带走(ADR 0011)。
+ */
+export function awaitingSchedule(item) {
+  return !item.parentId && !isScheduled(item) && panelState(item) !== 'published'
+}
+
+/**
+ * 胶囊成稿:成稿产物只落在它的一个成员上(成稿输入的既有约定:targetId 取第一个来源),
+ * 所以任一成员成稿就算整张胶囊成稿——胶囊是一张卡,不按成员各算各的。
+ */
+export function capsuleDrafted(members) {
+  return members.some(isDrafted)
+}
+
 /** 写回与编辑共用的字段白名单:只能落回这几样,工具与面板各走各的入口。 */
 const WRITE_FIELDS = ['title', 'coverText', 'article']
 

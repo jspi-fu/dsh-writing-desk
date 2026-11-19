@@ -229,7 +229,7 @@ export async function exportForPublish(id) {
   }
 }
 
-// 一键投递(ADR 0009):发布包导出后把任务写进 outbox,wdesk 桥监听下发给浏览器扩展,
+// 一键投递(ADR 0009):发布包导出后把任务写进 outbox,dswritesync 桥监听下发给浏览器扩展,
 // 扩展只到草稿箱;回执由 host 消化成 item.dispatches,状态仍由用户确认。
 export async function dispatchPublish(id, platforms) {
   try {
@@ -277,18 +277,7 @@ export async function uploadFile(file) {
   return data
 }
 
-export async function captureFiles(files) {
-  for (const file of files) {
-    try {
-      const { src, kind } = await uploadFile(file)
-      const title = file.name.replace(/\.[^.]+$/, '')
-      await dispatchOps([{ op: 'add_item', kind, title, media: { src } }], { label: t('收藏 {title}', { title }), silent: true })
-      toast(t('已放到灵感墙'), { undo: true })
-    } catch (err) {
-      report(err)
-    }
-  }
-}
+// 收下(粘贴/拖入)在 take-in.js:去重、批量落库与落点都在那边,desk.js 只留上传原语。
 
 // 只抓正文不调模型(ADR 0006):风格提炼的文字由这里取,之后投给创作会话。
 export async function harvestText(urls) {

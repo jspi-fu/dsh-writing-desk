@@ -121,3 +121,45 @@ test('useDesk 选择器不得每次渲染返回新数组(React #185 防复发)',
     assert.doesNotMatch(source, /useDesk\([^\n]*\?\? \[\]/, `${file} 的 useDesk 选择器里还有 ?? [],要改用 desk.js 的 EMPTY_LIST`)
   }
 })
+
+// 拖拽接线(ADR 0011 补充):灵感卡与胶囊卡都能拖走,落手由接驳条在 window 捕获阶段接管,
+// 灵感墙上一张卡拖到另一张卡上 = 合成胶囊。这三处任何一处掉线,用户看到的就是「拖不动」。
+test('拖拽接线：卡能拖、接驳条接管落手、墙面卡到卡合成胶囊', () => {
+  const card = readFileSync(new URL('./card.jsx', DIR), 'utf8')
+  assert.match(card, /startRefDrag\(\{\s*itemIds/, '灵感卡开始拖时要通知接驳条')
+  assert.match(card, /endRefDrag\(\)/, '灵感卡拖完要收回落点提示')
+
+  const capsule = readFileSync(new URL('./capsule.jsx', DIR), 'utf8')
+  assert.match(capsule, /setData\('text\/writing-desk-capsule', capsule\.id\)/)
+  assert.match(capsule, /onDragStart=\{dragStart\}/, '胶囊卡要真的挂上拖拽')
+  assert.match(capsule, /startRefDrag\(\{\s*capsuleIds/, '胶囊卡开始拖时要通知接驳条')
+
+  const dock = readFileSync(new URL('./dock.jsx', DIR), 'utf8')
+  assert.match(dock, /addEventListener\('drop', onWindowDrop, true\)/, '落手在 window 捕获阶段接管')
+  assert.match(dock, /rows\(dt\.getData\('text\/writing-desk-capsule'\)\)/, '胶囊 ID 单独成条,不混进灵感 ID')
+  assert.match(dock, /registerDockRect\(\(\) => zoneRectOf\(elRef\.current\)\)/, '落点要放大到整块输入卡')
+  assert.match(dock, /addReferenceToCurrentSession\(entries\)/, '落手要与「添加到当前会话」按钮同一条路')
+  assert.doesNotMatch(dock, /referenceIntoDraft|md-dock-chips/, '接驳条不再自己画签条、不再整段替换草稿')
+
+  const wall = readFileSync(new URL('./wall.jsx', DIR), 'utf8')
+  assert.match(wall, /op: 'add_capsule', itemIds: \[entry\.item\.id/, '拖到另一张卡上合成胶囊')
+  assert.match(wall, /is-merge/, '合并目标要能看出高亮')
+})
+
+// 胶囊改名(需求):浮层标题点一下就地编辑,回车/失焦即存,只走 update_capsule 的 name;
+// 输入框里按 Esc 只还原名字,不能连浮层一起关掉。
+test('胶囊改名：标题可点开编辑,提交落 update_capsule 的 name', () => {
+  const capsule = readFileSync(new URL('./capsule.jsx', DIR), 'utf8')
+  assert.match(capsule, /op: 'update_capsule', id: capsule\.id, name/, '改名要落在 update_capsule 的 name 上')
+  assert.match(capsule, /onBlur=\{commit\}/, '点到别处要自动保存')
+  assert.match(capsule, /<CapsuleName capsule=\{capsule\} \/>/, '浮层标题要用可编辑的那一个')
+  assert.match(capsule, /const typing = event\.target\.closest\?\.\('input,textarea,select'\)/, 'Esc 要先看焦点在不在输入框里')
+})
+
+// 胶囊是一张卡(ADR 0011):排期与成稿都按整体算,托盘里不拆成员
+test('排期页把胶囊当一张卡：拖到日历全体一起排、成稿按整张走', () => {
+  const schedule = readFileSync(new URL('./schedule.jsx', DIR), 'utf8')
+  assert.match(schedule, /capsuleDrafted/, '托盘分组要用共享的胶囊成稿口径')
+  assert.match(schedule, /const members = capsule\.itemIds\.map\(itemId => byId\.get\(itemId\)\)/, '拖到日历要取全部成员')
+  assert.doesNotMatch(schedule, /filter(row => row && awaitingSchedule(row))/, '不能只排还没排期的成员,否则一张胶囊摊在两处')
+})
