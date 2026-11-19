@@ -1,0 +1,21 @@
+{
+  "name": "@dsh-writing-desk/cli",
+  "version": "0.1.0",
+  "description": "wdesk——图文创作台的本地桥与命令行:把成稿投递给浏览器扩展发到各平台草稿箱,把网页采集送进灵感墙。",
+  "type": "module",
+  "bin": {
+    "wdesk": "./bin/wdesk.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jspi-fu/dsh-writing-desk.git",
+    "directory": "cli"
+  }
+}
