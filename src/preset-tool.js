@@ -30,8 +30,24 @@ function stringList(value, field) {
 
 const clip = (text, limit) => (typeof text === 'string' && text.length > limit ? { text: text.slice(0, limit), truncated: true } : { text: text ?? '', truncated: false })
 
+/** 已有产物概要:write 能写的字段都给回当前值(正文只给预览),会话拿它拿 rev、续跑意图单(ADR 0006)。 */
+function summarizeProduction(production) {
+  const cover = production.cover
+  return {
+    rev: production.rev ?? 0,
+    ...(production.title ? { title: production.title } : {}),
+    ...(production.coverText ? { coverText: production.coverText } : {}),
+    ...(production.article ? { existingDraft: clip(production.article, ARTICLE_PREVIEW) } : {}),
+    ...(cover?.src ? { cover: { src: cover.src, ...(cover.caption ? { caption: cover.caption } : {}) } } : {}),
+    ...(Array.isArray(production.images) && production.images.length
+      ? { images: production.images.filter(row => row?.src).map(row => ({ src: row.src, ...(row.caption ? { caption: row.caption } : {}), ...(row.anchor ? { anchor: row.anchor } : {}) })) }
+      : {}),
+    ...(production.intent ? { intent: production.intent } : {}),
+    ...(production.review ? { review: production.review } : {}),
+  }
+}
+
 function summarizeItem(item) {
-  const production = item.production
   const body = clip(item.body, BODY_LIMIT)
   return {
     id: item.id,
@@ -43,7 +59,7 @@ function summarizeItem(item) {
     ...(item.url ? { url: item.url } : {}),
     ...(item.source ? { source: item.source } : {}),
     ...(item.media ? { media: item.media } : {}),
-    ...(production?.article ? { existingDraft: clip(production.article, ARTICLE_PREVIEW) } : {}),
+    ...(item.production ? { production: summarizeProduction(item.production) } : {}),
     ...(item.sentToSession ? { sentToSession: item.sentToSession } : {}),
   }
 }
@@ -67,7 +83,7 @@ function readTool(desk) {
       schema: {
         type: 'object',
         properties: {
-          items: { type: 'array', description: '灵感列表:ID、标题、正文(超长截断)、标签、已有草稿预览。' },
+          items: { type: 'array', description: '灵感列表:ID、标题、正文(超长截断)、标签;已成稿的带 production 概要——rev 与写回工具可写的各字段当前值,正文只给预览。' },
           capsules: { type: 'array', description: '胶囊列表与成员数。' },
           total: { type: 'number', description: '命中的灵感总数。' },
         },

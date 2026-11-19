@@ -2,7 +2,7 @@
 // 平时近无(4px 占位);素材拖起时淡入虚线行;拖近转实线内衬;落手后弹素材签,
 // 整个浮层唯一的「作者时刻」。落点就是接驳条——宿主红线决定做不了全对话区高亮。
 import React from 'react'
-import { endRefDrag, referenceIntoDraft, registerDockRect, setComposer } from './session-link.js'
+import { claimPendingReference, endRefDrag, hasPendingReference, referenceIntoDraft, registerDockRect, setComposer } from './session-link.js'
 import { t } from './i18n.js'
 
 // 四态:dormant(近无) → listening(虚线行) → armed(实线内衬) → landed(签条) → 3s 后回落
@@ -24,14 +24,35 @@ export function DockRail(props) {
   const elRef = React.useRef(null)
 
   React.useEffect(() => {
-    setComposer({
+    const handle = {
       setDraft: text => inputActions?.setDraft?.(String(text ?? '')),
+      // 引用签:宿主 inputActions.insertQuote(text, summary) 把素材插进输入框,
+      // summary 可在 composer 里悬浮展开标题/详情;旧宿主没有它,退回 setDraft。
+      insertQuote: typeof inputActions?.insertQuote === 'function'
+        ? (text, summary) => inputActions.insertQuote(String(text ?? ''), summary)
+        : null,
       submitAvailable: typeof inputActions?.submit === 'function',
       getDraft: () => draftRef.current,
-    })
+    }
+    setComposer(handle)
     // 画布拖拽在松手时问 overDock:登记矩形读取器,卸载时归还
     registerDockRect(() => elRef.current?.getBoundingClientRect() ?? null)
-    return () => { setComposer(null); registerDockRect(null) }
+    // 「创作」打开的会话:startSession 只能带纯文本,prompt 里的引用块要等这个
+    // 会话的输入面挂载后换成引用签。编辑器可能晚一拍,短暂退避重试。
+    let claimTimer = 0
+    let claimTries = 0
+    const claim = () => {
+      if (claimPendingReference(handle)) return
+      if (!hasPendingReference()) return
+      claimTries += 1
+      if (claimTries < 5) claimTimer = setTimeout(claim, claimTries * 120)
+    }
+    claim()
+    return () => {
+      clearTimeout(claimTimer)
+      setComposer(null)
+      registerDockRect(null)
+    }
   }, [inputActions])
 
   const land = React.useCallback((entries) => {
@@ -137,11 +158,22 @@ export function DockRail(props) {
 function collectDataTransfer(dt, typesOnly = false) {
   if (!dt) return null
   const types = [...(dt.types ?? [])]
+  const hasRefs = types.includes('application/x-writing-desk-items')
   const hasItem = types.includes('text/writing-desk-item')
   const hasCapsule = types.includes('text/writing-desk-capsule')
-  if (!hasItem && !hasCapsule) return null
+  if (!hasRefs && !hasItem && !hasCapsule) return null
   if (typesOnly) return {}
-  const ids = [...(dt.getData('text/writing-desk-item') || '').split('\n'), ...(dt.getData('text/writing-desk-capsule') || '').split('\n')]
-    .map(row => row.trim()).filter(Boolean)
+  let ids = []
+  if (hasRefs) {
+    try {
+      const parsed = JSON.parse(dt.getData('application/x-writing-desk-items'))
+      if (Array.isArray(parsed)) ids = parsed
+    } catch { /* 旧格式兜底 */ }
+  }
+  ids = ids.concat(
+    ...(dt.getData('text/writing-desk-item') || '').split('\n'),
+    ...(dt.getData('text/writing-desk-capsule') || '').split('\n'),
+  )
+  ids = ids.map(row => String(row || '').trim()).filter(Boolean)
   return ids.length ? { itemIds: ids } : null
 }

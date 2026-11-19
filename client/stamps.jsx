@@ -28,7 +28,7 @@ function coverOf(list) {
 export function Stamp({ list, today, onOpen, label }) {
   if (!list?.length) {
     return (
-      <button type="button" className={`md-stamp is-blank ${today ? 'is-today' : ''}`} aria-label={today ? t('今天还没有记录，记一条') : t('{label} 没有记录', { label })} onClick={today ? () => openCapture('text') : undefined} disabled={!today}>
+      <button type="button" className={`md-stamp is-blank ${today ? 'is-today' : ''}`} aria-label={today ? t('今天还没有记录，记一条') : t('{label} 没有记录', { label })} onClick={today ? () => openCapture('note') : undefined} disabled={!today}>
         {today ? <Icon name="plus" size={16} /> : null}
       </button>
     )

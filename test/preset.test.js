@@ -154,7 +154,7 @@ test('writing_desk_write:字段写回落库,rev 前进;冲突被拦下时错误�
     const read = registered.find(row => row.name === 'writing_desk_read')
     // 首次写回:rev 缺省视为一致,建产物、清交会话登记
     await store.mutate('交会话', draft => { applyOps(draft, [{ op: 'send_to_session', itemIds: ['seed_1'] }]); return draft })
-    const first = await write.execute({ targetId: 'seed_1', title: '初稿标题', article: '# 初稿\n\n正文', note: '初稿' })
+    const first = await write.execute({ targetId: 'seed_1', title: '初稿标题', article: '# 初稿\n\n正文', intent: { purpose: '种草', status: 'confirmed' }, note: '初稿' })
     assert.equal(first.written, true)
     assert.equal(first.rev, 1)
     let state = await store.read()
@@ -166,11 +166,20 @@ test('writing_desk_write:字段写回落库,rev 前进;冲突被拦下时错误�
     await assert.rejects(write.execute({ targetId: 'seed_1', rev: 0, article: '会话新版' }), /冲突.*校样浮层/s)
     state = await store.read()
     assert.equal(state.items.find(row => row.id === 'seed_1').production.pendingWrite.article, '会话新版')
-    // 读一次拿到新 rev,再写回就通过
+    // 读一次拿到 rev 与产物概要(write 可写的字段都在,正文只给预览),按读到的 rev 续写就通过
     const fresh = await read.execute({ itemIds: ['seed_1'] })
-    assert.equal(fresh.items[0].existingDraft.text, '# 初稿\n\n正文')
-    const second = await write.execute({ targetId: 'seed_1', rev: first.rev, article: '定稿正文', note: '润色' })
+    assert.equal(fresh.items[0].production.rev, 1)
+    assert.equal(fresh.items[0].production.title, '初稿标题')
+    assert.equal(fresh.items[0].production.existingDraft.text, '# 初稿\n\n正文')
+    assert.equal(fresh.items[0].production.intent.purpose, '种草')
+    const second = await write.execute({ targetId: 'seed_1', rev: fresh.items[0].production.rev, article: '定稿正文', note: '润色' })
     assert.equal(second.rev, 2)
+    // 用户在浮层改过之后,会话按 read 拿基线再写:旧 rev 被拦下——闸门没有首写豁免(ADR 0008)
+    await store.mutate('人工改稿', draft => { applyOps(draft, [{ op: 'update_production', id: 'seed_1', title: '人工标题' }]); return draft })
+    const afterEdit = await read.execute({ itemIds: ['seed_1'] })
+    assert.equal(afterEdit.items[0].production.rev, 3)
+    assert.equal(afterEdit.items[0].production.title, '人工标题')
+    await assert.rejects(write.execute({ targetId: 'seed_1', rev: 2, article: '又写一版' }), /冲突/)
     // 没有字段直接报错
     await assert.rejects(write.execute({ targetId: 'seed_1' }), /至少给一个/)
   } finally {

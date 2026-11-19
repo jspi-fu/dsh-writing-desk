@@ -42,6 +42,8 @@ const PATHS = {
   save: 'M12 4v11M7 11l5 5 5-5M5 20h14',
   folder: 'M4 7h6l2 2h10v10H4z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
+  filter: 'M4 5h16l-6.5 8.5V19l-3 1.5v-7z',
+  sort: 'M8 4v16M8 20l-3-3M8 20l3-3M16 20V4M16 4l-3 3M16 4l3 3',
   // 带齿的齿轮。原来的圆加八条短线看起来像太阳，会被当成切换深浅色的按钮
   gear: 'M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z',
 }
@@ -62,12 +64,30 @@ export function IconButton({ icon, label, onClick, active, tone, size = 16, clas
   )
 }
 
-// 右键菜单:胶囊用它承载「解散」「移出」。坐标相对 .md-root,由 Menu 自己贴边校正。
-export function openMenuAt(event, items) {
+// ⋯ 菜单:锚在触发按钮上——优先贴在按钮下方,下方放不下就翻到上方,
+// 左右按根容器夹取。这样浮窗既不会盖住按钮本身,也不会被顶部固定条或容器边缘切掉。
+export function openMenuAt(event, items, align = 'end') {
   event.preventDefault()
   event.stopPropagation()
-  const root = event.currentTarget.closest('.md-root')?.getBoundingClientRect()
-  openMenu({ x: Math.round(event.clientX - (root?.left ?? 0)), y: Math.round(event.clientY - (root?.top ?? 0)) }, items)
+  const el = event.currentTarget
+  const root = el?.closest?.('.md-root')?.getBoundingClientRect()
+  const rect = el?.getBoundingClientRect?.()
+  const originX = root?.left ?? 0
+  const originY = root?.top ?? 0
+  const anchor = rect
+    ? {
+        left: Math.round(rect.left - originX),
+        right: Math.round(rect.right - originX),
+        top: Math.round(rect.top - originY),
+        bottom: Math.round(rect.bottom - originY),
+      }
+    : null
+  openMenu({
+    x: Math.round((event.clientX || rect?.left || 0) - originX),
+    y: Math.round((event.clientY || rect?.bottom || 0) - originY),
+    anchor,
+    align,
+  }, items)
 }
 
 export function Menu() {
@@ -86,7 +106,7 @@ export function Menu() {
     window.addEventListener('keydown', onKey, true)
     window.addEventListener('resize', closeMenu)
     window.addEventListener('wheel', closeMenu, true)
-    ref.current?.querySelector('button')?.focus()
+    ref.current?.querySelector('button')?.focus({ preventScroll: true })
     return () => {
       window.removeEventListener('pointerdown', onPointerDown, true)
       window.removeEventListener('keydown', onKey, true)
@@ -100,8 +120,15 @@ export function Menu() {
     const root = el.closest('.md-root')?.getBoundingClientRect()
     const maxX = (root?.width ?? window.innerWidth) - el.offsetWidth - 8
     const maxY = (root?.height ?? window.innerHeight) - el.offsetHeight - 8
-    el.style.left = `${Math.max(8, Math.min(menu.x, maxX))}px`
-    el.style.top = `${Math.max(8, Math.min(menu.y, maxY))}px`
+    let x = menu.x
+    let y = menu.y
+    if (menu.anchor) {
+      x = menu.align === 'start' ? menu.anchor.left : menu.anchor.right - el.offsetWidth
+      y = menu.anchor.bottom + 6
+      if (y + el.offsetHeight > maxY) y = menu.anchor.top - el.offsetHeight - 6
+    }
+    el.style.left = `${Math.max(8, Math.min(x, Math.max(8, maxX)))}px`
+    el.style.top = `${Math.max(8, Math.min(y, Math.max(8, maxY)))}px`
   }, [menu])
   if (!menu) return null
   return (
@@ -134,7 +161,7 @@ export function Segmented({ value, options, onChange, label }) {  return (
   )
 }
 
-export function Dialog({ title, onClose, children, width = 440 }) {
+export function Dialog({ title, onClose, children, width = 440, className = '' }) {
   const ref = React.useRef(null)
   // onClose 每次渲染都可能是新函数；放进 ref，免得每打一个字焦点就被抢走
   const close = React.useRef(onClose)
@@ -153,7 +180,7 @@ export function Dialog({ title, onClose, children, width = 440 }) {
   }, [])
   return (
     <div className="md-dialog-mask" onPointerDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
-      <div className="md-dialog" role="dialog" aria-modal="true" aria-label={title} style={{ width }} ref={ref}>
+      <div className={`md-dialog ${className}`.trim()} role="dialog" aria-modal="true" aria-label={title} style={{ width }} ref={ref}>
         <div className="md-dialog-head">
           <h2>{title}</h2>
           <IconButton icon="close" label={t('关闭')} onClick={onClose} />

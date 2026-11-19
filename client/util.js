@@ -7,7 +7,14 @@ export { STATUSES }
 
 // 这些表只放中文原文，显示时再用 t() 翻译
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
-export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记' }
+export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记', file: '文件' }
+// 灵感墙的三个分类(参考项目的货架口径):笔记 / 文件 / 链接。原有五种 kind 归到这里,
+// 金句已从新建入口撤掉,老数据按笔记显示,不删内容。
+export const KIND_CATEGORY = { note: 'note', quote: 'note', image: 'file', video: 'file', web: 'link', file: 'file' }
+export const CATEGORY_LABEL = { note: '笔记', file: '文件', link: '链接' }
+export function categoryOf(item) {
+  return KIND_CATEGORY[item?.kind] ?? 'note'
+}
 export const PLATFORMS = ['公众号', '小红书', '知乎']
 /** 下拉框里的平台顺序。 */
 export function platformChoices() {
@@ -113,12 +120,12 @@ export function unit(n, zh) {
   return t(zh)
 }
 
-/** 连续记录天数：今天还没记时，从昨天往回算，不会让今天一早就断掉。 */
-/** 灵感墙和邮票只放自己记下的灵感，从账号导入的已发内容不算。 */
+/** 灵感墙、时间轴与内容页只放自己记下的灵感;早期版本的分支与账号导入件不算(旧数据里仍可能带这些字段)。 */
 export function isIdea(item) {
   return !item.parentId && !item.imported
 }
 
+/** 连续记录天数:今天还没记时,从昨天往回算,不会让今天一早就断掉。 */
 export function computeStreak(items, now = new Date()) {
   const days = new Set(items.filter(isIdea).map(i => dayKey(i.createdAt)))
   const cursor = new Date(now)
@@ -141,7 +148,38 @@ export function displayItem(item) {
 
 export function posterOf(item) {
   if (!item.media) return null
+  if (item.kind === 'file') return null
   return item.media.poster || (item.kind === 'video' ? null : item.media.src)
+}
+
+/** 卡的封面:自选封面优先,其次媒体首帧/原图。文件类默认没有封面,退回类型底图。 */
+export function coverOf(item) {
+  return item?.cover?.src || posterOf(item) || item?.media?.poster || null
+}
+
+/** 文件类素材的原文件地址(点击外链/打开时用)。 */
+export function fileOf(item) {
+  return item?.media?.src ?? null
+}
+
+/** 文件扩展名(大写),卡片的默认封面与站点行都拿它当类型字。 */
+export function fileExtOf(item) {
+  const match = /\.([a-z0-9]{1,8})(?:\?|$)/i.exec(item?.media?.src ?? '')
+  return match ? match[1].toUpperCase() : ''
+}
+
+export function fileNameOf(item) {
+  const fromSrc = String(item?.media?.src ?? '').split(/[\\/]/).pop().replace(/\?.*$/, '')
+  return item?.media?.name || fromSrc || item?.title || ''
+}
+
+/** 相对地址按当前页面解析成绝对地址;外链按钮与 window.open 都走这里。 */
+export function absoluteUrl(src) {
+  try {
+    return new URL(src, window.location.href).href
+  } catch {
+    return src
+  }
 }
 
 /** 胶囊成员按 itemIds 顺序取回(成员可能已被删,缺的跳过);胶囊卡、胶囊对话框与画布共用。 */
@@ -150,7 +188,7 @@ export function capsuleMembers(capsule, items) {
   return capsule.itemIds.map(id => byId.get(id)).filter(Boolean)
 }
 
-/** HTML 转义:renderMarkdown 与编辑器高亮同一份实现,模型或用户写的 HTML 不会执行。 */
+/** HTML 转义:renderMarkdown 同一份实现,模型或用户写的 HTML 不会执行。 */
 export function escapeHtml(text) {
   return text.replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]))
 }

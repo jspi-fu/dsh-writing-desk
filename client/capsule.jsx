@@ -1,113 +1,153 @@
-// 胶囊:灵感墙上的异形卡堆(ADR 0004)。成员卡按格子宽度原字号重排,不做等比缩放;
-// 关闭态最多露四张,其余折成纸堆边缘;点一下进入两列瀑布流的分页浮层,
-// 浮层靠左右两侧翻页、顶部居中的标题改名,右键解散或移出。成员灵感仍独立存在,只是不再单独出现在灵感流里。
+// 胶囊:一组灵感卡片的集合(ADR 0004)。它和灵感卡长得同一种,但没有「编辑」——
+// 点开是集合的浮层,右上角是「解散」;多选、解散、添加成员都和多选条走同一套动作。
+// 成员灵感仍独立存在,只是不再单独出现在墙面上。
 import React from 'react'
-import { Card } from './card.jsx'
-import { closeCapsule, dispatchOps, EMPTY_LIST, getDesk, openItem, useDesk } from './desk.js'
-import { endRefDrag, openWritingSession, overDock, referenceIntoDraft, startRefDrag } from './session-link.js'
+import { Card, openEditItem } from './card.jsx'
+import { closeCapsule, dispatchOps, EMPTY_LIST, openCapsule, setDesk, toggleSelect, useDesk } from './desk.js'
+import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, openWritingSession, overDock, startRefDrag } from './session-link.js'
 import { t } from './i18n.js'
-import { Icon, openMenuAt } from './ui.jsx'
-import { capsuleMembers, displayItem } from './util.js'
+import { Dialog, Icon, openMenuAt } from './ui.jsx'
+import { capsuleMembers, categoryOf, isIdea, posterOf } from './util.js'
 
-/** 关闭态最多露出的卡数:超出部分折成纸堆边缘,不再画空槽位。 */
+/** 关闭态卡堆露出的迷你封面数:两列两行。 */
 const PILE_SLOTS = 4
 /** 浮层一页六张:两列瀑布流,三行放得下。 */
 const PER_PAGE = 6
-
-/** 标签/类型筛选对胶囊成员使用同一口径:关闭态只显示命中的成员。 */
-export function itemMatchesFilters(item, tag, kind) {
-  return (!tag || (item.tags ?? []).includes(tag)) && (kind === 'all' || displayItem(item).kind === kind)
-}
-
-/** 右键菜单:解散胶囊,或在成员身上顺手把它移出;引用与会话也在这里,浮层上就不再摆按钮。 */
-export function openCapsuleMenu(event, capsule, { item = null } = {}) {
-  openMenuAt(event, [
-    ...(item ? [{ label: t('移出胶囊'), icon: 'upRight', onSelect: () => removeFromCapsule(capsule, item.id) }] : []),
-    { label: t('引用到对话'), icon: 'link', onSelect: () => referenceIntoDraft({ capsuleIds: [capsule.id] }) },
-    { label: t('去创作会话'), icon: 'bolt', onSelect: () => openWritingSession({ capsuleIds: [capsule.id] }) },
-    { label: t('解散胶囊'), icon: 'trash', danger: true, onSelect: () => dissolveCapsule(capsule) },
-  ])
-}
 
 function dissolveCapsule(capsule) {
   dispatchOps([{ op: 'delete_capsule', id: capsule.id }], { label: t('解散胶囊') })
 }
 
-/** 移出成员：只改胶囊的成员表，成员回到灵感流里。 */
+/** 移出成员:只改胶囊的成员表,成员回到灵感流里。 */
 export function removeFromCapsule(capsule, itemId) {
   const remaining = capsule.itemIds.filter(row => row !== itemId)
   return dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: remaining }], { label: t('移出胶囊') })
 }
 
+function memberCover(item) {
+  return posterOf(item)
+}
+
 /**
- * 关闭态胶囊:两列卡堆。成员卡按列宽重排,最多露四张,其余折成纸堆边缘,不画空槽位。
- * 点卡堆任意位置打开浮层;右键解散;拖卡可以把成员拖出去。
+ * 关闭态胶囊:和灵感卡同骨架(.md-tile),封面位换成两列小封面。
+ * 点卡堆打开浮层;左上圆钮多选,右上解散(仅悬停或选中时显形);
+ * 底部黑胶囊进创作会话,右侧小箭头是「添加到对话 / 添加灵感 / 解散」。
  */
-export function CapsuleCard({ capsule, items, onOpen, onItemPointerDown, selected = false, filter = null, hiddenIds = null }) {
-  const all = capsuleMembers(capsule, items)
-  const unheld = hiddenIds ? all.filter(item => !hiddenIds.has(item.id)) : all
-  const visible = filter ? unheld.filter(item => filter(item)) : unheld
-  if (!visible.length) return null
-  const shown = visible.slice(0, PILE_SLOTS)
-  const folded = visible.length - shown.length
+export function CapsuleCard({ capsule, members, selected = false, compact = false }) {
+  const [drop, setDrop] = React.useState(false)
+  const all = members ?? []
+  if (!all.length) return null
+  const shown = all.slice(0, PILE_SLOTS)
+  const pick = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    toggleSelect('capsule', capsule.id)
+  }
+  const remove = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    dissolveCapsule(capsule)
+  }
+  const compose = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    openWritingSession({ capsuleIds: [capsule.id] })
+  }
+  // 从灵感墙上拖一张(或多选的一组)卡压到胶囊上:松手即并入
+  const carries = (event) => Array.from(event.dataTransfer?.types ?? []).includes('application/x-writing-desk-items')
+  const dragOver = (event) => {
+    if (!carries(event)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDrop(true)
+  }
+  const dragLeave = (event) => {
+    if (event.currentTarget.contains(event.relatedTarget)) return
+    setDrop(false)
+  }
+  const dropIn = async (event) => {
+    if (!carries(event)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDrop(false)
+    let ids = []
+    try { ids = JSON.parse(event.dataTransfer.getData('application/x-writing-desk-items')) } catch { ids = [] }
+    const fresh = (Array.isArray(ids) ? ids : []).filter(id => typeof id === 'string' && !capsule.itemIds.includes(id))
+    if (!fresh.length) return
+    await dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: [...capsule.itemIds, ...fresh] }], { label: t('并入胶囊') })
+    setDesk({ selection: null })
+  }
+  const more = (event) => {
+    event.preventDefault()
+    event.stopPropagation()
+    openMenuAt(event, [
+      { label: t('复制给 AI'), icon: 'copy', onSelect: () => copyReferenceForAI({ capsuleIds: [capsule.id] }) },
+      { label: t('添加到当前会话'), icon: 'link', onSelect: () => addReferenceToCurrentSession({ capsuleIds: [capsule.id] }) },
+      { label: t('添加灵感'), icon: 'plus', onSelect: () => setDesk({ capsuleAdd: capsule.id }) },
+      { label: t('解散胶囊'), icon: 'trash', danger: true, onSelect: () => dissolveCapsule(capsule) },
+    ])
+  }
   return (
     <article
-      className={`md-capsule ${selected ? 'is-selected' : ''}`}
+      className={`md-tile is-capsule ${selected ? 'is-selected' : ''} ${compact ? 'is-compact' : ''} ${drop ? 'is-drop' : ''}`}
       data-capsule={capsule.id}
       tabIndex={0}
       role="button"
+      onDragOver={dragOver}
+      onDragLeave={dragLeave}
+      onDrop={dropIn}
       aria-label={t('胶囊 {name}（{n} 条灵感）', { name: capsule.name, n: all.length })}
-      onClick={event => onOpen?.(capsule, event)}
-      onContextMenu={event => openCapsuleMenu(event, capsule)}
-      onKeyDown={event => {
+      onClick={() => openCapsule(capsule.id)}
+      onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault()
-          onOpen?.(capsule, event)
-        }
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        openCapsule(capsule.id)
       }}
     >
-      <div className="md-pile">
-        <div className="md-pile-grid">
-          {shown.map(item => (
-            <div
-              key={item.id}
-              className="md-pile-card"
-              data-capsule-item={item.id}
-              onPointerDown={onItemPointerDown ? event => onItemPointerDown(event, item, capsule) : undefined}
-            >
-              <Card item={item} tabIndex={-1} />
-            </div>
-          ))}
+      <div className="md-tile-art">
+        <div className="md-tile-stack" aria-hidden="true">
+          {shown.map(item => {
+            const cover = memberCover(item)
+            return cover
+              ? <img key={item.id} src={cover} alt="" loading="lazy" draggable={false} referrerPolicy="no-referrer" />
+              : <i key={item.id} className={`is-${categoryOf(item)}`} />
+          })}
+          {Array.from({ length: Math.max(0, PILE_SLOTS - shown.length) }, (_, index) => <i key={`void-${index}`} className="is-void" />)}
         </div>
-        {folded > 0 ? <div className="md-pile-fold" aria-hidden="true"><i /><i /></div> : null}
+        <span className="md-tile-count">{t('{n} 张', { n: all.length })}</span>
+        <button type="button" className={`md-tile-check ${selected ? 'is-on' : ''}`} aria-pressed={selected} aria-label={selected ? t('取消选择') : t('选择')} onClick={pick}>
+          {selected ? <Icon name="check" size={12} /> : null}
+        </button>
+        <div className="md-tile-tools">
+          <button type="button" aria-label={t('解散胶囊')} title={t('解散胶囊')} onClick={remove}><Icon name="trash" size={14} /></button>
+        </div>
       </div>
-      <footer className="md-capsule-foot">
-        <strong>{capsule.name}</strong>
-      </footer>
+      <div className="md-tile-body">
+        <h3 className="md-tile-title" title={capsule.name}>{capsule.name}</h3>
+        <div className="md-tile-foot">
+          <span className="md-tile-site" title={t('{n} 张灵感', { n: all.length })}>
+            <Icon name="folder" size={12} />
+            <span>{t('胶囊')}</span>
+          </span>
+          <div className="md-tile-pill">
+            <button type="button" className="md-pill-main" onClick={compose} title={t('进入创作会话')}>{t('创作')}</button>
+            <button type="button" className="md-pill-caret" aria-label={t('更多操作')} onClick={more}><Icon name="chevD" size={12} /></button>
+          </div>
+        </div>
+      </div>
     </article>
   )
 }
 
-/** 两张卡合成胶囊时,从目标卡位置铺开的卡堆预览:两列四格加一道纸堆边。 */
-export function CapsulePreview({ preview, fixed = false }) {
-  return (
-    <div className={`md-capsule-preview${fixed ? ' is-fixed' : ''}`} style={{ left: preview.x, top: preview.y }} aria-hidden="true">
-      <div className="md-capsule-preview-grid"><i /><i /><i /><i /></div>
-      <div className="md-pile-fold"><i /><i /></div>
-    </div>
-  )
-}
-
 /**
- * 胶囊浮层:同一个卡堆放大居中,一页六张两列瀑布流。顶部居中改名,两侧翻页,右键解散,
- * 不再摆放其它按钮;关掉浮层用 Esc 或点背景。
+ * 胶囊浮层:卡堆放大居中,一页六张两列瀑布流,两侧翻页,成员可拖拽排序、拖出去即移出。
+ * 头部是静态名字 + 张数 + 解散按钮——胶囊没有编辑,名字在第一次合成时给。
  */
 export function CapsuleView() {
   const id = useDesk(s => s.capsuleId)
   const capsule = useDesk(s => s.state?.capsules?.find(row => row.id === s.capsuleId))
   const items = useDesk(s => s.state?.items ?? EMPTY_LIST)
-  const [name, setName] = React.useState('')
   const [page, setPage] = React.useState(0)
   const [draggingId, setDraggingId] = React.useState(null)
   const [overId, setOverId] = React.useState(null)
@@ -116,9 +156,7 @@ export function CapsuleView() {
   const pageTimer = React.useRef(0)
   const suppressClick = React.useRef(false)
   const viewRef = React.useRef(null)
-  const nameRef = React.useRef(null)
 
-  React.useEffect(() => { setName(capsule?.name ?? '') }, [capsule?.name, id])
   // 正看着的胶囊被解散、撤销或自动解散时,退回灵感墙
   React.useEffect(() => { if (id && !capsule) closeCapsule() }, [id, capsule])
 
@@ -129,27 +167,12 @@ export function CapsuleView() {
   // 打开后把焦点收进浮层,键盘翻页和 Esc 都从这一层开始
   React.useEffect(() => { if (id) viewRef.current?.focus({ preventScroll: true }) }, [id])
 
-  // 改名在失焦、回车、关闭三个出口都落库:Esc 关掉浮层不会把刚敲的名字丢掉
-  const rename = React.useCallback((value) => {
-    const current = getDesk().state?.capsules?.find(row => row.id === id)
-    const next = String(value ?? '').trim()
-    if (!current || !next || next === current.name) return
-    dispatchOps([{ op: 'update_capsule', id, name: next }], { label: t('重命名胶囊') })
-  }, [id])
-
-  const close = React.useCallback(() => {
-    rename(nameRef.current?.value ?? name)
-    closeCapsule()
-  }, [name, rename])
-
   React.useEffect(() => {
     if (!id) return undefined
     const onKey = (event) => {
-      // 右键菜单开着时,Esc 先关菜单,不吃掉浮层
-      if (getDesk().menu) return
       if (event.key === 'Escape') {
         event.stopPropagation()
-        close()
+        closeCapsule()
         return
       }
       if (event.target.closest?.('input,textarea,select')) return
@@ -158,7 +181,7 @@ export function CapsuleView() {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [id, pages, close])
+  }, [id, pages])
 
   if (!id || !capsule) return null
 
@@ -207,7 +230,6 @@ export function CapsuleView() {
       if (!moved) {
         moved = true
         suppressClick.current = true
-        // 拖起即通知接驳条显形;落点由 dock 自己判断
         startRefDrag([item.id])
         setDraggingId(item.id)
         ghost = tileEl.cloneNode(true)
@@ -261,16 +283,10 @@ export function CapsuleView() {
     dispatchOps([{ op: 'update_capsule', id: capsule.id, itemIds: ids }], { label: t('调整胶囊顺序') })
   }
 
-  const openMember = (item, event) => {
+  const openMember = (item) => {
     if (suppressClick.current) return
-    const rect = event.currentTarget.getBoundingClientRect()
-    close()
-    openItem(item.id, { x: rect.left, y: rect.top, w: rect.width, h: rect.height })
-  }
-
-  const openMenuFor = (event, item) => {
-    if (getDesk().menu) return
-    openCapsuleMenu(event, capsule, { item })
+    closeCapsule()
+    openEditItem(item.id)
   }
 
   const pageItems = members.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
@@ -278,8 +294,7 @@ export function CapsuleView() {
   return (
     <div
       className={`md-capsule-mask ${dropOut ? 'is-drop-out' : ''}`}
-      onPointerDown={event => { if (event.target === event.currentTarget) close() }}
-      onContextMenu={event => event.preventDefault()}
+      onPointerDown={event => { if (event.target === event.currentTarget) closeCapsule() }}
     >
       {dropOut ? <div className="md-capsule-drop-hint">{t('松手移出胶囊，放到灵感墙上')}</div> : null}
       <section
@@ -289,20 +304,17 @@ export function CapsuleView() {
         role="dialog"
         aria-modal="true"
         aria-label={t('胶囊 {name}', { name: capsule.name })}
-        onContextMenu={event => openMenuFor(event, null)}
       >
         <header className="md-capsule-view-head">
-          <input
-            ref={nameRef}
-            className="md-capsule-name"
-            value={name}
-            onChange={event => setName(event.target.value)}
-            onBlur={() => rename(name)}
-            onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); event.target.blur() } }}
-            aria-label={t('胶囊名字')}
-            placeholder={t('给这堆灵感起个名')}
-          />
-          {pages > 1 ? <p className="md-capsule-meta">{t('第 {page} / {pages} 页', { page: page + 1, pages })}</p> : null}
+          <h3 className="md-capsule-view-name">{capsule.name}</h3>
+          <span className="md-capsule-view-meta">
+            {t('{n} 张灵感', { n: members.length })}
+            {pages > 1 ? ` · ${t('第 {page} / {pages} 页', { page: page + 1, pages })}` : ''}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button type="button" className="md-btn" onClick={() => setDesk({ capsuleAdd: capsule.id })}><Icon name="plus" size={13} />{t('添加灵感')}</button>
+          <button type="button" className="md-btn is-danger" onClick={() => dissolveCapsule(capsule)}><Icon name="trash" size={13} />{t('解散')}</button>
+          <button type="button" className="md-icon-btn" aria-label={t('关闭')} onClick={closeCapsule}><Icon name="close" size={14} /></button>
         </header>
 
         <div className="md-pile-grid is-large">
@@ -315,15 +327,14 @@ export function CapsuleView() {
               tabIndex={0}
               aria-label={item.title}
               onPointerDown={event => startTileDrag(event, item)}
-              onContextMenu={event => openMenuFor(event, item)}
-              onClick={event => openMember(item, event)}
-              onKeyDown={event => {
+              onClick={() => openMember(item)}
+              onKeyDown={(event) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
                 event.preventDefault()
-                openMember(item, event)
+                openMember(item)
               }}
             >
-              <Card item={item} tabIndex={-1} />
+              <Card item={item} bare tabIndex={-1} onOpen={() => openMember(item)} />
             </div>
           ))}
         </div>
@@ -340,5 +351,50 @@ export function CapsuleView() {
         ) : null}
       </section>
     </div>
+  )
+}
+
+/** 往胶囊里添加成员:列出还没进这堆的灵感,勾选后追加到成员表末尾。 */
+export function CapsuleAdd() {
+  const id = useDesk(s => s.capsuleAdd)
+  const capsule = useDesk(s => s.state?.capsules?.find(row => row.id === s.capsuleAdd))
+  const items = useDesk(s => s.state?.items ?? EMPTY_LIST)
+  const [picked, setPicked] = React.useState([])
+  React.useEffect(() => { setPicked([]) }, [id])
+  if (!id || !capsule) return null
+  const inside = new Set(capsule.itemIds)
+  const candidates = items.filter(item => isIdea(item) && !inside.has(item.id))
+  const close = () => setDesk({ capsuleAdd: null })
+  const toggle = (itemId) => setPicked(current => current.includes(itemId) ? current.filter(row => row !== itemId) : [...current, itemId])
+  const save = () => {
+    if (!picked.length) return close()
+    dispatchOps([{ op: 'update_capsule', id, itemIds: [...capsule.itemIds, ...picked] }], { label: t('添加灵感') })
+      .then(close)
+  }
+  return (
+    <Dialog title={t('往「{name}」里添加灵感', { name: capsule.name })} onClose={close} width={460}>
+      {candidates.length ? (
+        <div className="md-picker">
+          {candidates.map(item => (
+            <button type="button" key={item.id} className={`md-picker-row ${picked.includes(item.id) ? 'is-on' : ''}`} onClick={() => toggle(item.id)} aria-pressed={picked.includes(item.id)}>
+              <span className="md-picker-thumb">
+                {posterOf(item) ? <img src={posterOf(item)} alt="" loading="lazy" draggable={false} /> : <i className={`is-${categoryOf(item)}`} />}
+              </span>
+              <span className="md-picker-text">
+                <b>{item.title || t('（无标题）')}</b>
+                <em>{item.source || t('{n} 字', { n: (item.body ?? '').length })}</em>
+              </span>
+              <span className="md-picker-mark">{picked.includes(item.id) ? <Icon name="check" size={12} /> : null}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="md-muted">{t('墙上的灵感都已经在这堆里了。')}</p>
+      )}
+      <footer className="md-dialog-foot">
+        <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
+        <button type="button" className="md-btn is-primary" disabled={!picked.length} onClick={save}>{t('添加 {n} 张', { n: picked.length })}</button>
+      </footer>
+    </Dialog>
   )
 }

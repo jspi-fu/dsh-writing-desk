@@ -26,9 +26,9 @@ colors:
 typography:
   display:
     fontFamily: "var(--dsw-font-family)"
-    fontSize: "33px"
+    fontSize: "30px"
     fontWeight: 300
-    lineHeight: "46px"
+    lineHeight: "40px"
     letterSpacing: "-0.015em"
   headline:
     fontFamily: "var(--dsw-font-family)"
@@ -67,8 +67,10 @@ rounded:
   md: "12px"
   lg: "16px"
   xl: "20px"
+  tile: "26px"
+  media: "18px"
   panel: "28px"
-  pile: "18px"
+  capture: "34px"
   round: "999px"
 spacing:
   xs: "4px"
@@ -100,11 +102,10 @@ components:
     textColor: "{colors.on-primary}"
   card:
     backgroundColor: "{colors.card}"
-    rounded: "{rounded.xl}"
-  capsule-pile:
+    rounded: "{rounded.tile}"
+  capsule-card:
     backgroundColor: "{colors.card}"
-    rounded: "{rounded.pile}"
-    width: "352px"
+    rounded: "{rounded.tile}"
   input:
     backgroundColor: "{colors.card}"
     textColor: "{colors.ink}"
@@ -112,7 +113,7 @@ components:
     height: "36px"
   dialog:
     backgroundColor: "{colors.card}"
-    rounded: "{rounded.panel}"
+    rounded: "{rounded.capture}"
 ---
 
 # Design System: 图文创作台（dsh-writing-desk）
@@ -121,7 +122,7 @@ components:
 
 **Creative North Star: 「书桌上的编辑部」**
 
-整个系统是一张安静的书桌。内容永远放在「纸」上——白底、柔影、小圆角的面板；玻璃只做桌面陈设——顶栏导航、底部 dock、悬浮工具条这些「桌面本身」的物件；文字的仪式感交给衬线体——金句、稿面标题、题词票。它是一份给个人创作者的编辑工具：先收集灵感（邮票、卡堆），再把它们写成一篇图文（稿面），最后排期发布（日历上的小邮票）。
+整个系统是一张安静的书桌。内容永远放在「纸」上——白底、柔影、小圆角的面板；玻璃只做桌面陈设——顶栏导航、底部 dock、悬浮工具条这些「桌面本身」的物件；文字的仪式感交给衬线体——金句、稿面标题、题词票。它是一份给个人创作者的编辑工具：先收集灵感（灵感墙上的卡片与胶囊），再把它们写成一篇图文（稿面），最后排期发布（日历上的小邮票）。
 
 密度中等偏高但呼吸从容：卡片之间 10–16px 的间隙、面板内 14–20px 的内边距、一级标题用 300 细体大字号拉开层级。动效克制而「活」：入场一律 `translateY(8px) + fade` 上浮，悬停是 1–3px 的抬起，弹性曲线 `cubic-bezier(.2, 1.3, .4, 1)` 只给拖拽与弹层。明暗主题由宿主（DSH）切换，本系统全部颜色经语义别名取用，不持私有色。
 
@@ -129,7 +130,7 @@ components:
 - 纸面承载内容，玻璃只做 chrome（桌面陈设）
 - 衬线双声部：宋体给中文的仪式感，Iowan/Palatino 给数字的编辑味
 - 状态色是全系统唯一的高饱和色，成稿进度一目了然
-- 邮票是灵魂母题：齿孔遮罩、4:5 票面、色纸衬线首字
+- 邮票是纪念母题：齿孔遮罩、4:5 票面、色纸衬线首字（只留给内容页与日历）
 - 一切缩略重排字号，绝不整体缩放（No-Scale Rule）
 
 ## Colors
@@ -138,7 +139,7 @@ components:
 
 ### Primary
 - **墨黑 Primary**（`--primary` → `var(--dsw-alias-button-primary-fill)`，参考 `#17181c`）：主按钮、当前导航项、置顶卡反白底、toast 底、日历「今天」。黑而非品牌色——工具本身不抢戏。
-- **强调 Accent**（`--accent` → `var(--dsw-alias-link)`，参考 `#6b5cff`）：链接、折线图、拖拽选中描边、编辑器高亮。只在「可点」与「数据」上出现。
+- **强调 Accent**（`--accent` → `var(--dsw-alias-link)`，参考 `#6b5cff`）：链接、折线图、拖拽选中描边、框选矩形。只在「可点」与「数据」上出现。
 
 ### Status（唯一的高饱和色系）
 - **构思 Outline**（`#d39a2c` 琥珀）：灵感还是一句原话。
@@ -169,7 +170,7 @@ components:
 **Character:** 界面文字全部走宿主无衬线，保持工具的安静；衬线只出现在「被创作的内容」上——金句卡、稿面标题、风格引文、封面题字——像印刷品贴在界面上。数字是另一个声部：统计大数用衬线拉丁（常常斜体、`tabular-nums`），让数据带一点杂志排版的味道。
 
 ### Hierarchy
-- **Display**（300，33px/46px，-0.015em）：首屏 hero 一句话；移动端降到 24px/34px。
+- **Display**（300，30px/40px）：页面与弹层页题；移动端降到 24px/34px。
 - **Headline**（300，34px/44px）：普通页面页题；稿面文章题则用衬线 22–24px/600。
 - **Title**（500–600，13–15px）：面板标题、卡片标题、看板列头。
 - **Body**（400，14px/22px；prose 14.5px/26px，稿面阅读态 16px/30px）：界面正文与文章。
@@ -178,18 +179,18 @@ components:
 ### Named Rules
 **衬线只给内容的仪式感。** 按钮文案、表单、导航、面包屑永远无衬线；金句、标题、题字、统计大数才允许衬线。判断标准：这段字是不是「作品的一部分」。
 
-**The No-Scale Rule.** 任何缩略场景（卡堆、邮票、看板缩略图）都按容器宽度**重排**文字到真实字号（≥11px），禁止 `transform: scale` 缩小整卡——缩出来的字等于没有字（ADR 0004 的教训）。
+**The No-Scale Rule.** 任何缩略场景（时间轴缩略图、胶囊浮层、看板缩略图）都按容器宽度**重排**文字到真实字号（≥11px），禁止 `transform: scale` 缩小整卡——缩出来的字等于没有字（ADR 0004 的教训）。
 
 ## Layout
 
 侧栏工具，挂载在 DSH 宿主框架内，自身是一个 `md-root` 容器（`container: md-root / inline-size`）。
 
-- **灵感墙**：CSS 多列瀑布流 `columns: 236px`、列距 16px、`max-width: 1500px` 居中；卡片间距 16px。
-- **首屏 Hero**：`max-width: 560px` 居中，日期行 + 33px 细体一句话 + 48px 高的记录输入条。
-- **胶囊资料架**：灵感墙顶部的横向条（`align-items: flex-start`），卡堆宽固定 352px、高度随成员数自适应（ADR 0004）。
+- **灵感墙**：单列滚动区。顶部 sticky 一行 = 搜索框 + 排序方钮（36px）；其下是时间轴；再下是网格 `repeat(auto-fill, minmax(232px, 1fr))`、gap 16px、`max-width: 1500px` 居中（ADR 0007）。
+- **时间轴**：一行横滚的缩略图，48×36、15px 圆角，只分「本周」与「之后」两段——两段之间一条 2×18px 墨色短竖杠，竖排「本周」（10.5px）贴在靠左/居中那一侧；可左右滑，滑到端点时该侧渐隐提示消失，悬停浮现左右箭头（触摸设备不显示、端点侧变灰禁用、箭头被指着时不突然消失）；键盘左右键切换焦点并把它滚到半屏正中，滚动区两端留出箭头不吃内容的余量。行末只一个纯数字（灵感 + 胶囊总数，胶囊成员不重复计）。
+- **底部 dockbar**：分类 chips（全部 / 笔记 / 文件 / 链接）+ 标签按钮 + 新建圆钮，悬浮于底部中央，是墙面唯一的固定 chrome。
 - **普通页面**：内边距 `78px 28px 40px`，内容自适应；面板卡片化。
 - **工作区（成稿）**：bento 网格 `1.04fr / 1fr`，区域 `idea / hero / article / shots`；`@container` 断点 1040px（分镜 3 列）、620px（hero 折叠单列）、760px（工作区单列）。
-- **移动端**：`@container md-root (max-width: 560px)` 顶栏收纳、hero 缩到 24px、隐藏次要按钮。
+- **移动端**：`@container md-root (max-width: 560px)` 顶栏收纳、墙面降到两列、隐藏计数与次要按钮。
 - **节奏**：间隙 4 / 8 / 10 / 12 / 16px 一档一档来；标题的上方留白大于下方（`margin: 22px 0 8px` 这类）。
 
 ## Elevation & Depth
@@ -201,14 +202,14 @@ components:
 - **`--dsw-elevation-prominent`**（宿主令牌）：dockbar、对话框、菜单、toast、大图查看器。
 - **本地深影**（如 `0 16px 36px -14px rgb(0 0 0 / .16)`、`0 30px 90px -30px rgb(0 0 0 / .45)`）：大浮层与卡堆的外层空间感，负 spread 收边。
 - **发丝线描边**（`.5px solid` / `inset 0 0 0 .5px`）：不承担深度，只承担边界。
-- **遮罩模糊**：弹层背景 `blur(18–20px) saturate(125–140%)` + 18% 底色，内容浮层永远可读。
+- **遮罩模糊**：弹层背景 `blur(18–20px) saturate(125–140%)` + 18% 底色，内容浮层永远可读；吸附的搜索条同一套玻璃，`blur(24px)` + 86% 底色，滚上来的卡片只能透出形状、透不出字。
 
 ### Named Rules
-**玻璃只做桌面陈设。** `backdrop-filter` 只允许出现在 chrome 层：顶栏导航、dockbar、多选工具条、查找条、版本 pill。内容面板（卡片、对话框、卡堆、稿面）一律实心纸白——纸不透明。
+**玻璃只做桌面陈设。** `backdrop-filter` 只允许出现在 chrome 层：顶栏导航、吸附的墙面搜索条、dockbar、多选工具条、查找条、版本 pill。内容面板（卡片、对话框、卡堆、稿面）一律实心纸白——纸不透明。
 
 ## Shapes
 
-圆角六档阶梯：4（行内小件）→ 8（按钮小件/分段内格）→ 12（按钮、输入框、菜单）→ 16（列表卡、图板）→ 20（卡片、面板）→ 28（对话框、浮层）；卡堆例外用 18px。真圆（圆钮、圆点、头像）一律 `border-radius: 50%` 且配 `corner-shape: round`。
+圆角阶梯：4（行内小件）→ 8（按钮小件/分段内格）→ 12（按钮、输入框、菜单）→ 16（列表卡、图板、缩略图）→ 20（面板）→ 26（灵感卡）→ 28（浮层）→ 34（新建与编辑对话框）；灵感卡里的 16:9 封面是 18px。真圆（圆钮、圆点、头像）一律 `border-radius: 50%` 且配 `corner-shape: round`。
 
 边界语言：`.5px` 发丝线是默认边；`inset 0 0 0 .5px` 是玻璃件的替代边；虚线（`1px dashed`）只表示「可以放下东西来」（dropzone、风格添加卡）。邮票是唯一的异形：`radial-gradient` 齿孔遮罩打出锯齿边（`--s: 9px; --hole: 2.4px`），且因为 mask 会吃掉 box-shadow，阴影必须走 `filter: drop-shadow`。
 
@@ -220,18 +221,21 @@ components:
 - **圆钮（md-round 40px）：** 唯一的主行动圆钮（dockbar 里的「记下灵感」），hover 旋转 90°。
 - **图标钮（md-icon-btn 32px）：** 透明底，hover `--hover`；顶栏里升级为 36px 玻璃底。
 
-### 卡片（md-card）
-- **Corner Style:** 20px；内嵌媒体 `margin: 6px 6px 0`、14px 圆角——「相纸贴在卡纸上」。
-- **Shadow Strategy:** soft 常驻；hover 抬起 `translateY(-3px)`。
-- **Footer:** 11.5px，状态点 + 来源 + 相对时间，`min-height: 36px` 对齐。
-- **反白（is-inverted）：** 已发布卡整体换 `--primary` 底白字。
+### 灵感卡（md-tile，ADR 0007 签名组件）
+- **Shape:** 26px 圆角、纸白、`inset 0 0 0 .5px` 边、内边距 8px；封面 16:9、18px 圆角、`object-fit: cover` + `object-position: top`——「相纸贴在卡纸上」。封面不强制：没有图就不留灰块。
+- **Reading order:** 封面 → 两行标题（15px/500、`min-height` 撑住两行，有无封面都占同样高度）→ 站点行（类型图标 + 来源/域名/文件名）→ 30px 黑胶囊「创作」（右侧 caret 出菜单：复制给 AI / 添加到当前会话）。整卡点击 = 打开编辑弹层，不打开原网页。
+- **进创作的方式:** 点「创作」新开一个创作会话，素材以输入框里的**引用签**（与「添加到当前会话」同款 chip：标签 + 标题 + 摘要）落进空草稿，不自动发送，等用户补一句意图。宿主复用当前写作会话时，签补进当前输入框。
+- **Chrome:** 封面左上 26px 圆形勾选钮、右上 26px 删除钮，只在 hover / 键盘聚焦 / 选中时显形（160ms）。
+- **State:** hover 抬起 `translateY(-2px)` 且封面 `scale(1.015)`；选中 `1.5px` 墨色描边。
+- **拖拽:** 卡可拖起（拖的是整张卡或已选的那一叠），拖到胶囊卡上松手即并入，拖动中源卡 `opacity .45`、落点胶囊卡 `1.5px` 描边。
+- **变体:** `is-compact`（26px 圆角小卡，给多选浮条）、`is-bare`（只留封面位、标题与站点行，给胶囊浮层）、`is-capsule`（封面位换 2×2 成员堆叠）。
+- **无封面（DefaultCover）:** 封面位按类别换色纸底，居中铺类型图标 + 类型名（`.md-tile-voidcap`，如图片 / 视频 / 网页 / 笔记 / 文件）；不铺标题或正文预览，卡高恒定。站点行按类型给信息：链接 = 域名 + 外链钮，文件 = 文件名 + 打开原件，笔记 = 类型字。
 
-### 胶囊卡堆（md-pile，签名组件）
-- **Shape:** 352px 宽、18px 圆角、白纸面板、内边距 12px、两列 `columns: 2` 列距 10px。
-- **内容:** 成员卡按列宽原字号重排（不缩放），媒体压 112px 等高、正文 3 行；±0.5° 交错旋转。
-- **折叠:** 超过 4 张折成底部两道纸边；不画空槽位、不显示条数。
-- **浮层:** 一页 6 张、`min(560px)` 白纸面板、28px 圆角、两侧 40px 圆形翻页钮、遮罩模糊。
-- **状态:** 拖入时 `0 0 0 2px var(--ink)` 描边 + `scale(1.02)`；多选 1.5px 描边。
+### 胶囊集合卡（md-tile.is-capsule）
+- **Shape:** 与灵感卡同尺寸同圆角；封面位换成 2×2 成员缩略图（各 15px 圆角）+ 左下「N 张」徽标。
+- **Chrome:** 左上勾选钮、右上解散钮；底部黑胶囊主键是「创作」，caret 菜单多一项「添加灵感」。没有编辑入口（ADR 0007）。
+- **浮层（md-capsule-view）:** 居中白纸面板、`max-height: 88vh`，一页 6 格两列、成员卡按 `is-bare` 原字号重排；成员可拖拽排序、拖出浮层即移出，墙上的卡拖进来即并入。头部横排 = 名字 / 张数 / 添加灵感 / 解散 / 关闭。
+- **状态:** 悬停成员时 `translateY(-2px)`；正在拖动的卡 `opacity .7`，落点卡 `1.5px` 描边。
 
 ### 邮票（md-stamp）
 - **Shape:** 4:5 票面、齿孔遮罩（`--s: 9px`）、`filter: drop-shadow`；hover `scale(1.08) rotate(-2deg)`。
@@ -240,23 +244,28 @@ components:
 
 ### 导航与 dockbar
 - **顶部 md-nav:** 玻璃底（`blur(24px) saturate(160%)`）+ 4px 内衬，当前项墨黑底白字；可选模块用 10px 上标区分。
-- **底部 dockbar:** 玻璃 + prominent 影、24px 圆角、悬浮于底部中央；类型筛选 chips + 标签 chips + 圆钮。
+- **底部 dockbar:** 玻璃 + prominent 影、24px 圆角、悬浮于底部中央；分类 chips + 标签按钮（开锚定小列面板，有筛选时 `is-on` 反白）+ 新建圆钮（先打开创作模式再新建）。分类直接切换，不弹层。
 
 ### Chips / 分段
 - **md-chips:** 30px 高、12.5px 字、透明底；选中 `--active` 底。
 - **md-seg:** 4px 内衬的分段控件，选中项纸白底 + soft 影。
-- **pill:** 34px 胶囊（hero 操作、日期），玻璃底 `.5px` 描边；`is-primary` 墨黑。
+- **pill:** 34px 胶囊（浮条与提示条），玻璃底 `.5px` 描边；`is-primary` 墨黑。灵感卡里的操作胶囊是 30px。
 
 ### 输入与表单
-- **行内无边输入:** 记录条、hero 输入、改名框——透明底、focus 时才出现纸白底 + `0 0 0 1.5px var(--ink)`。
+- **行内无边输入:** 墙面搜索框、记录条——透明底、focus 时才出现纸白底 + `0 0 0 1.5px var(--ink)`。
 - **表单域（md-field）:** 12.5px 标签 + 36px 输入框 + `.5px` 描边；focus 边框转 `--ink`。
 - **错误:** `#d13c35` 文案 + 12% 红底差量（改标签 diff、toast）。
 
 ### 对话框 / 浮层 / 提示
-- **md-dialog:** 28px 圆角、paper 白、prominent 影、`md-pop` 弹入（`scale(.94) translateY(10px)` → 0，0.4s 弹性）。
+- **md-dialog:** 28px 圆角、paper 白、prominent 影、`md-pop` 弹入（`scale(.94) translateY(10px)` → 0，0.4s 弹性）；`is-capture` 变体 34px 圆角、600px 宽，是新建与编辑灵感的唯一弹层，对齐 StashDock 的导入收藏弹层。
+- **导入 / 编辑弹层（is-capture）:** 新建带 笔记 / 链接 / 文件 三页签；链接页粘贴后预读标题/简介/封面，重复链接先问保留或替换；文件页最多 10 个、总计 10MB，逐文件给标题与说明；标签是 chip 输入（上限 12，带建议），封面可预览、更换或恢复自动。编辑态没有页签，按类型铺标题 / 想法（链接为简介）/ 站点 / 封面 / 标签，左下滑出红色删除。图片与视频也按文件处理。
 - **mask:** 60–70px 层级、`--dsw-alias-bg-mask-1` 或 18% 底 + blur(20px)。
 - **toast:** 底部中央 76px、`--primary` 底白字、错误态 `#c33a33`；可带虚线点下划线的操作链接。
-- **右键菜单:** 12px 圆角纸面、5px 内衬、7px/10px 行、danger 红 + 12% 红底 hover。
+- **⋯ 菜单:** 12px 圆角纸面、5px 内衬、7px/10px 行、danger 红 + 12% 红底 hover；从卡上的 ⋯ / caret / 排序钮打开，浮层锚定触发按钮正下方 6px、右缘对齐、下方不够就翻到上方，绝不盖住按钮；卡片本身没有右键菜单。
+- **选择浮条（md-selectbar）:** 玻璃底、`border-radius: 999px`、prominent 影；已选计数 + 动作（全选 / 添加到当前会话 / 复制给 AI / 进入创作 / 合成胶囊（仅 2 个以上未入胶囊的灵感）/ 删除或解散 / 取消）。选中的卡左上勾选钮反白。
+- **标签筛选面板（md-tagpanel）:** 锚在 dockbar 的标签按钮上方（`bottom: 100% + 10px`、右缘对齐），宽 260px、最大高 `min(50dvh, 320px)`、12px 圆角纸白 + soft 影；竖排单选、首行「全部标签」+ 灵感计数，行尾 ⋯ 菜单给重命名与删除（`rename_tag` / `delete_tag`），面板不覆盖下半屏；内外点击与 Esc 关闭。
+- **设置对话框:** 520px，语言（跟随宿主 / 中文 / English）、成稿保存目录、版本行，以及「从自媒体工作台迁移」块：先只读预览来源条数（灵感 / 媒体 / 排期、其中示例数、上次迁移时间），再给主按钮「迁移过来 / 再迁移一次」；完成后 toast 条数与没找到的媒体数，整次迁移可撤销。
+- **框选:** 在墙面空白处按住拖出 `--accent` 半透明矩形（9% 底 + 46% 边），与矩形相交的卡片即被选中；松手未拖动则清空选择。
 
 ### 工作区稿面（bento / tile）
 - **Tile:** 20px 圆角纸面、soft 影、70ms 逐格入场；打开态 absolute 铺满 + prominent 影，其余格 `opacity .25`。
@@ -283,7 +292,7 @@ components:
 
 ### Do:
 - **Do** 取色先查 `--dsw-alias-*` 别名；本地常量限于状态色、tone 色纸、氛围渐变三张白名单。
-- **Do** 圆角走 4 / 8 / 12 / 16 / 20 / 28 阶梯（卡堆 18px 是唯一例外），圆形必配 `corner-shape: round`。
+- **Do** 圆角走 4 / 8 / 12 / 16 / 20 / 26 / 28 / 34 阶梯（灵感卡 26px、其封面 18px、编辑对话框 34px，见 ADR 0007），圆形必配 `corner-shape: round`。
 - **Do** 内容放纸面（`--card`）、chrome 才许玻璃（blur + saturate + 发丝 inset 边）。
 - **Do** 衬线只给「作品的一部分」：金句、稿面标题、题字、统计大数（衬线拉丁 + tabular-nums）。
 - **Do** 缩略一律按容器重排真实字号（≥11px），媒体用固定高度 + `object-fit: cover` 裁切。
@@ -298,3 +307,5 @@ components:
 - **Don't** 引入第三方图标库或位图图标；新图标照 Icon 系统规格画 path。
 - **Don't** 给列表/卡片加 1px 以上彩色 border-left 当强调；强调用状态点、描边或反白。
 - **Don't** 在 mask（齿孔）元素上用 box-shadow——会被遮罩吃掉，改用 `filter: drop-shadow`。
+- **Don't** 给灵感卡加右键菜单、星标或成稿状态色：整卡点击就是编辑，状态四色只属于内容页与日历（ADR 0007）。
+- **Don't** 把标签摊成一行 chips：标签进 dockbar 上方的锚定小列，墙上只留分类。

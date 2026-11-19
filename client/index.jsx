@@ -2,11 +2,10 @@
 // 成稿主战场在 DSH 创作会话(ADR 0006):这里注册看板、校样浮层与素材接驳条。
 import React from 'react'
 import { HomeView } from './canvas.jsx'
-import { CapsuleView } from './capsule.jsx'
+import { CapsuleAdd, CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
-import { captureFiles, captureUrl, dispatchOps, loadDesk, setDesk, undo, useDesk } from './desk.js'
+import { captureUrl, dispatchOps, EMPTY_LIST, loadDesk, previewUrl, report, setDesk, toast, undo, uploadFile, useDesk } from './desk.js'
 import { DockRail } from './dock.jsx'
-import { Editor } from './editor.jsx'
 import { ProofOverlay } from './proof.jsx'
 import { RetagDialog } from './retag.jsx'
 import { StyleView } from './style.jsx'
@@ -16,6 +15,7 @@ import { setSessionWorkspace } from './session-link.js'
 import css from './styles.css'
 import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
+import { absoluteUrl, categoryOf, coverOf } from './util.js'
 import { Dialog, FormDialog, Icon, IconButton, Menu, Toast } from './ui.jsx'
 
 const PANEL_ID = 'writing-desk'
@@ -30,115 +30,370 @@ const NAV = [
 
 const VIEWS = { home: HomeView, content: ContentView, schedule: ScheduleView, style: StyleView }
 
+/**
+ * 新增与编辑共用同一个对话框:页签只决定「从哪儿开始」,字段完全一致。
+ * 版式照参考项目 StashDock 的 DesktopImportDialog:链接 / 笔记 / 文件三页签,
+ * 封面可换可恢复自动,标签是带建议的 chip,重复链接先问保留还是替换。
+ * 编辑态没有页签,按这条灵感自己的类型铺同一组字段;没有星标、没有「去创作」。
+ */
+const TAG_LIMIT = 12
+const FILE_LIMIT = 10
+const FILE_TOTAL = 10 * 1024 * 1024
+
+/** 标签 chip 输入:回车/逗号入队,退格删最后一个,已有标签按使用次数给建议。 */
+function TagField({ value, onChange, suggestions }) {
+  const [draft, setDraft] = React.useState('')
+  const add = (raw) => {
+    const next = [...value]
+    for (const part of String(raw).split(/[,，、\s]+/)) {
+      const tag = part.trim().replace(/^#/, '')
+      if (!tag || next.includes(tag) || next.length >= TAG_LIMIT) continue
+      next.push(tag)
+    }
+    if (next.length !== value.length) onChange(next)
+    setDraft('')
+  }
+  const tips = React.useMemo(() => {
+    const q = draft.trim().toLowerCase()
+    return suggestions
+      .filter(row => !value.includes(row.tag) && (!q || row.tag.toLowerCase().includes(q)))
+      .slice(0, 6)
+  }, [draft, suggestions, value])
+  return (
+    <div className="md-field md-tags-field">
+      <span>{t('标签')}</span>
+      <div className="md-tagchips">
+        {value.map(tag => (
+          <button type="button" key={tag} className="md-tagchip" onClick={() => onChange(value.filter(row => row !== tag))} title={t('移除标签')}>
+            #{tag}<Icon name="close" size={10} />
+          </button>
+        ))}
+        <input
+          value={draft}
+          placeholder={value.length >= TAG_LIMIT ? t('标签够了，{n} 个上限', { n: TAG_LIMIT }) : t('写一个，回车；或用逗号分开')}
+          disabled={value.length >= TAG_LIMIT}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ',' || e.key === '，') { e.preventDefault(); add(draft) }
+            if (e.key === 'Backspace' && !draft && value.length) onChange(value.slice(0, -1))
+          }}
+          onBlur={() => { if (draft.trim()) add(draft) }}
+        />
+      </div>
+      {tips.length ? (
+        <div className="md-tagtips">
+          {tips.map(row => <button type="button" key={row.tag} onClick={() => add(row.tag)}>#{row.tag}</button>)}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+/** 封面字段:和参考项目一样,先显示当前/自动抓到的封面,再给「更换」「恢复自动」。 */
+function CoverField({ src, autoSrc, busy, onPick, onAuto }) {
+  const shown = src || autoSrc
+  return (
+    <div className="md-cover-field">
+      <span className={shown ? 'md-cover-box' : 'md-cover-box is-void'}>
+        {shown ? <img src={absoluteUrl(shown)} alt="" referrerPolicy="no-referrer" /> : <><Icon name="image" size={20} /><small>{t('类型底图')}</small></>}
+      </span>
+      <div className="md-cover-meta">
+        <strong>{t('封面')}</strong>
+        <small>{src ? t('自己换的封面') : autoSrc ? (busy ? t('正在读页面…') : t('从页面自动抓到')) : t('没有封面时用类型底图')}</small>
+        <div className="md-cover-actions">
+          <button type="button" className="md-btn is-mini" disabled={busy} onClick={onPick}>{shown ? t('更换封面') : t('选一张封面')}</button>
+          {src ? <button type="button" className="md-btn is-mini" onClick={onAuto}>{t('恢复自动')}</button> : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function cleanFileName(name) {
+  return String(name || '').replace(/\.[^.]+$/, '') || String(name || '')
+}
+
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
-  const [tab, setTab] = React.useState('text')
+  const items = useDesk(s => s.state?.items ?? EMPTY_LIST)
+  const editing = capture?.mode === 'edit' ? items.find(row => row.id === capture.id) : null
+  const [tab, setTab] = React.useState('note')
   const [title, setTitle] = React.useState('')
   const [text, setText] = React.useState('')
   const [url, setUrl] = React.useState('')
-  const [source, setSource] = React.useState('')
-  const [tags, setTags] = React.useState('')
-  const [origin, setOrigin] = React.useState('user')
+  const [cover, setCover] = React.useState(null)
+  const [tags, setTags] = React.useState([])
+  const [rows, setRows] = React.useState([])
   const [busy, setBusy] = React.useState(false)
+  const [peek, setPeek] = React.useState(null)
+  const [peeking, setPeeking] = React.useState(false)
+  const [conflict, setConflict] = React.useState(null)
+  const autoTitle = React.useRef('')
+  const coverInput = React.useRef(null)
   const fileInput = React.useRef(null)
+  const tagShelf = React.useMemo(() => {
+    const counts = new Map()
+    for (const item of items) for (const tag of item.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
+  }, [items])
+
+  // 打开时把现有内容铺进字段:编辑页签不再切换,新增总是落在笔记
   React.useEffect(() => {
     if (!capture) return
-    setTab(capture.tab ?? 'text')
-    setTitle('')
-    setText('')
-    setUrl('')
-    setSource('')
-    setTags('')
-    setOrigin('user')
-  }, [capture])
-  if (!capture) return null
-  const close = () => setDesk({ capture: null })
-  const tagList = tags.split(/[,，、\s]+/).filter(Boolean)
-  const save = async (event) => {
-    event.preventDefault()
-    setBusy(true)
-    if (tab === 'link' && url.trim()) {
-      const id = await captureUrl(url.trim(), { title: title.trim() || undefined, source: source.trim() || undefined, tags: tagList, contentOrigin: origin })
-      if (id) close()
-    } else if (tab === 'quote' || tab === 'text') {
-      const value = text.trim()
-      if (value) {
-        // 标题留空就沿用老规则自动取名；金句没有单独标题时正文照旧放在标题里显示
-        const autoTitle = tab === 'quote' ? value : value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40)
-        await dispatchOps([{ op: 'add_item', kind: tab === 'quote' ? 'quote' : 'note', title: title.trim() || autoTitle, body: tab === 'quote' && !title.trim() ? '' : value, source: source.trim() || undefined, tags: tagList, contentOrigin: origin }], { label: t('记下灵感') })
-        close()
-      }
+    const row = capture.mode === 'edit' ? items.find(item => item.id === capture.id) : null
+    setTab(capture.tab ?? 'note')
+    setTitle(row?.title ?? '')
+    setText(row?.body ?? '')
+    setUrl(row?.url ?? '')
+    setCover(row?.cover?.src ?? null)
+    setTags([...(row?.tags ?? [])])
+    setRows([])
+    setPeek(null)
+    setConflict(null)
+    autoTitle.current = ''
+  }, [capture, items])
+
+  // 粘链接 650ms 后预读页面:标题/简介/站点名只补空着的字段,封面单独预览。
+  const titleRef = React.useRef('')
+  titleRef.current = title
+  React.useEffect(() => {
+    if (!capture || capture.mode === 'edit' || tab !== 'link') return undefined
+    const value = url.trim()
+    if (!/^https?:\/\/\S+\.\S+/.test(value)) {
+      setPeek(null)
+      setPeeking(false)
+      return undefined
     }
-    setBusy(false)
+    let alive = true
+    setPeeking(true)
+    const timer = setTimeout(async () => {
+      const info = await previewUrl(value)
+      if (!alive) return
+      setPeeking(false)
+      if (!info) return
+      setPeek({ image: info.image, url: info.url })
+      if (!titleRef.current.trim() || titleRef.current === autoTitle.current) {
+        autoTitle.current = info.title || ''
+        setTitle(info.title || '')
+      }
+      setText(current => current.trim() ? current : (info.description || ''))
+    }, 650)
+    return () => { alive = false; clearTimeout(timer) }
+  }, [capture, tab, url])
+
+  if (!capture) return null
+  if (capture.mode === 'edit' && !editing) return null
+  const category = editing ? categoryOf(editing) : null
+  const close = () => setDesk({ capture: null })
+  const editingCategory = category ?? tab
+  const autoCover = editing ? coverOf(editing) : peek?.image ?? null
+
+  const pickCover = () => coverInput.current?.click()
+  const takeCover = async (event) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    try {
+      const info = await uploadFile(file)
+      setCover(info.src)
+    } catch (err) {
+      report(err)
+    }
   }
-  const tabs = [['text', t('笔记')], ['quote', t('金句')], ['link', t('链接')], ['file', t('图片/视频')]]
+  const takeFiles = (event) => {
+    const picked = [...(event.target.files ?? [])]
+    event.target.value = ''
+    if (!picked.length) return
+    const next = [...rows]
+    for (const file of picked) {
+      if (next.length >= FILE_LIMIT) { toast(t('一次最多 {n} 个文件', { n: FILE_LIMIT }), { error: true }); break }
+      if (next.reduce((sum, row) => sum + row.file.size, 0) + file.size > FILE_TOTAL) { toast(t('文件合计不能超过 10MB'), { error: true }); break }
+      next.push({ key: `${file.name}:${file.size}:${next.length}`, file, title: cleanFileName(file.name), body: '' })
+    }
+    setRows(next)
+  }
+  const patchRow = (key, patch) => setRows(list => list.map(row => row.key === key ? { ...row, ...patch } : row))
+
+  const save = async (event) => {
+    event?.preventDefault?.()
+    if (busy || conflict) return
+    if (editing) {
+      setBusy(true)
+      const fields = { title: title.trim(), body: text.trim(), tags, cover: cover ? { src: cover } : (editing.cover ? null : undefined) }
+      if (category === 'link') fields.url = url.trim() || undefined
+      await dispatchOps([{ op: 'update_item', id: editing.id, ...fields }], { label: t('改好灵感') })
+      setBusy(false)
+      close()
+      return
+    }
+    if (tab === 'link') {
+      if (!url.trim()) return
+      const target = url.trim().replace(/\/+$/, '')
+      const dup = items.find(row => (row.url || '').replace(/\/+$/, '') === target)
+      // 同一个链接再收一次:先问保留原有还是替换(参考项目的重复链接选择)
+      if (dup) { setConflict(dup); return }
+      setBusy(true)
+      const id = await captureUrl(url.trim(), {
+        title: title.trim() || undefined,
+        note: text.trim() || undefined,
+        tags,
+        contentOrigin: 'user',
+      })
+      if (id && cover) await dispatchOps([{ op: 'update_item', id, cover: { src: cover } }], { label: t('换封面') })
+      setBusy(false)
+      if (id) close()
+      return
+    }
+    if (tab === 'file') {
+      if (!rows.length) return
+      setBusy(true)
+      let failed = 0
+      for (const row of rows) {
+        try {
+          const info = await uploadFile(row.file)
+          await dispatchOps([{
+            op: 'add_item', kind: info.kind,
+            title: row.title.trim() || cleanFileName(row.file.name),
+            body: row.body.trim() || undefined,
+            tags,
+            media: { src: info.src, name: row.file.name },
+          }], { label: t('收藏 {title}', { title: row.title.trim() || row.file.name }), silent: true })
+        } catch (err) {
+          failed += 1
+          report(err)
+        }
+      }
+      setBusy(false)
+      if (failed) toast(t('{n} 个文件没传上去', { n: failed }), { error: true })
+      else { toast(t('已放到灵感墙'), { undo: true }); close() }
+      return
+    }
+    const value = text.trim()
+    if (!value) return
+    setBusy(true)
+    // 标题留空就沿用老规则:取第一句当名字
+    const auto = value.split(/[。！？\n]|[.!?](?=\s|$)/)[0].slice(0, 40)
+    await dispatchOps([{ op: 'add_item', kind: 'note', title: title.trim() || auto, body: value, tags, cover: cover ? { src: cover } : undefined, contentOrigin: 'user' }], { label: t('记下灵感') })
+    setBusy(false)
+    close()
+  }
+
+  const remove = async () => {
+    if (!editing) return
+    await dispatchOps([{ op: 'delete_item', id: editing.id }], { label: t('删除灵感') })
+    close()
+  }
+
+  // 替换已收过的链接:改原来那条,不新增卡片
+  const replace = async (dup) => {
+    if (busy) return
+    setBusy(true)
+    await dispatchOps([{
+      op: 'update_item',
+      id: dup.id,
+      title: title.trim() || dup.title,
+      body: text.trim() || dup.body,
+      url: url.trim(),
+      tags,
+      cover: cover ? { src: cover } : undefined,
+    }], { label: t('替换链接') })
+    setBusy(false)
+    close()
+  }
+
+  const tabs = [['note', t('笔记')], ['link', t('链接')], ['file', t('文件')]]
+  const wide = 600
   return (
-    <Dialog title={t('记下一个灵感')} onClose={close} width={480}>
-      <div className="md-capture-tabs" role="tablist">
-        {tabs.map(([id, label]) => <button type="button" role="tab" key={id} aria-selected={tab === id} className={tab === id ? 'is-on' : ''} onClick={() => setTab(id)}>{label}</button>)}
-      </div>
-      <form className="md-form" onSubmit={save}>
-        {tab === 'link' ? (
+    <Dialog title={editing ? t('编辑灵感') : t('记下一个灵感')} onClose={close} width={wide} className="is-capture">
+      {editing ? null : (
+        <div className="md-capture-tabs" role="tablist">
+          {tabs.map(([id, label]) => <button type="button" role="tab" key={id} aria-selected={tab === id} className={tab === id ? 'is-on' : ''} onClick={() => setTab(id)}>{label}</button>)}
+        </div>
+      )}
+      <form className="md-form md-capture-form" onSubmit={save}>
+        {tab === 'file' && !editing ? (
           <>
-            <label className="md-field">
-              <span>{t('链接')}</span>
-              <input type="url" required value={url} onChange={e => setUrl(e.target.value)} placeholder="https://" />
-              <small>{t('会自动读取页面的标题、简介和封面。')}</small>
-            </label>
-            <label className="md-field">
-              <span>{t('标题')}</span>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
-            </label>
-          </>
-        ) : tab === 'file' ? (
-          <button type="button" className="md-dropzone" onClick={() => fileInput.current?.click()}>
-            <Icon name="upload" size={22} />
-            <span>{t('选择图片或视频')}</span>
-            <small>{t('也可以直接把文件拖到灵感墙上')}</small>
-            <input ref={fileInput} type="file" hidden multiple accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" onChange={async (e) => { const files = [...e.target.files]; close(); await captureFiles(files) }} />
-          </button>
-        ) : (
-          <>
-            <label className="md-field">
-              <span>{tab === 'quote' ? t('这句话') : t('想法')}</span>
-              <textarea rows={4} required value={text} onChange={e => setText(e.target.value)} placeholder={tab === 'quote' ? t('好的选题不是想出来的……') : t('想到什么就写什么。')} />
-            </label>
-            <label className="md-field">
-              <span>{t('标题')}</span>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
-            </label>
-          </>
-        )}
-        {tab === 'file' ? null : (
-          <>
-            <div className="md-field-row">
-              <label className="md-field">
-                <span>{t('来源')}</span>
-                <input value={source} onChange={e => setSource(e.target.value)} placeholder={t('哪里看到的？')} />
-              </label>
-              <label className="md-field">
-                <span>{t('标签')}</span>
-                <input value={tags} onChange={e => setTags(e.target.value)} placeholder={t('用逗号分开')} />
-              </label>
-            </div>
-            <div className="md-field" role="radiogroup" aria-label={t('来源类型')}>
-              <span>{t('来源类型')}</span>
-              <div className="md-seg">
-                {[['user', t('我写的')], ['ai', t('AI 生成的')]].map(([value, label]) => (
-                  <button type="button" key={value} role="radio" aria-checked={origin === value} className={origin === value ? 'is-on' : ''} onClick={() => setOrigin(value)}>{label}</button>
+            <button type="button" className="md-dropzone" onClick={() => fileInput.current?.click()}>
+              <Icon name="upload" size={22} />
+              <span>{t('选择文件，或把文件拖进来')}</span>
+              <small>{t('图片、视频、文档都行；一次最多 {n} 个，合计 10MB', { n: FILE_LIMIT })}</small>
+            </button>
+            <input ref={fileInput} type="file" hidden multiple onChange={takeFiles} />
+            {rows.length ? (
+              <div className="md-file-list">
+                {rows.map(row => (
+                  <div className="md-file-row" key={row.key}>
+                    <span className="md-file-badge">{fileExt(row.file.name) || <Icon name="folder" size={16} />}</span>
+                    <div className="md-file-fields">
+                      <input value={row.title} aria-label={t('标题')} onChange={e => patchRow(row.key, { title: e.target.value })} placeholder={t('标题')} />
+                      <textarea rows={2} value={row.body} aria-label={t('说明')} onChange={e => patchRow(row.key, { body: e.target.value })} placeholder={t('这条素材用在哪里、为什么值得留（可留空）')} />
+                    </div>
+                    <IconButton icon="close" label={t('移除')} size={13} onClick={() => setRows(list => list.filter(entry => entry.key !== row.key))} />
+                  </div>
                 ))}
               </div>
-            </div>
-            <div className="md-form-foot">
-              <span style={{ flex: 1 }} />
-              <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
-              <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? t('保存中…') : t('放到灵感墙')}</button>
-            </div>
+            ) : null}
+            <TagField value={tags} onChange={setTags} suggestions={tagShelf} />
+          </>
+        ) : (
+          <>
+            <input ref={coverInput} type="file" hidden accept="image/*" onChange={takeCover} />
+            {editingCategory !== 'file' || cover || autoCover ? (
+              <CoverField src={cover} autoSrc={autoCover} busy={peeking} onPick={pickCover} onAuto={() => setCover(null)} />
+            ) : null}
+            {editingCategory === 'link' ? (
+              <label className="md-field">
+                <span>{t('链接')}</span>
+                <input type="url" required value={url} onChange={e => { setUrl(e.target.value); setConflict(null) }} placeholder="https://" />
+                {editing ? null : <small>{peeking ? t('正在读页面…') : t('会自动读取页面的标题、简介和封面。')}</small>}
+              </label>
+            ) : null}
+            {conflict ? (
+              <div className="md-conflict" role="alert">
+                <div>
+                  <strong>{t('这个链接已经收过。')}</strong>
+                  <small>{conflict.title || conflict.url}</small>
+                </div>
+                <div className="md-conflict-actions">
+                  <button type="button" className="md-btn" onClick={() => setConflict(null)}>{t('保留原有')}</button>
+                  <button type="button" className="md-btn is-primary" disabled={busy} onClick={() => replace(conflict)}>{t('替换链接')}</button>
+                </div>
+              </div>
+            ) : null}
+            <label className="md-field">
+              <span>{t('标题')}</span>
+              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
+            </label>
+            {editingCategory === 'link' ? (
+              <label className="md-field">
+                <span>{t('简介')}</span>
+                <textarea rows={4} value={text} onChange={e => setText(e.target.value)} placeholder={t('页面说了什么，为什么值得留。')} />
+              </label>
+            ) : (
+              <label className="md-field">
+                <span>{editingCategory === 'file' ? t('说明') : t('想法')}</span>
+                <textarea rows={6} required={!editing && tab === 'note'} value={text} onChange={e => setText(e.target.value)} placeholder={editingCategory === 'file' ? t('这条素材用在哪里、为什么值得留。') : t('想到什么就写什么。')} />
+              </label>
+            )}
+            <TagField value={tags} onChange={setTags} suggestions={tagShelf} />
           </>
         )}
+        <div className="md-form-foot">
+          {editing ? <button type="button" className="md-btn is-danger" onClick={remove}><Icon name="trash" size={13} />{t('删除这条灵感')}</button> : null}
+          <span style={{ flex: 1 }} />
+          <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
+          <button type="submit" className="md-btn is-primary" disabled={busy || !!conflict || (tab === 'file' && !editing && !rows.length)}>
+            {busy ? t('保存中…') : editing ? t('保存') : t('放到灵感墙')}
+          </button>
+        </div>
       </form>
     </Dialog>
   )
+}
+
+function fileExt(name) {
+  const match = /\.([a-z0-9]{1,8})$/i.exec(String(name || ''))
+  return match ? match[1].toUpperCase() : ''
 }
 
 function UpdateBadge() {
@@ -207,7 +462,7 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, focusId: null, proofId: null, selection: null })}>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, proofId: null, selection: null })}>
                 {entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}
               </button>
             ))}
@@ -223,11 +478,11 @@ function Desk() {
             <div className="md-page"><p className="md-muted">{t('工作台加载失败：{error}', { error })}</p><button type="button" className="md-btn" onClick={loadDesk}>{t('重试')}</button></div>
           ) : ready ? <Active /> : <div className="md-loading"><span className="md-shimmer">{t('正在铺开灵感…')}</span></div>}
         </main>
-        {ready ? <Editor /> : null}
       </div>
       {ready ? <CaptureDialog /> : null}
       <FormDialog />
       {ready ? <CapsuleView /> : null}
+      {ready ? <CapsuleAdd /> : null}
       {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
       {/* 校样浮层由 desk store 的 proofId 门控,常挂载——内容页成稿卡与签收栏都点开它 */}
@@ -252,17 +507,20 @@ export function apply(ctx) {
 }
 
 /**
- * 素材接驳条挂进宿主对话输入区下方的 conversation.composer.dock 槽位。
- * 旧宿主没有这个槽位(或 slots.inject 不存在)时整段静默跳过——降级为纯看板。
+ * 素材接驳条挂进宿主对话输入区下方的 dock 槽位。宿主当前叫
+ * conversation.input.dock，旧版本叫 conversation.composer.dock；
+ * 两个名字都尝试注入，不存在的槽位会抛错或永不回调，各自 try/catch。
+ * 宿主一个都没有(或 slots.inject 不存在)时静默跳过——降级为纯看板。
  */
 function mountComposerDock(ctx) {
-  try {
-    if (typeof ctx.slots?.inject !== 'function') return
-    ctx.slots.inject('conversation.composer.dock', () => ctx.slots.register({
-      name: 'conversation.composer.dock', id: 'writing-desk-dock',
-    }, DockRail))
-  } catch (error) {
-    console.warn('[dsh-writing-desk] composer dock skipped:', error)
+  if (typeof ctx.slots?.inject !== 'function') return
+  const slots = ['conversation.input.dock', 'conversation.composer.dock']
+  for (const name of slots) {
+    try {
+      ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'writing-desk-dock' }, DockRail))
+    } catch (error) {
+      console.warn('[dsh-writing-desk] composer dock skipped:', name, error)
+    }
   }
 }
 

@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { assertPublicUrl, harvest, harvestText } from '../src/harvest.js'
 import { activeStyle, styleToVoice } from '../src/style.js'
 import { migrateState } from '../src/seed.js'
-import { requestRejection } from '../src/host.js'
+import { previewUrl, requestRejection } from '../src/host.js'
 import { exportSkill } from '../src/learn.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed } from '../src/seed.js'
@@ -160,6 +160,18 @@ test('harvest 解析元信息，并拦截跳转到内网', async () => {
 
   const redirect = async () => new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/admin' } })
   await assert.rejects(harvest('https://93.184.216.34/u', redirect), /本机|内网/)
+})
+
+test('previewUrl 只回预填字段，不写库', async () => {
+  const page = '<html><head><meta property="og:title" content="主页"><meta property="og:description" content="一句话简介"><meta property="og:image" content="/a.jpg"><meta property="og:site_name" content="某站"></head></html>'
+  const ok = async () => new Response(page, { headers: { 'content-type': 'text/html' } })
+  const info = await previewUrl('https://93.184.216.34/u', ok)
+  assert.deepEqual(info, { url: 'https://93.184.216.34/u', title: '主页', description: '一句话简介', image: 'https://93.184.216.34/a.jpg', siteName: '某站' })
+  // 元信息缺失的页面也要给空串，对话框直接填进输入框
+  const bare = async () => new Response('<html></html>', { headers: { 'content-type': 'text/html' } })
+  const empty = await previewUrl('https://93.184.216.34/plain', bare)
+  assert.equal(empty.title, '')
+  assert.equal(empty.image, '')
 })
 
 test('Settings 只剩语言与导出位置，权限 600,旧字段读取时丢掉', async () => {

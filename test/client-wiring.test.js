@@ -6,12 +6,11 @@ import test from 'node:test'
 
 const DIR = new URL('../client/', import.meta.url)
 
-// 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，Editor 等是 JSX 组件
+// 各模块导出的 API 与组件用法：openProduce/openCapsule/openRetag 是函数调用，CapsuleCard 等是 JSX 组件
 // 工单 #6：统一成稿入口——编辑界面 / 画布多选 / 胶囊对话框 / 标签资料架都要经 desk.js 的 openProduce 进同一个工作面
 // 工单 #9：发布交接——成稿工作面经 desk.js 的 exportForPublish 导出发布包
 const WIRED = [
   ['./desk.js', ['openProduce', 'openCapsule', 'openRetag', 'toggleSelect', 'clearSelection', 'exportForPublish'], name => `${name}(`],
-  ['./editor.jsx', ['Editor'], name => `<${name}`],
   ['./capsule.jsx', ['CapsuleCard', 'CapsuleView'], name => `<${name}`],
   ['./produce.jsx', ['ProduceView'], name => `<${name}`],
   ['./retag.jsx', ['RetagDialog'], name => `<${name}`],
@@ -56,13 +55,19 @@ test('produce 操作页已删除,写回链路没有内置流水线痕迹', () =>
 
 // 状态权威迁移(工单 #5):四个面板的「已成稿 / 已排期 / 面板状态」判断统一走 src/state.js
 // 的共享谓词,不许再内联等价判断——四套字段各说各话正是历史不一致的根源。
-const PANELS = ['card.jsx', 'content.jsx', 'schedule.jsx', 'canvas.jsx']
+// 灵感墙改造后,墙面只放灵感、不画成稿状态(卡上不再有四色状态),所以状态谓词只剩
+// 收发室(内容页)与排期页两处;墙与卡仍受「不许内联」约束,防止旧口径偷偷回流。
+const PANELS = ['content.jsx', 'schedule.jsx']
+const IDEA_SURFACES = ['wall.jsx', 'card.jsx', 'capsule.jsx']
 const SHARED_PREDICATE = /import\s*\{[^}]*\b(?:panelState|isDrafted|isScheduled)\b[^}]*\}\s*from\s*'\.\.\/src\/state\.js'/
 
-test('四个面板的状态口径统一走 src/state.js 共享谓词', () => {
+test('面板的状态口径统一走 src/state.js 共享谓词', () => {
   for (const file of PANELS) {
     const source = readFileSync(new URL(file, DIR), 'utf8')
     assert.match(source, SHARED_PREDICATE, `${file} 要从 src/state.js 引共享谓词`)
+  }
+  for (const file of [...PANELS, ...IDEA_SURFACES]) {
+    const source = readFileSync(new URL(file, DIR), 'utf8')
     for (const [pattern, what] of [
       [/production\??\.status\s*===\s*'(running|done)'/, 'production.status 判断'],
       [/drafts\??\.article/, 'drafts.article 遗留口径'],

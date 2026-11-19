@@ -5,12 +5,13 @@ import { isDrafted, isScheduled } from '../src/state.js'
 import { dispatchOps, openItem, openProof, seenRevOf, setDesk, useDesk } from './desk.js'
 import { Empty, Icon, Segmented } from './ui.jsx'
 import { plural, t, useLang } from './i18n.js'
-import { KIND_LABEL, STATUSES, STATUS_LABEL, displayItem, fmtWhen, hash, posterOf, relativeDay } from './util.js'
+import { CATEGORY_LABEL, STATUSES, STATUS_LABEL, categoryOf, displayItem, fmtWhen, hash, isIdea, posterOf, relativeDay } from './util.js'
 
 function useContentItems() {
   const items = useDesk(s => s.state.items)
   const query = useDesk(s => s.query).trim().toLowerCase()
   return React.useMemo(() => items.filter((item) => {
+    if (!isIdea(item)) return false
     if (!query) return true
     return [item.title, item.body, item.source, item.platform, item.platform && t(item.platform), ...(item.tags ?? [])].some(v => String(v ?? '').toLowerCase().includes(query))
   }), [items, query])
@@ -63,11 +64,10 @@ function BoardCard({ item: raw, seenRev }) {
         event.dataTransfer.setData('text/writing-desk-item', item.id)
         event.dataTransfer.effectAllowed = 'move'
       }}
-      onClick={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect()
-        // 成稿卡进校样浮层(签收),灵感卡仍走编辑界面
+      onClick={() => {
+        // 成稿卡进校样浮层(签收),素材卡走统一编辑对话框(ADR 0007)
         if (isDrafted(raw)) openProof(item.id)
-        else openItem(item.id, { x: rect.left, y: rect.top, w: rect.width, h: rect.height })
+        else openItem(item.id)
       }}
     >
       {poster ? <img src={poster} alt="" loading="lazy" draggable={false} /> : null}
@@ -179,7 +179,7 @@ function Table({ items }) {
               <tr key={item.id} onClick={() => (isDrafted(item) ? openProof(item.id) : openItem(item.id))} tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') (isDrafted(item) ? openProof(item.id) : openItem(item.id)) }}>
                 <td className="md-table-title">
                   <span className="md-thumb">{poster ? <img src={poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}</span>
-                  <span><strong>{item.title}</strong><small>{item.parentId ? `${t('分支')} · ` : ''}{t(KIND_LABEL[item.kind])}{item.source ? ` · ${item.source}` : ''}</small></span>
+                  <span><strong>{item.title}</strong><small>{item.parentId ? `${t('分支')} · ` : ''}{t(CATEGORY_LABEL[categoryOf(item)])}{item.source ? ` · ${item.source}` : ''}</small></span>
                 </td>
                 <td>
                   <span className={`md-status status-${item.status}`}>{t(STATUS_LABEL[item.status])}</span>

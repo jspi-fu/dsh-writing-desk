@@ -129,10 +129,156 @@ export function referenceIntoDraft(ids) {
  * 经 uiWorkspace.startSession(空 workspace = 当前工作区)开会话,prompt 预填、
  * whenDraftExists: 'append' 保证已有草稿原样保留。
  */
+/** 把素材条目写成参考项目的上下文骨架:标题、来源/链接/文件、标签,再接正文。 */
+export function referenceContext(ids) {
+  const state = getDesk().state ?? { items: [], capsules: [] }
+  const { items, capsules } = referenceEntries(ids)
+  const byId = new Map(state.items.map(row => [row.id, row]))
+  const blocks = []
+  for (const entry of items) {
+    const item = byId.get(entry.id)
+    if (!item) continue
+    const head = [`## ${item.title || t('无标题')}`]
+    if (item.source) head.push(`${t('来源')}: ${item.source}`)
+    if (item.url) head.push(`URL: ${item.url}`)
+    if (item.media?.src && item.kind !== 'web') head.push(`${t('文件')}: ${item.media.name || item.media.src}`)
+    if (item.tags?.length) head.push(`${t('标签')}: ${item.tags.join(', ')}`)
+    const body = String(item.body || '').trim()
+    blocks.push(`${head.join('\n')}${body ? `\n\n${body.slice(0, 20000)}` : ''}`)
+  }
+  for (const capsule of capsules) {
+    const source = (state.capsules ?? []).find(row => row.id === capsule.id)
+    const memberIds = new Set(source?.itemIds ?? [])
+    const members = (state.items ?? []).filter(row => memberIds.has(row.id))
+    blocks.push(`## ${capsule.name}\n${t('胶囊')} · ${t('{n} 条灵感', { n: members.length })}\n\n${members.map(item => `- ${item.title || t('无标题')}`).join('\n')}`)
+  }
+  return blocks.length ? `# ${t('图文创作台上下文')}\n\n${blocks.join('\n\n---\n\n')}` : ''
+}
+
+/** 复制给 AI:整段上下文进剪贴板,不依赖宿主会话。 */
+export async function copyReferenceForAI(ids) {
+  const text = referenceContext(ids)
+  if (!text) return toast(t('没有可复制的灵感'), { error: true })
+  try {
+    await navigator.clipboard.writeText(text)
+    toast(t('已复制给 AI'))
+    return text
+  } catch (err) {
+    toast(t('复制失败：{reason}', { reason: err?.message || String(err) }), { error: true })
+    return null
+  }
+}
+
+/**
+ * 引用签的统一构造:每条素材一个 insertQuote(text, summary)。
+ * 「添加到当前会话」与「创作」用同一套签面,输入框里看到的是同一种渲染。
+ */
+function quotePayload(ids) {
+  const { items, capsules } = referenceEntries(ids)
+  const state = getDesk().state ?? { items: [], capsules: [] }
+  const byId = new Map(state.items.map(row => [row.id, row]))
+  const payload = []
+  for (const entry of items) {
+    const item = byId.get(entry.id)
+    if (!item) continue
+    payload.push({
+      text: `${t('素材')}:《${item.title || t('无标题')}》(${item.id})`,
+      summary: {
+        label: t('灵感'),
+        title: item.title || t('无标题'),
+        detail: item.source || (item.kind === 'web' ? '链接' : undefined),
+        body: String(item.body || '').slice(0, 160),
+      },
+    })
+  }
+  for (const capsule of capsules) {
+    payload.push({
+      text: `${t('素材')}:《${capsule.name}》(${capsule.count} ${t('条')})`,
+      summary: {
+        label: t('胶囊'),
+        title: capsule.name,
+        detail: t('{n} 条灵感', { n: capsule.count }),
+      },
+    })
+  }
+  return payload
+}
+
+function pushQuotes(handle, payload) {
+  let inserted = 0
+  for (const quote of payload) {
+    try {
+      if (handle.insertQuote(quote.text, quote.summary)) inserted += 1
+    } catch { /* 输入面没就绪时下一轮重试 */ }
+  }
+  return inserted
+}
+
+/**
+ * 添加到当前会话:有 inputActions.insertQuote 就插引用签(可点开看标题/详情),
+ * 旧宿主只有 setDraft 时退回追加文本。
+ */
+export function addReferenceToCurrentSession(ids) {
+  const { items, capsules, sourceIds } = referenceEntries(ids)
+  if (!sourceIds.length) return toast(t('没有可引用的灵感'), { error: true })
+  if (!composer) return toast(t('请先在 DSH 里打开创作模式'))
+  if (typeof composer.insertQuote !== 'function') return referenceIntoDraft(ids)
+  const payload = quotePayload(ids)
+  const inserted = pushQuotes(composer, payload)
+  if (!inserted) return toast(t('没有可引用的灵感'), { error: true })
+  setDesk({ related: null })
+  toast(t('已添加到当前会话'))
+  return { items, capsules, text: referenceContext(ids) }
+}
+
+// 「创作」暂存的素材签:startSession 只收纯文本,输入框里的引用签要等新会话的
+// 接驳条挂载、拿到那个会话的 inputActions 之后再补——否则插不进新输入框。
+let pendingCreate = null
+const PENDING_MS = 15000
+
+/** 新会话接驳条挂载后调用:插成功才消费暂存,失败留着重试。 */
+export function claimPendingReference(handle) {
+  if (!pendingCreate) return 0
+  if (Date.now() - pendingCreate.at > PENDING_MS) { pendingCreate = null; return 0 }
+  if (typeof handle?.insertQuote !== 'function') return 0
+  const inserted = pushQuotes(handle, pendingCreate.payload)
+  if (inserted) {
+    pendingCreate = null
+    setDesk({ related: null })
+  }
+  return inserted
+}
+
+/** 暂存还在(输入面还没接住)时 dock 继续退避重试。 */
+export function hasPendingReference() {
+  return Boolean(pendingCreate) && Date.now() - pendingCreate.at <= PENDING_MS
+}
+
 export function openWritingSession(ids) {
+  if (!referenceEntries(ids).sourceIds.length) return toast(t('没有可引用的灵感'), { error: true })
+  if (!workspace) return toast(t('请先在 DSH 里打开创作模式'))
+  // 当前输入面支持引用签 → 空草稿开新会话,由新会话的 dock 把签补进去;
+  // 旧宿主只能传纯文本 prompt,保持原样。
+  if (composer && typeof composer.insertQuote === 'function') {
+    pendingCreate = { payload: quotePayload(ids), at: Date.now() }
+    try {
+      workspace.startSession(undefined, { agentPreset: PRESET_WRITING })
+    } catch (err) {
+      pendingCreate = null
+      toast(err?.message || String(err), { error: true })
+      return
+    }
+    toast(t('已打开创作会话,引用放在了输入框'))
+    // 兜底:若宿主复用当前会话、dock 不重挂,稍后把签补进仍然有效的输入面
+    const before = composer
+    setTimeout(() => {
+      if (!pendingCreate || composer !== before) return
+      claimPendingReference(composer)
+    }, 1200)
+    return
+  }
   const block = referenceText(ids)
   if (!block) return toast(t('没有可引用的灵感'), { error: true })
-  if (!workspace) return toast(t('请先在 DSH 里打开创作模式'))
   try {
     workspace.startSession(undefined, { agentPreset: PRESET_WRITING, prompt: block, whenDraftExists: 'append' })
     toast(t('已打开创作会话,引用放在了输入框'))
