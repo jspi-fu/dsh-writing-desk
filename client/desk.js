@@ -7,7 +7,9 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', focusId: null, sheetOrigin: null, proofId: null, query: '', kindFilter: 'all', related: null,
+  view: 'home', proofId: null, query: '', kindFilter: 'all', related: null,
+  // 灵感墙自己的一行筛选:搜索、排序、标签抽屉,和内容页的 query 不共用
+  wallQuery: '', wallSort: 'new', wallTagsOpen: false, capsuleAdd: null,
   capsuleId: null, retag: null, tagFilter: null, selection: null, menu: null,
   settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
   capabilities: { session: false },
@@ -90,19 +92,16 @@ export async function undo() {
   }
 }
 
-export function openItem(id, origin = null) {
-  setDesk({ focusId: id, sheetOrigin: origin })
+export function openItem(id) {
+  // 点卡=编辑:所有素材都进统一编辑对话框(ADR 0007),没有第二种打开方式
+  setDesk({ capture: { mode: 'edit', id } })
 }
 
-export function closeItem() {
-  setDesk({ focusId: null, sheetOrigin: null })
-}
-
-// 校样浮层(ADR 0006):内容页成稿卡与签收栏的人工介入载体;灵感卡仍走 Editor。
+// 校样浮层(ADR 0006):内容页成稿卡与签收栏的人工介入载体;素材本身一律走统一编辑对话框(ADR 0007)。
 export function openProof(id) {
   setDesk(s => {
     markIntake(id, s.state?.items.find(row => row.id === id)?.production?.rev ?? 0)
-    return { proofId: id, focusId: null, sheetOrigin: null }
+    return { proofId: id }
   })
 }
 
@@ -143,7 +142,7 @@ export function closeCapsule() {
 
 // 右键菜单:一个全局实例,坐标相对 .md-root,避免被画布/浮层的容器裁掉
 export function openMenu(at, items) {
-  setDesk({ menu: { x: at.x, y: at.y, items } })
+  setDesk({ menu: { x: at.x, y: at.y, anchor: at.anchor ?? null, align: at.align ?? 'end', items } })
 }
 
 export function closeMenu() {
@@ -171,6 +170,16 @@ export function toggleSelect(kind, id) {
 
 export function clearSelection() {
   setDesk({ selection: null })
+}
+
+export async function previewMediaDesk() {
+  return request('migrate/preview')
+}
+
+export async function migrateMediaDesk() {
+  const data = await request('migrate', {})
+  if (data.state) setDesk({ state: data.state })
+  return data
 }
 
 export async function saveSettings(payload) {
@@ -220,6 +229,24 @@ export async function exportForPublish(id) {
   }
 }
 
+// 一键投递(ADR 0009):发布包导出后把任务写进 outbox,wdesk 桥监听下发给浏览器扩展,
+// 扩展只到草稿箱;回执由 host 消化成 item.dispatches,状态仍由用户确认。
+export async function dispatchPublish(id, platforms) {
+  try {
+    const data = await request('production/dispatch', { id, platforms })
+    setDesk({ state: data.state })
+    return data
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
+// 设置页桥接区块:读 auth.json 里的连接信息与队列计数。
+export async function fetchBridgeStatus() {
+  return request('bridge/status')
+}
+
 export async function captureUrl(url, extra = {}) {
   try {
     const data = await request('capture-url', { url, ...extra })
@@ -232,8 +259,19 @@ export async function captureUrl(url, extra = {}) {
   }
 }
 
+// 粘链接时的预读:只取标题/简介/封面/站点名,不落库。
+// 用户可能还在打半个地址,失败就静默返回 null,不弹错。
+export async function previewUrl(url) {
+  try {
+    return await request('preview-url', { url })
+  } catch {
+    return null
+  }
+}
+
 export async function uploadFile(file) {
-  const res = await fetch(`${BASE}upload`, { method: 'POST', headers: { 'content-type': file.type, 'x-writing-desk-lang': lang() }, body: file })
+  // 文件名走请求头,Host 靠扩展名决定收不收(图片/视频之外的文档也能收)
+  const res = await fetch(`${BASE}upload`, { method: 'POST', headers: { 'content-type': file.type || 'application/octet-stream', 'x-writing-desk-lang': lang(), 'x-writing-desk-name': encodeURIComponent(file.name) }, body: file })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || t('上传失败'))
   return data

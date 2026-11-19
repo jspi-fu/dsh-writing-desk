@@ -7,7 +7,7 @@ import { resolveProduceInput } from './produce-input.js'
 
 export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
-export const KINDS = ['image', 'video', 'web', 'quote', 'note']
+export const KINDS = ['image', 'video', 'web', 'quote', 'note', 'file']
 export const PLATFORMS = ['公众号', '小红书', '知乎']
 
 /** 状态在当前语言下的名字。 */
@@ -17,7 +17,7 @@ export function statusLabel(status) {
 
 const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
-  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', score: 'num',
+  personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', cover: 'media', score: 'num',
   contentOrigin: 'origin',
 }
 const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
@@ -64,7 +64,7 @@ function coerce(type, value) {
       const local = /^writing-desk\/(assets|files)\/[\w.-]+$/.test(value.src)
       if (!local && !isHttpUrl(value.src)) return undefined
       const poster = typeof value.poster === 'string' && (/^writing-desk\/(assets|files)\/[\w.-]+$/.test(value.poster) || isHttpUrl(value.poster)) ? value.poster : undefined
-      return { src: value.src, ...(poster ? { poster } : {}), ...(Number.isFinite(value.w) ? { w: value.w } : {}), ...(Number.isFinite(value.h) ? { h: value.h } : {}) }
+      return { src: value.src, ...(poster ? { poster } : {}), ...(Number.isFinite(value.w) ? { w: value.w } : {}), ...(Number.isFinite(value.h) ? { h: value.h } : {}), ...(typeof value.name === 'string' ? { name: value.name.slice(0, 160) } : {}) }
     }
     default: return undefined
   }
@@ -249,6 +249,24 @@ const handlers = {
     reduce(state, { type: 'publish', id: item.id, at: now })
     return { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
   },
+  // 发布投递回执(ADR 0009):浏览器扩展把成稿送进了平台草稿箱,这里只记录
+  // 「投递到哪、草稿链接是什么」,绝不碰 status——是否已发布仍只由 publish_item 确认。
+  // 与 retag_items 同类:不动状态元组,直接挂 item 字段,只追加、上限 20 条。
+  record_dispatch(state, op, now) {
+    const item = findById(state.items, op.id)
+    const dispatch = op.dispatch ?? {}
+    const platform = typeof dispatch.platform === 'string' ? dispatch.platform : ''
+    if (!platform) throw new Error(tr('投递缺少平台'))
+    const entry = {
+      platform,
+      ok: dispatch.ok === true,
+      at: now,
+      ...(typeof dispatch.url === 'string' && dispatch.url ? { url: dispatch.url } : {}),
+      ...(dispatch.ok !== true && typeof dispatch.error === 'string' ? { error: dispatch.error.slice(0, 200) } : {}),
+    }
+    item.dispatches = [...(item.dispatches ?? []).slice(-19), entry]
+    return null
+  },
   // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
   // 字段白名单与截断留在这里,落库经 reducer 的 editProduction 事件——清空正文等改动
   // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 harness 对比修改方向。
@@ -330,6 +348,33 @@ const handlers = {
       item.revision = (item.revision ?? 0) + 1
     }
     return { text: tr('给 {n} 条灵感改了标签', { n: targets.length }), kind: 'item' }
+  },
+  // 标签改名/删除:标签是挂在灵感上的字符串,遍历改写。没有标签表,所以也不存在孤儿。
+  rename_tag(state, op) {
+    const from = String(op.from ?? '').trim()
+    const to = String(op.to ?? '').trim()
+    if (!from || !to) throw new Error(tr('标签名不能为空'))
+    if (from === to) return null
+    let changed = 0
+    for (const item of state.items) {
+      if (!(item.tags ?? []).includes(from)) continue
+      item.tags = [...new Set(item.tags.map(tag => (tag === from ? to : tag)))]
+      item.revision = (item.revision ?? 0) + 1
+      changed += 1
+    }
+    return changed ? { text: tr('标签 #{from} 改名为 #{to}（{n} 条）', { from, to, n: changed }), kind: 'tag' } : null
+  },
+  delete_tag(state, op) {
+    const tag = String(op.tag ?? '').trim()
+    if (!tag) throw new Error(tr('标签名不能为空'))
+    let changed = 0
+    for (const item of state.items) {
+      if (!(item.tags ?? []).includes(tag)) continue
+      item.tags = item.tags.filter(row => row !== tag)
+      item.revision = (item.revision ?? 0) + 1
+      changed += 1
+    }
+    return { text: tr('删除了标签 #{tag}（{n} 条）', { tag, n: changed }), kind: 'tag' }
   },
   add_person(state, op, now) {
     const person = { id: newId('p'), name: '', role: tr('目标读者'), note: '', traits: [], tone: Math.floor(Math.random() * 6), createdAt: now, ...pick(PERSON_FIELDS, op) }

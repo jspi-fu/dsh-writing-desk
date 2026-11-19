@@ -1,0 +1,333 @@
+// 桥接投递箱(ADR 0009):浏览器扩展与本机 wdesk 桥进程只通过
+// ~/.dsh/writing-desk/bridge/ 的文件与工作台交换数据——
+//   inbox/import-*.json    桥写,host 消化成灵感(add_item)
+//   outbox/publish-*.json  host 写,桥监听下发给扩展发布
+//   receipts/import-*.json host 写给桥的导入回执
+//   receipts/dispatch-*.json 桥写给 host 的发布回执,消化成 item.dispatches
+//   auth.json              桥写的连接信息(0600),host 只读给设置页展示
+// 写路径唯一入口仍是 applyOps(红线);文件认领用原子 rename,桌面与网页两个宿主进程
+// 并发消化同一批文件不重不漏;operationId 让桥侧重试也能拿到同一份回执。
+// 扩展采集的网页内容回传后,这里仍按不可信输入对待:URL 只放行 http(s)、字段限长、
+// data URI 封面落成 files/ 素材后才能进 media。
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { applyOps } from './ops.js'
+import { dshHome } from './store.js'
+import { tr } from './i18n.js'
+
+// v1 导出平台与适配器 id 的映射;小红书二期再补(xiaohongshu,见 ADR 0009 不做清单)
+export const BRIDGE_ADAPTERS = {
+  weixin: '公众号',
+  zhihu: '知乎',
+  juejin: '掘金',
+}
+
+export function bridgePaths() {
+  const root = join(dshHome(), 'writing-desk', 'bridge')
+  return {
+    root,
+    inbox: join(root, 'inbox'),
+    outbox: join(root, 'outbox'),
+    receipts: join(root, 'receipts'),
+    auth: join(root, 'auth.json'),
+  }
+}
+
+export async function ensureBridgeDirs() {
+  const paths = bridgePaths()
+  for (const dir of [paths.root, paths.inbox, paths.outbox, paths.receipts]) {
+    await mkdir(dir, { recursive: true })
+  }
+  return paths
+}
+
+/**
+ * 原子认领一个投递文件:rename 成功的进程才处理它,失败说明同伴已认领。
+ * @param {string} file - 投递文件路径。
+ * @returns {Promise<boolean>} 认领成功返回 true。
+ */
+async function claim(file) {
+  try {
+    await rename(file, `${file}.claiming`)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function readClaimed(file) {
+  try {
+    return JSON.parse(await readFile(`${file}.claiming`, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 写一份回执给桥;桥对同一 operationId 重试时拿到的永远是同一份结果。
+ * @param {string} name - 回执文件名(带 import-/dispatch- 前缀)。
+ * @param {object} body - 回执内容。
+ */
+async function writeReceipt(name, body) {
+  const paths = await ensureBridgeDirs()
+  const file = join(paths.receipts, name)
+  await writeFile(`${file}.tmp`, JSON.stringify({ ...body, at: new Date().toISOString() }))
+  await rename(`${file}.tmp`, file)
+}
+
+function text(value, cap) {
+  return typeof value === 'string' ? value.slice(0, cap) : undefined
+}
+
+/** 封面白名单:data URI(落成 files/ 素材)或 http(s) 地址,其余拒绝。 */
+async function normalizeCover(cover, filesDir) {
+  if (typeof cover !== 'string' || !cover) return null
+  const match = /^data:image\/(png|jpeg|webp);base64,([\w+/=]+)$/.exec(cover)
+  if (match) {
+    // StashDock 同款上限:750KB 解码体积(base64 约 100 万字符),防投递文件过大
+    if (match[2].length > 1_000_000) throw new Error(tr('封面图片太大'))
+    const buffer = Buffer.from(match[2], 'base64')
+    const name = `${newImageName()}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`
+    await writeFile(join(filesDir, name), buffer)
+    return `writing-desk/files/${name}`
+  }
+  try {
+    const { protocol } = new URL(cover)
+    if (protocol === 'http:' || protocol === 'https:') return cover
+  } catch { /* 不是合法地址 */ }
+  throw new Error(tr('封面地址不受支持'))
+}
+
+let imageCounter = 0
+function newImageName() {
+  imageCounter += 1
+  return `b${Date.now().toString(36)}${imageCounter.toString(36)}`
+}
+
+/** 校验并折算成 add_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */
+async function importOp(payload, filesDir) {
+  const url = typeof payload.url === 'string' ? payload.url.trim() : ''
+  try {
+    const { protocol } = new URL(url)
+    if (protocol !== 'http:' && protocol !== 'https:') throw new Error()
+  } catch {
+    throw new Error(tr('链接必须是 http(s) 地址'))
+  }
+  const tags = Array.isArray(payload.tags)
+    ? payload.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 48)).slice(0, 12)
+    : []
+  const cover = await normalizeCover(payload.cover, filesDir)
+  const op = {
+    op: 'add_item',
+    kind: 'web',
+    title: text(payload.title?.trim(), 300) || url,
+    body: text(payload.body, 20000) ?? '',
+    url,
+    source: text(payload.siteName, 100),
+    tags,
+    media: cover ? { src: cover } : null,
+  }
+  return op
+}
+
+// operationId 回执记忆(借鉴 StashDock 的 capture 回执协议,ADR 0009):
+// 桥对同一 operationId 重试时,只要内容没变就直接复用上次结果,不重复落库;
+// 内容变了则拒绝处理。状态里留最近 256 条,足够覆盖桥侧的重试窗口。
+const SEEN_CAP = 256
+
+function rememberSeen(draft, operationId, digest, result) {
+  const seen = draft.bridgeSeen ?? (draft.bridgeSeen = {})
+  seen[operationId] = { digest, result, at: new Date().toISOString() }
+  const keys = Object.keys(seen)
+  for (const key of keys.slice(0, Math.max(0, keys.length - SEEN_CAP))) delete seen[key]
+}
+
+/** 语义摘要:按使用字段固定顺序拼串,投递文件被重新序列化也不变。 */
+function importDigest(payload) {
+  return JSON.stringify([
+    payload.url, payload.title, payload.body, payload.siteName,
+    Array.isArray(payload.tags) ? payload.tags : [], payload.cover ?? null,
+  ])
+}
+
+function dispatchDigest(payload) {
+  return JSON.stringify([payload.itemId, payload.results ?? []])
+}
+
+/**
+ * 消化采集投递:逐个认领 inbox 里的文件,经 add_item 落灵感墙,写回执。
+ * 双宿主并发安全(认领互斥);同一 operationId 重投靠回执记忆幂等;
+ * 失败写错误回执并把文件留档(.failed),不重试。
+ * @param {object} store - 工作台 Store。
+ * @param {string} filesDir - 素材目录(封面 data URI 落盘用)。
+ * @returns {Promise<{imported: number, failed: number}>} 消化统计。
+ */
+export async function digestInbox(store, filesDir) {
+  const paths = await ensureBridgeDirs()
+  await mkdir(filesDir, { recursive: true })
+  let names = []
+  try {
+    names = (await readdir(paths.inbox)).filter(name => /^import-[\w-]+\.json$/.test(name))
+  } catch {
+    return { imported: 0, failed: 0 }
+  }
+  let imported = 0
+  let failed = 0
+  for (const name of names) {
+    const file = join(paths.inbox, name)
+    if (!await claim(file)) continue
+    const payload = await readClaimed(file)
+    const operationId = name.slice('import-'.length, -'.json'.length)
+    try {
+      if (!payload || typeof payload.operationId !== 'string') throw new Error(tr('投递格式无效'))
+      const op = await importOp(payload, filesDir)
+      const result = await store.mutate(tr('从浏览器收下《{title}》', { title: (op.title || '').slice(0, 12) }), (draft) => {
+        const digest = importDigest(payload)
+        const seen = draft.bridgeSeen?.[operationId]
+        if (seen) {
+          if (seen.digest !== digest) throw new Error(tr('同一编号的投递内容与上次不同,拒绝处理'))
+          return { id: seen.result?.id, replay: true }
+        }
+        const { receipts, errors } = applyOps(draft, [op])
+        if (errors.length) throw new Error(errors[0])
+        const out = { id: receipts[0]?.target }
+        rememberSeen(draft, operationId, digest, out)
+        return out
+      }, { undoable: false })
+      await writeReceipt(`import-${operationId}.json`, { ok: true, itemId: result.id, operationId, ...(result.replay ? { replay: true } : {}) })
+      imported += 1
+      await rm(`${file}.claiming`, { force: true })
+    } catch (err) {
+      failed += 1
+      await writeReceipt(`import-${operationId}.json`, { ok: false, error: String(err.message || err), operationId })
+      await rename(`${file}.claiming`, `${file}.failed`).catch(() => {})
+    }
+  }
+  return { imported, failed }
+}
+
+/**
+ * 消化发布回执:dispatch-*.json 里的逐平台结果落成 item.dispatches。
+ * dispatches 只记录「投递到了哪、草稿链接是什么」,绝不改 status(已发布仍由用户确认)。
+ * @param {object} store - 工作台 Store。
+ */
+export async function digestReceipts(store) {
+  const paths = await ensureBridgeDirs()
+  let names = []
+  try {
+    names = (await readdir(paths.receipts)).filter(name => /^dispatch-[\w-]+\.json$/.test(name))
+  } catch {
+    return
+  }
+  for (const name of names) {
+    const file = join(paths.receipts, name)
+    if (!await claim(file)) continue
+    const payload = await readClaimed(file)
+    try {
+      if (!payload || typeof payload.operationId !== 'string' || typeof payload.itemId !== 'string') {
+        throw new Error(tr('回执格式无效'))
+      }
+      const results = Array.isArray(payload.results) ? payload.results.slice(0, 10) : []
+      const ops = []
+      for (const row of results) {
+        if (!row || typeof row.platform !== 'string' || !Object.hasOwn(BRIDGE_ADAPTERS, row.platform)) continue
+        const url = typeof row.url === 'string' && row.url ? row.url : null
+        let safeUrl = null
+        if (url) {
+          try {
+            const { protocol } = new URL(url)
+            if (protocol !== 'http:' && protocol !== 'https:') throw new Error()
+            safeUrl = url
+          } catch { safeUrl = null }
+        }
+        ops.push({
+          op: 'record_dispatch',
+          id: payload.itemId,
+          dispatch: {
+            platform: row.platform,
+            ok: row.ok === true,
+            ...(safeUrl ? { url: safeUrl } : {}),
+            ...(row.ok !== true && typeof row.error === 'string' ? { error: row.error.slice(0, 200) } : {}),
+          },
+        })
+      }
+      if (ops.length) {
+        await store.mutate(tr('记下发布投递'), (draft) => {
+          const digest = dispatchDigest({ itemId: payload.itemId, results: ops.map(op => op.dispatch) })
+          const seen = draft.bridgeSeen?.[payload.operationId]
+          if (seen) {
+            if (seen.digest !== digest) throw new Error(tr('同一编号的回执内容与上次不同,拒绝处理'))
+            return { state: draft }
+          }
+          applyOps(draft, ops)
+          rememberSeen(draft, payload.operationId, digest, { ok: true })
+          return { state: draft }
+        }, { undoable: false })
+      }
+      await rm(`${file}.claiming`, { force: true })
+    } catch {
+      // 回执坏了不重试:留档等人工检查
+      await rename(`${file}.claiming`, `${file}.failed`).catch(() => {})
+    }
+  }
+}
+
+/**
+ * 写一份发布任务到 outbox,给桥监听下发。
+ * @param {object} task - {itemId, title, articleMd, images, platforms}。
+ * @returns {Promise<{operationId: string, file: string}>}
+ */
+export async function writePublishTask(task) {
+  const paths = await ensureBridgeDirs()
+  const operationId = randomUUID()
+  const payload = {
+    kind: 'publish',
+    operationId,
+    itemId: String(task.itemId),
+    title: text(task.title, 200) ?? '',
+    articleMd: text(task.articleMd, 200000) ?? '',
+    images: task.images ?? {},
+    platforms: (Array.isArray(task.platforms) ? task.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p)),
+  }
+  if (!payload.platforms.length) throw new Error(tr('没有可投递的平台'))
+  const file = join(paths.outbox, `publish-${operationId}.json`)
+  await writeFile(`${file}.tmp`, JSON.stringify(payload))
+  await rename(`${file}.tmp`, file)
+  return { operationId, file }
+}
+
+/**
+ * 读桥的连接信息(auth.json 由 wdesk serve 写,host 只读)。
+ * @returns {Promise<{configured: boolean, token?: string, port?: number, startedAt?: string}>}
+ */
+export async function readBridgeAuth() {
+  try {
+    const raw = JSON.parse(await readFile(bridgePaths().auth, 'utf8'))
+    if (typeof raw.token !== 'string' || !raw.token) return { configured: false }
+    return { configured: true, token: raw.token, port: Number.isFinite(raw.wsPort) ? raw.wsPort : undefined, startedAt: raw.startedAt }
+  } catch {
+    return { configured: false }
+  }
+}
+
+/** 设置页要的桥状态:连接信息 + 投递箱里各队列的待处理数。 */
+export async function bridgeStatus() {
+  const paths = bridgePaths()
+  const count = async dir => {
+    try {
+      return (await readdir(dir)).filter(name => name.endsWith('.json')).length
+    } catch {
+      return 0
+    }
+  }
+  const auth = await readBridgeAuth()
+  return {
+    ...auth,
+    pending: {
+      inbox: await count(paths.inbox),
+      outbox: await count(paths.outbox),
+      receipts: await count(paths.receipts),
+    },
+  }
+}

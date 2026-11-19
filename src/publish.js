@@ -1,7 +1,7 @@
-// 发布交接(工单 #9):把成稿导出成 Wechatsync CLI 能直接消费的 article.md + images/ 文件夹。
-// CLI 只是本地 WebSocket 桥(默认 9527),发布发生在浏览器扩展里、只到草稿箱且没有可靠的成功信号
-// (失败也 exit(0)),所以这里只产出文件与命令字符串:不调用平台 API、不解析 CLI 输出,
-// 是否已发布由用户确认(见 ops.js 的 publish_item)。
+// 发布交接(工单 #9、ADR 0009):把成稿导出成 wdesk CLI 能直接消费的 article.md + images/ 文件夹。
+// 发布发生在浏览器扩展里、只到草稿箱,所以这里只产出文件与命令字符串:不调用平台 API、
+// 不解析 CLI 输出,是否已发布由用户确认(见 ops.js 的 publish_item)。
+// 一键投递走 production/dispatch 路由(经本地桥下发扩展),这条命令字符串是没起桥时的兜底。
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { byLang } from './i18n.js'
@@ -37,12 +37,12 @@ export async function exportForCli(production, { filesDir, exportDir }) {
   const articlePath = join(target, 'article.md')
   await writeFile(articlePath, articleWithFigures(production, figures))
 
-  // 可复制的同步命令:flag 用 `wechatsync help sync` 实测过的拼法(sync <file> / --title / --cover / --dry-run)。
+  // 可复制的同步命令:拼法与 wdesk sync 的参数面一致(sync <file> / --title / --cover / --dry-run)。
   // 参数统一套双引号并清掉标题里的引号,粘贴到 cmd / PowerShell / Git Bash 都能跑。
   const quote = value => `"${String(value).replace(/"/g, '')}"`
   const cover = figures[0].ref ? join(target, figures[0].ref) : null
   const command = [
-    'wechatsync', 'sync', quote(articlePath),
+    'wdesk', 'sync', quote(articlePath),
     production.title ? `--title ${quote(production.title)}` : null,
     cover ? `--cover ${quote(cover)}` : null,
   ].filter(Boolean).join(' ')

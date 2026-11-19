@@ -77,14 +77,14 @@ test('exportForCli 写出 CLI 原生的 article.md + images/,图片引用都能�
   }
 })
 
-test('命令是可复制的 wechatsync sync,带实测的真实 flag,--dry-run 是唯一差别', async () => {
+test('命令是可复制的 wdesk sync(ADR 0009 二开的 CLI),带真实 flag,--dry-run 是唯一差别', async () => {
   const { dir, filesDir } = await filesFixture()
   try {
     const production = published()
     production.title = '带"引号"的标题'
     const result = await exportForCli(production, { filesDir, exportDir: join(dir, 'out') })
-    // 用 --help 实测过的拼法:sync <file>、--title、--cover、--dry-run;标题里的引号清掉,命令可直接粘贴
-    assert.match(result.command, /^wechatsync sync ".*article\.md"/)
+    // wdesk sync <file>、--title、--cover、--dry-run;标题里的引号清掉,命令可直接粘贴
+    assert.match(result.command, /^wdesk sync ".*article\.md"/)
     assert.match(result.command, / --title "带引号的标题" /)
     assert.match(result.command, / --cover ".*images[/\\]cover\.jpg"/)
     assert.ok(!result.command.includes('--dry-run'))
@@ -182,7 +182,7 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     const result = await post('production/export', { id: 'seed_2' })
     assert.equal(result.status, 200)
     assert.equal(result.body.articlePath, join(result.body.dir, 'article.md'))
-    assert.match(result.body.command, /^wechatsync sync/)
+    assert.match(result.body.command, /^wdesk sync/)
     assert.ok(await stat(join(result.body.dir, 'article.md')))
     assert.ok(await stat(join(result.body.dir, 'images', 'cover.jpg')))
     // 导出只是出文件:状态一动不动,已发布只等用户确认

@@ -2,7 +2,7 @@
 // 三层信息架构:状态层(head + 冲突横幅)/内容层(校样纸)/交接层(foot)。
 // 就地编辑经 update_production 落库可撤销;写回冲突经 pendingWrite 横幅裁决。
 import React from 'react'
-import { closeProof, dispatchOps, exportForPublish, getDesk, revealSaved, saveProduced, toast, useDesk, EMPTY_LIST } from './desk.js'
+import { closeProof, dispatchOps, dispatchPublish, exportForPublish, getDesk, revealSaved, saveProduced, toast, useDesk, EMPTY_LIST } from './desk.js'
 import { plural, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { SPRING_SNAP, PLATFORMS, fmtWhen, reducedMotion, renderMarkdown, textLength, toLocalInput } from './util.js'
@@ -31,9 +31,40 @@ function InPlaceText({ value, onCommit, className, label, editing }) {
   )
 }
 
-/** 发布确认(工单 #9):导出发布包之后问一句「是否视为已发布?」。 */
+// 桥适配器清单(ADR 0009):与 src/bridge.js 的 BRIDGE_ADAPTERS 一致,小红书二期再补。
+const DISPATCH_TARGETS = [
+  { id: 'weixin', label: '公众号' },
+  { id: 'zhihu', label: '知乎' },
+  { id: 'juejin', label: '掘金' },
+]
+
+/** 投递状态行:dispatches 里的逐平台结果,状态点 + 平台 + 草稿链接或错误。 */
+function DispatchList({ dispatches }) {
+  return (
+    <ul className="md-dispatch-list">
+      {dispatches.map((row, index) => (
+        <li key={`${row.platform}-${index}`}>
+          <span className={`md-dot ${row.ok ? 'is-ok' : 'is-fail'}`} aria-hidden="true" />
+          <span className="md-dispatch-platform">{t(DISPATCH_TARGETS.find(target => target.id === row.platform)?.label ?? row.platform)}</span>
+          {row.ok
+            ? (row.url
+              ? <a href={row.url} target="_blank" rel="noreferrer">{t('打开草稿')}</a>
+              : <span className="md-muted">{t('已到草稿箱')}</span>)
+            : <span className="md-dispatch-error">{row.error ?? t('投递失败')}</span>}
+          <time>{fmtWhen(row.at)}</time>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** 发布确认(工单 #9、ADR 0009):一键投递给浏览器扩展,或复制 wdesk 命令兜底;
+ *  之后问一句「是否视为已发布?」——投递只到草稿箱,发布与否始终由用户确认。 */
 function PublishDialog({ item, result, onClose }) {
   const [marked, setMarked] = React.useState(true)
+  const [picks, setPicks] = React.useState([])
+  const [busy, setBusy] = React.useState(false)
+  const dispatches = item.dispatches ?? []
   const copy = async (text) => {
     try {
       await navigator.clipboard.writeText(text)
@@ -47,19 +78,34 @@ function PublishDialog({ item, result, onClose }) {
     if (marked) dispatchOps([{ op: 'publish_item', id: item.id }], { label: t('确认发布') })
     else toast(t('已导出发布包,还没标记发布;之后可在内容页手动改状态'))
   }
+  const send = async () => {
+    if (!picks.length) return
+    setBusy(true)
+    const data = await dispatchPublish(item.id, picks)
+    setBusy(false)
+    if (data) toast(t('已投递给浏览器扩展,完成后这里会亮起草稿链接'))
+  }
+  const toggle = (id) => {
+    setPicks(current => current.includes(id) ? current.filter(row => row !== id) : [...current, id])
+  }
   return (
     <Dialog title={t('发布')} onClose={onClose}>
       <div className="md-form">
         <p className="md-muted">{t('发布包(article.md + images/):{dir}', { dir: result.dir })}</p>
         <div className="md-field">
-          <span>{t('先用 --dry-run 预览')}</span>
-          <div className="md-cmd-row">
-            <code>{result.dryRunCommand}</code>
-            <IconButton icon="copy" label={t('复制预览命令')} onClick={() => copy(result.dryRunCommand)} />
+          <span>{t('投递到浏览器扩展(只到草稿箱)')}</span>
+          <div className="md-dispatch-picks" role="group" aria-label={t('选择平台')}>
+            {DISPATCH_TARGETS.map(target => (
+              <button type="button" key={target.id} className={`md-chip ${picks.includes(target.id) ? 'is-active' : ''}`}
+                aria-pressed={picks.includes(target.id)} onClick={() => toggle(target.id)}>{t(target.label)}</button>
+            ))}
+            <button type="button" className="md-btn is-small is-primary" onClick={send}
+              disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
           </div>
+          {dispatches.length ? <DispatchList dispatches={dispatches} /> : null}
         </div>
         <div className="md-field">
-          <span>{t('确认无误后同步')}</span>
+          <span>{t('没有起桥时,复制命令同样能发')}</span>
           <div className="md-cmd-row">
             <code>{result.command}</code>
             <IconButton icon="copy" label={t('复制同步命令')} onClick={() => copy(result.command)} />
