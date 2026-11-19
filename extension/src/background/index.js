@@ -72,6 +72,16 @@ async function captureScreenshot(tabId, tabWidth) {
   return `data:image/jpeg;base64,${btoa(binary)}`
 }
 
+/** 打开采集界面:优先 side panel;浏览器不支持(如部分 Chromium 分支)或打开失败时
+ *  退回整页打开——保证工具栏点击永远有可见响应,绝不静默。 */
+async function openCaptureUI(windowId) {
+  try {
+    await chrome.sidePanel.open({ windowId })
+  } catch {
+    await chrome.tabs.create({ url: chrome.runtime.getURL('panel/panel.html') })
+  }
+}
+
 /** 采集会话:每窗口一份,侧栏经 storage.onChanged 订阅(面板开着也要能刷新)。
  *  先直接读页(activeTab / Edge 站点开关通常已覆盖当前站),读不动才申请 <all_urls>;
  *  同窗口 3 秒内已在跑的任务不重入(点击与面板初始化都会调它)。 */
@@ -82,7 +92,7 @@ async function startCapture() {
   const existing = (await chrome.storage.session.get(key))[key]
   if (existing?.loading && Date.now() - existing.at < 3000) return
   try {
-    await chrome.sidePanel.open({ windowId: tab.windowId })
+    await openCaptureUI(tab.windowId)
     await chrome.storage.session.set({ [key]: { loading: true, at: Date.now() } })
     let payload
     try {
@@ -94,15 +104,22 @@ async function startCapture() {
       payload = await captureTab()
     }
     await chrome.storage.session.set({ [key]: { ...payload, loading: false, at: Date.now() } })
+    chrome.action.setBadgeText({ text: '' })
   } catch (err) {
+    // 采集失败要让人看见:角标叹号 + 会话错误(面板渲染成可操作的错误态)
+    chrome.action.setBadgeBackgroundColor({ color: '#d13c35' })
+    chrome.action.setBadgeText({ text: '!' })
     await chrome.storage.session.set({ [key]: { error: String(err.message || err), loading: false, at: Date.now() } })
   }
 }
 
 chrome.action.onClicked.addListener(() => { startCapture() })
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {})
+chrome.runtime.onInstalled.addListener(async () => {
+  try { await chrome.sidePanel?.setPanelBehavior?.({ openPanelOnActionClick: false }) } catch { /* 引擎不支持 side panel */ }
+  // 新手引导:装完还没配过 Token 就直接打开设置页,给三步指引,不让用户对着空点击发呆
+  const { bridgeToken } = await chrome.storage.local.get('bridgeToken')
+  if (!bridgeToken) chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') })
 })
 
 // 侧栏 → SW 的动作:保存采集、重读页面

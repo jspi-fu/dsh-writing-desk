@@ -116,8 +116,25 @@ function renderHeader() {
   )
 }
 
+/** 未配对时的三步引导:收进书桌之前桥必须配好,与其让用户对着断连发呆,把路铺出来。 */
+function renderGuide() {
+  return h('div', { class: 'wd-note wd-guide rise', role: 'status' },
+    icon('alert', 14),
+    h('div', { style: 'flex:1' },
+      h('div', {}, t('还没配对桥:收进书桌前先完成三步')),
+      h('ol', { class: 'wd-steps' },
+        h('li', {}, t('工作台设置页复制桥接 Token')),
+        h('li', {}, t('扩展设置页粘贴保存')),
+        h('li', {}, t('终端跑 wdesk serve 起桥')),
+      ),
+    ),
+    h('button', { class: 'btn is-small is-primary', onclick: () => chrome.runtime.openOptionsPage() }, t('去配对')),
+  )
+}
+
 function renderBody(entry) {
   const body = h('main', { class: 'wd-body' })
+  if (state.bridge !== 'connected') body.append(renderGuide())
   if (state.error) {
     body.append(h('div', { class: 'wd-note is-error rise', role: 'alert' },
       icon('alert', 14),
