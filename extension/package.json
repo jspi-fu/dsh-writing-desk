@@ -1,0 +1,19 @@
+{
+  "name": "wdesk-extension",
+  "private": true,
+  "version": "0.1.0",
+  "description": "图文创作台 · 网页收发——网页一键收进灵感墙,成稿投递到各平台草稿箱(ADR 0009)",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "marked": "^12.0.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.10"
+  },
+  "license": "MIT"
+}

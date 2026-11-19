@@ -1,0 +1,25 @@
+图文创作台 · 网页收发 (browser extension)
+Copyright (c) dsh-writing-desk contributors — MIT License
+
+This extension includes third-party software:
+
+------------------------------------------------------------------------
+@mozilla/readability  (https://github.com/mozilla/readability)
+Licensed under the Apache License, Version 2.0.
+Copyright 2010-2020 Mozilla Foundation
+https://www.apache.org/licenses/LICENSE-2.0
+Bundled into page-capture.js at build time.
+
+marked  (https://github.com/markedjs/marked)
+Licensed under the MIT License.
+Copyright (c) 2011-2025 Christopher Jeffrey and contributors
+Bundled into background.js at build time.
+
+------------------------------------------------------------------------
+Design provenance: the capture side panel's interaction model (dirty guard,
+conflict dialog, truncation notice) and the publish adapter architecture
+(draft-only, image re-upload pipeline, WebSocket bridge) reference the publicly
+documented behaviour of StashDock (AGPL-3.0) and Wechatsync (GPL-3.0) as
+factual/interaction study; no source code was copied from either project.
+Endpoint facts for platform adapters are documented in
+docs/research/wechatsync.md with file:line references.
