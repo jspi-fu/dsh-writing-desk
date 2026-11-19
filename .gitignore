@@ -5,3 +5,14 @@ dist/
 index.json.tmp
 .zcode/
 .wt/
+.impeccable/
+.scratch/
+
+# 原型稿(设计过程产物,与代码/实际功能无关)
+prototype/
+
+# 参考项目(GPL/AGPL 代码,只作机制参考,不入库——ADR 0009 许可边界)
+参考项目/
+
+# 扩展打包产物
+extension/*.zip
