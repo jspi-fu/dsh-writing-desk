@@ -5,8 +5,19 @@ import { resolveLocalImages } from '../common/images.js'
 import { weixin } from './adapters/weixin.js'
 import { zhihu } from './adapters/zhihu.js'
 import { juejin } from './adapters/juejin.js'
+import { weibo } from './adapters/weibo.js'
+import { bilibili } from './adapters/bilibili.js'
+import { douban } from './adapters/douban.js'
+import { baijiahao } from './adapters/baijiahao.js'
+import { sohu } from './adapters/sohu.js'
+import { csdn } from './adapters/csdn.js'
+import { segmentfault } from './adapters/segmentfault.js'
+import { yuque } from './adapters/yuque.js'
 
-export const ADAPTERS = { weixin, zhihu, juejin }
+export const ADAPTERS = {
+  weixin, zhihu, juejin,
+  weibo, bilibili, douban, baijiahao, sohu, csdn, segmentfault, yuque,
+}
 
 marked.setOptions({ gfm: true, breaks: false })
 

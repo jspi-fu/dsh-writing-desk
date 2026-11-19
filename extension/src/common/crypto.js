@@ -69,6 +69,12 @@ async function hmacSha256(keyBytes, message) {
   return crypto.subtle.sign('HMAC', key, encoder.encode(message))
 }
 
+/** HMAC-SHA256 → Base64(CSDN 网关签名用)。 */
+export async function hmacSha256Base64(key, message) {
+  const signature = await hmacSha256(encoder.encode(key), message)
+  return btoa(String.fromCharCode(...new Uint8Array(signature)))
+}
+
 async function sha256Hex(message) {
   const digest = await crypto.subtle.digest('SHA-256', encoder.encode(message))
   return toHex(new Uint8Array(digest))

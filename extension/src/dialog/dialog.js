@@ -4,7 +4,11 @@ import { h } from '../common/h.js'
 import { icon } from '../common/icons.js'
 import { t } from '../common/i18n.js'
 
-const LABELS = { weixin: '公众号', zhihu: '知乎', juejin: '掘金' }
+const LABELS = {
+  weixin: '公众号', zhihu: '知乎', juejin: '掘金',
+  weibo: '微博', bilibili: 'B站', douban: '豆瓣', baijiahao: '百家号',
+  sohu: '搜狐号', csdn: 'CSDN', segmentfault: '思否', yuque: '语雀',
+}
 const state = {
   operationId: new URLSearchParams(location.search).get('op'),
   title: '',
@@ -60,7 +64,7 @@ function render() {
       ),
       rows.length ? h('ul', { class: 'wd-rows' }, rows.map(([platform, row]) => h('li', { class: row.state === 'ok' ? 'is-ok' : row.state === 'fail' ? 'is-fail' : 'rise' },
         h('span', { class: `dot ${row.state === 'working' ? 'is-work' : row.state === 'ok' ? 'is-ok' : row.state === 'fail' ? 'is-fail' : ''}` }),
-        h('span', { class: 'wd-name' }, LABELS[platform] ?? platform),
+        h('span', { class: 'wd-name' }, t(LABELS[platform] ?? platform)),
         h('span', { class: `wd-detail ${row.state === 'fail' ? 'is-fail' : ''}` },
           row.state === 'ok' && row.url ? h('a', { href: row.url, target: '_blank', rel: 'noreferrer' }, row.url) :
             row.state === 'fail' ? row.error ?? t('失败') : '',

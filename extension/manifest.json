@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "description": "图文创作台的浏览器侧窗口:一键把网页收进灵感墙,把成稿投递到公众号、知乎、掘金的草稿箱。",
   "minimum_chrome_version": "120",
-  "permissions": ["activeTab", "scripting", "storage", "sidePanel", "tabs", "declarativeNetRequest"],
+  "permissions": ["activeTab", "scripting", "storage", "sidePanel", "tabs", "declarativeNetRequest", "cookies"],
   "optional_host_permissions": ["<all_urls>"],
   "host_permissions": [
     "https://mp.weixin.qq.com/*",
@@ -14,7 +14,21 @@
     "https://api.zhihu.com/*",
     "https://api.juejin.cn/*",
     "https://imagex.bytedanceapi.com/*",
-    "https://zhihu-pics-upload.zhimg.com/*"
+    "https://zhihu-pics-upload.zhimg.com/*",
+    "https://segmentfault.com/*",
+    "https://bizapi.csdn.net/*",
+    "https://imgservice.csdn.net/*",
+    "https://csdn-img-blog.obs.cn-north-4.myhuaweicloud.com/*",
+    "https://card.weibo.com/*",
+    "https://picupload.weibo.com/*",
+    "https://api.bilibili.com/*",
+    "https://www.bilibili.com/*",
+    "https://www.douban.com/*",
+    "https://m.douban.com/*",
+    "https://upload.douban.com/*",
+    "https://baijiahao.baidu.com/*",
+    "https://mp.sohu.com/*",
+    "https://www.yuque.com/*"
   ],
   "background": {
     "service_worker": "background.js",
