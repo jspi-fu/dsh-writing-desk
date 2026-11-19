@@ -32,7 +32,7 @@ The writing itself happens in a DSH writing session: generation uses the model y
 
 ## The writing session
 
-**Drag it in and go.** Drag an idea card or a capsule onto the dock below the chat input and a reference lands in your draft — add one sentence of intent ("make it a RedNote note, keep it casual") and press Enter. No dragging? Right-click a card for "reference in chat" or "open a writing session".
+**Drag it in and go.** Drag an idea card or a capsule onto the dock below the chat input and a reference lands in your draft — add one sentence of intent ("make it a RedNote note, keep it casual") and press Enter. No dragging? The black pill on a card opens a writing session with the material as the same quote chip in the empty draft, or use its caret menu for "Add to chat" and "Copy for AI".
 
 **Intent first.** The session condenses your material into an intent sheet — purpose, audience, the one judgment the piece serves, lines you must keep, what it will not do — and waits for your confirmation before writing. Then it reads the draft and reports findings without touching a word; you choose what gets fixed, and only then it polishes.
 
@@ -46,9 +46,13 @@ The writing itself happens in a DSH writing session: generation uses the model y
 
 ## The idea wall
 
-**One sentence, one idea.** Text, links, images, videos, quotes — paste it and it becomes a card, laid out on the wall by time. Cards on the same thread fold into a capsule.
+**One sentence, one idea.** Text, links, images, videos and files all become a card: a 16:9 cover, a two-line title, a site row — click anywhere to edit. One import dialog serves the Note / Link / File tabs; links read their title, description and cover automatically, and files accept up to ten at a time.
 
-**Related ideas gather.** Type "agent" in the middle and hit Enter: the new idea is captured, and earlier ones that mention agent move up next to it.
+**Find it before you use it.** Search and sort (newest / oldest / title) sit at the top; category chips (All / Notes / Files / Links) switch directly. Tags live in a small popover above the dock: single-select filtering, plus rename and delete.
+
+**A capsule is a set.** Check a few cards to fold them into a capsule: a 2×2 cover stack with a count. Capsules can be multi-selected, dissolved and grow more members, but have no editor — they are just sets of ideas. The wall supports checkboxes, marquee selection, and batch "Add to chat" / "Start writing".
+
+**Bring old data over.** Settings has "Migrate from media desk": preview the counts, then import ideas, schedules and media files in one click; angles and readers merge by name, and the whole migration can be undone.
 
 <br>
 
@@ -123,7 +127,9 @@ The plugin is free and open source, with no keys bundled. Where a model is invol
 <summary><b>Can it publish directly?</b></summary>
 <br>
 
-No. Platforms have no unified API. Copy the piece or save the folder and publish yourself; the folder defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside.
+It can reach <b>draft boxes</b>. Install the <a href="extension/">"Writing Desk · Capture &amp; Publish" browser extension</a> and run <code>wdesk serve</code> in a terminal, then the proof view can send a finished piece to the WeChat, Zhihu and Juejin draft boxes in one click (using your own login state via each platform's official Web APIs; images are re-uploaded by the extension). Platforms have no unified publish API, so a piece counts as published only when you confirm it; the RedNote adapter is planned for a second round.
+
+Without the extension, copy the piece or save the folder as before: it defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside, plus a ready-to-paste `wdesk sync` command.
 
 </details>
 
@@ -176,9 +182,13 @@ npm pack                       # Build an installable tgz
 | Directory | Contents |
 | --- | --- |
 | `client/` | UI: idea wall, content, schedule, styles, proof view, dock rail |
-| `src/` | Host API, state machine, harness tools & skills, local storage |
+| `src/` | Host API, state machine, harness tools & skills, local storage, bridge mailboxes |
+| `extension/` | Browser extension "Capture & Publish": web capture into the idea wall, draft delivery to platforms (see [extension/](extension/)) |
+| `cli/` | `wdesk` local bridge & CLI: publish dispatch, capture delivery, sync/platforms/extract (see [cli/](cli/)) |
 | `scripts/` | Packaging, sandbox, sample assets, marketplace index |
 | `assets/` | Sample images and videos, all drawn by `scripts/gen-assets.py` |
+
+The extension and CLI are not part of the npm plugin package; `npm pack` ships the plugin itself only. The bridge architecture is documented in [ADR 0009](docs/adr/0009-bridge-extension.md), with research notes in [docs/research/](docs/research/).
 
 Restart DeepSeek Harness after changing `src/`.
 
