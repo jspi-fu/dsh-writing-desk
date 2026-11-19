@@ -127,7 +127,7 @@ The plugin is free and open source, with no keys bundled. Where a model is invol
 <summary><b>Can it publish directly?</b></summary>
 <br>
 
-It can reach <b>draft boxes</b>. Install the <a href="extension/">"Writing Desk · Capture &amp; Publish" browser extension</a> and run <code>wdesk serve</code> in a terminal, then the proof view can send a finished piece to the WeChat, Zhihu and Juejin draft boxes in one click (using your own login state via each platform's official Web APIs; images are re-uploaded by the extension). Platforms have no unified publish API, so a piece counts as published only when you confirm it; the RedNote adapter is planned for a second round.
+It can reach <b>draft boxes</b>. Install the <a href="extension/">"Writing Desk · Capture &amp; Publish" browser extension</a> and run <code>wdesk serve</code> in a terminal, then the proof view can send a finished piece to the WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault and Yuque draft boxes in one click (using your own login state via each platform's official Web APIs; images are re-uploaded by the extension). Platforms have no unified publish API, so a piece counts as published only when you confirm it; the RedNote adapter is planned for a second round.
 
 Without the extension, copy the piece or save the folder as before: it defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside, plus a ready-to-paste `wdesk sync` command.
 

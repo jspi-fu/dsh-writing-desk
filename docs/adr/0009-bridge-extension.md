@@ -6,7 +6,7 @@ Status: accepted(2026-11-19 目标指令定案;三份研究(docs/research/) + �
 
 已验证:扩展以 unpacked 方式加载(SW 运行、options/panel/dialog 三页渲染);Token 经扩展设置页真实 UI 保存后桥握手连上(wdesk serve 日志「浏览器扩展已连接」);**导入链**——扩展注入 page-capture(example.com,Readability 提取正文)→ WS → inbox → 宿主 3 秒轮询消化 → 灵感墙落卡(itemId 回执,重投幂等);**导出链**——宿主侧 writePublishTask 写 outbox → 桥认领 → 图片折算 data URI 下发扩展 → 对话框页拉起 → 三适配器真调平台 API(未登录诚实报「登录态超时/请先登录」,weixin 是平台真实响应)→ dispatch 回执被宿主消化成 `item.dispatches`,**status 纹丝未动**(红线保持)。审计:161/161 测试全绿(含 bridge.test.js 九例);`npm pack` 产物不含 extension/ 与 cli/。
 
-已知边界:工具栏动作经由 Edge 扩展菜单条目点击触发(开发者模式加载的扩展);首次点击在无站点授权时借手势申请 `<all_urls>`,Edge 的站点级开关(允许此站使用扩展)下直接可采。宿主路由鉴权(401「未授权」)实证过,扩展与桥不持有宿主凭证。
+已知边界:工具栏动作经由 Edge 扩展菜单条目点击触发(开发者模式加载的扩展);首次点击在无站点授权时借手势申请 `<all_urls>`,Edge 的站点级开关(允许此站使用扩展)下直接可采。宿主路由鉴权(401「未授权」)实证过,扩展与桥不持有宿主凭证。第二批八个适配器(weibo/bilibili/douban/baijiahao/sohu/csdn/segmentfault/yuque)按研究文档的端点事实实现并过桥,但**未做登录态真机验证**(本地无各平台登录)——与首批三平台同标准,等有登录态的机器走查;manifest 相应加 cookies 权限与各域 host_permissions。
 
 ## 背景
 
@@ -30,7 +30,7 @@ Status: accepted(2026-11-19 目标指令定案;三份研究(docs/research/) + �
 | 桥↔工作台 | **文件投递箱** `~/.dsh/writing-desk/bridge/`:`inbox/`(桥写导入件)→ host 消化进 applyOps;`outbox/`(host 写发布任务)→ 桥监听下发;`receipts/`(桥写回执)→ host 消化成 `item.dispatches`。迁移(migrate 直读 media-desk)与 Store mtime 双进程感知是既有先例;消化幂等靠「原子 rename 认领 + operationId 回执」(借鉴 StashDock 协议思想)。 |
 | 导入链路 | side panel 采集(用户选区 → 站点适配 → Readability,自实现 DOM 工具)→ 用户确认(标题/正文/标签,dirty 守卫、冲突对话框、截断提示的交互照搬思想)→ 桥写 inbox → host 经 `add_item` 落灵感墙。桥不在时扩展降级:提示启动 + 复制 Markdown 兜底(剪贴板先例)。 |
 | 导出链路 | 校样浮层发布对话框加平台多选(公众号/知乎/掘金)与「投递到浏览器」:host 导出发布包(既有 publish.js)并写 outbox 任务(含 article 正文、图片路径清单、itemId、operationId)→ 桥读取并把图片读成分片 data URI 下发扩展 → 扩展对每平台跑适配器(**只到草稿箱**)→ 回执写 receipts → host 落 `item.dispatches`(平台/草稿链接/时间/成败)。**发布状态仍只由用户确认(publish_item),dispatches ≠ 已发布**,校样浮层展示「已投递」供人工去平台发布后确认。 |
-| 适配器 | `extension/src/adapters/` 注册表 + 平台适配器:weixin/zhihu/juejin 按 adapter-spec 与研究文档重实现(端点事实引用,代码原创);基类提供图片管线(抽图、去重、转存、单图失败降级继续);Origin/Referer 用 declarativeNetRequest 动态规则,`initiatorDomains` 只限扩展自身。全部 `draftOnly`,失败不静默。 |
+| 适配器 | `extension/src/adapters/` 注册表 + 平台适配器:首批 weixin/zhihu/juejin,第二批(同日追加)weibo/bilibili/douban/baijiahao/sohu/csdn/segmentfault/yuque——均按 adapter-spec 与研究文档重实现(端点事实引用,代码原创);基类提供图片管线(抽图、去重、转存、单图失败降级继续);Origin/Referer 用 declarativeNetRequest 动态规则,`initiatorDomains` 只限扩展自身;豆瓣以「私密发布」代替草稿、正文经自研 markdown→Draft.js 转换(common/draft.js,覆盖工作台成稿子集)。全部 `draftOnly`,失败不静默。 |
 | CLI 形态 | `cli/` 独立 package.json(`@dsh-writing-desk/cli`,bin 名 `wdesk`),不进插件包。零依赖倾向(WS 用 node:http + 手写帧或 ws 单依赖,取舍见实现);`publish.js` 生成命令字符串从 `wechatsync sync` 改为 `wdesk sync`。 |
 | 许可 | 本仓库 MIT 不变;两参考项目代码零拷贝(协议/端点事实/交互思想可借鉴,文件头注明机制出处);`参考项目/` 进 .gitignore;`cli/README` 与扩展 NOTICE 声明「设计参考 Wechatsync(GPL-3.0)/StashDock(AGPL-3.0),未复制代码」;Readability 随扩展分发 Apache-2.0 声明。 |
 | 扩展 UI | side panel 三段式(header/滚动表单/固定保存钮)与发布对话框(任务列表 + 平台进度)用 impeccable 确定,令牌对齐 DESIGN.md 的书桌语言(纸面/发丝线/衬线仪式感),但扩展运行在浏览器 chrome 里,不依赖宿主 CSS 变量,本地令牌自持。 |

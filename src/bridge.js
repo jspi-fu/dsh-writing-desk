@@ -16,11 +16,19 @@ import { applyOps } from './ops.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
 
-// v1 导出平台与适配器 id 的映射;小红书二期再补(xiaohongshu,见 ADR 0009 不做清单)
+// 平台与适配器 id 的映射(ADR 0009;小红书二期再补 xiaohongshu)
 export const BRIDGE_ADAPTERS = {
   weixin: '公众号',
   zhihu: '知乎',
   juejin: '掘金',
+  weibo: '微博',
+  bilibili: 'B站',
+  douban: '豆瓣',
+  baijiahao: '百家号',
+  sohu: '搜狐号',
+  csdn: 'CSDN',
+  segmentfault: '思否',
+  yuque: '语雀',
 }
 
 export function bridgePaths() {

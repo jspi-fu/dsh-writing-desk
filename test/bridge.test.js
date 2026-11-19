@@ -163,6 +163,9 @@ test('bridgeStatus 读 auth 并统计队列', async () => {
   assert.ok(status.pending.inbox >= 0)
 })
 
-test('适配器清单是 v1 三平台', () => {
-  assert.deepEqual(Object.keys(BRIDGE_ADAPTERS).sort(), ['juejin', 'weixin', 'zhihu'])
+test('适配器清单覆盖 v1 三平台 + 第二批八平台(ADR 0009)', () => {
+  assert.deepEqual(Object.keys(BRIDGE_ADAPTERS).sort(), [
+    'baijiahao', 'bilibili', 'csdn', 'douban', 'juejin',
+    'segmentfault', 'sohu', 'weibo', 'weixin', 'yuque', 'zhihu',
+  ])
 })
