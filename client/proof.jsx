@@ -36,6 +36,14 @@ const DISPATCH_TARGETS = [
   { id: 'weixin', label: '公众号' },
   { id: 'zhihu', label: '知乎' },
   { id: 'juejin', label: '掘金' },
+  { id: 'weibo', label: '微博' },
+  { id: 'bilibili', label: 'B站' },
+  { id: 'douban', label: '豆瓣' },
+  { id: 'baijiahao', label: '百家号' },
+  { id: 'sohu', label: '搜狐号' },
+  { id: 'csdn', label: 'CSDN' },
+  { id: 'segmentfault', label: '思否' },
+  { id: 'yuque', label: '语雀' },
 ]
 
 /** 投递状态行:dispatches 里的逐平台结果,状态点 + 平台 + 草稿链接或错误。 */

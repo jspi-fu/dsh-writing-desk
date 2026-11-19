@@ -3,7 +3,10 @@
 // 与宿主 src/bridge.js 的投递校验是两道独立防线:这里管协议形状,宿主管安全白名单。
 export const PROTOCOL_VERSION = 1
 
-export const ADAPTER_IDS = ['weixin', 'zhihu', 'juejin']
+export const ADAPTER_IDS = [
+  'weixin', 'zhihu', 'juejin',
+  'weibo', 'bilibili', 'douban', 'baijiahao', 'sohu', 'csdn', 'segmentfault', 'yuque',
+]
 
 // 一次性握手:扩展连上后必须先发 hello,token 对不上直接断开。
 // 想改上游「逐条消息带 token」的明文缺陷:token 只出现在握手帧里。

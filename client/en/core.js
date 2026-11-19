@@ -210,6 +210,14 @@ export const CORE = {
 
   // 桥接与投递(ADR 0009)
   '掘金': 'Juejin',
+  '微博': 'Weibo',
+  'B站': 'Bilibili',
+  '豆瓣': 'Douban',
+  '百家号': 'Baijiahao',
+  '搜狐号': 'Sohu',
+  'CSDN': 'CSDN',
+  '思否': 'SegmentFault',
+  '语雀': 'Yuque',
   '投递到浏览器扩展(只到草稿箱)': 'Send to the browser extension (drafts only)',
   '选择平台': 'Platforms',
   '投递': 'Send',
@@ -220,7 +228,7 @@ export const CORE = {
   '已到草稿箱': 'Saved as draft',
   '投递失败': 'Send failed',
   '浏览器扩展(网页收发)': 'Browser extension (capture & publish)',
-  '装上「图文创作台 · 网页收发」扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金的草稿箱。': 'Install the "Writing Desk · Capture & Publish" extension to save any page into your wall in one click, and send finished drafts to WeChat, Zhihu and Juejin draft boxes.',
+  '装上「图文创作台 · 网页收发」扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金的草稿箱。': 'Install the "Writing Desk · Capture & Publish" extension to save any page into your wall in one click, and send finished drafts to WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault and Yuque draft boxes.',
   '复制 Token': 'Copy token',
   '桥接 Token 已复制': 'Bridge token copied',
   '投递箱里还有 {n} 件没消化,起一次桥或等宿主下一轮处理': '{n} item(s) still in the mailboxes — run the bridge once or wait for the next host sweep',
