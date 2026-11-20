@@ -1,12 +1,11 @@
-// 发布交接(工单 #9)的模块层测试:导出物(文件夹与命令)与确认状态流。
+// 发布交接(工单 #9)的模块层测试:导出物(发布包文件夹)与确认状态流。
 // 与 host.test.js 同一层:只直接调用领域模块,不启 HTTP、不渲染 UI、不真调 wechatsync。
-// CLI 失败也 exit(0) 且无 --json,所以测试只断言导出物本身,绝不解析 CLI 输出或退出码。
 import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
-import { exportForCli } from '../src/publish.js'
+import { exportPublishPackage } from '../src/publish.js'
 import { applyOps } from '../src/ops.js'
 import { isScheduled, panelState } from '../src/state.js'
 import { buildSeed } from '../src/seed.js'
@@ -50,11 +49,11 @@ async function filesFixture() {
   return { dir, filesDir }
 }
 
-test('exportForCli 写出 CLI 原生的 article.md + images/,图片引用都能解析到文件', async () => {
+test('exportPublishPackage 写出 article.md + images/,图片引用都能解析到文件', async () => {
   const { dir, filesDir } = await filesFixture()
   try {
-    const result = await exportForCli(published(), { filesDir, exportDir: join(dir, 'out') })
-    // 返回形状:{dir, articlePath, imageFiles, command}
+    const result = await exportPublishPackage(published(), { filesDir, exportDir: join(dir, 'out') })
+    // 返回形状:{dir, articlePath, imageFiles}
     assert.equal(result.articlePath, join(result.dir, 'article.md'))
     assert.ok(Array.isArray(result.imageFiles))
     // 文件夹里只有 article.md 和 images/ 两种东西
@@ -77,35 +76,17 @@ test('exportForCli 写出 CLI 原生的 article.md + images/,图片引用都能�
   }
 })
 
-test('命令是可复制的 dswritesync sync(ADR 0010),带 -p 与真实 flag,--dry-run 是唯一差别', async () => {
-  const { dir, filesDir } = await filesFixture()
-  try {
-    const production = published()
-    production.title = '带"引号"的标题'
-    const result = await exportForCli(production, { filesDir, exportDir: join(dir, 'out'), platforms: ['zhihu', 'juejin'] })
-    // dswritesync sync <file> -p <平台>、--title、--cover、--dry-run;标题里的引号清掉,命令可直接粘贴
-    assert.match(result.command, /^dswritesync sync ".*article\.md" -p zhihu,juejin /)
-    assert.match(result.command, / --title "带引号的标题" /)
-    assert.match(result.command, / --cover ".*images[/\\]cover\.jpg"/)
-    assert.ok(!result.command.includes('--dry-run'))
-    assert.equal(result.dryRunCommand, `${result.command} --dry-run`)
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('没有画出来的图不进命令也不进文件夹,纯文字稿照样能导出', async () => {
+test('没有画出来的图不进文件夹,纯文字稿照样能导出', async () => {
   const { dir, filesDir } = await filesFixture()
   try {
     const production = published()
     production.cover = { prompt: 'c', status: 'failed' }
     production.images = [{ caption: '没画成', prompt: 'i', status: 'failed' }]
-    const result = await exportForCli(production, { filesDir, exportDir: join(dir, 'out') })
+    const result = await exportPublishPackage(production, { filesDir, exportDir: join(dir, 'out') })
     assert.deepEqual(result.imageFiles, [])
     assert.deepEqual(await readdir(result.dir).then(names => names.sort()), ['article.md', 'images'])
     const article = await readFile(result.articlePath, 'utf8')
     assert.ok(!article.includes('](images/'))
-    assert.ok(!result.command.includes('--cover'))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -165,7 +146,7 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     let handler = null
     const ctx = {
       get: name => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
-      effect: fn => fn(),
+      effect: (fn, name) => { if (!name?.includes('nm pairing')) fn() },
       webServer: { register: (options) => { handler = options.handler } },
     }
     hostPlugin.apply(ctx)
@@ -182,7 +163,6 @@ test('produce/export 路由:导出发布包、cliPath 落库,绝不顺手写已�
     const result = await post('production/export', { id: 'seed_2' })
     assert.equal(result.status, 200)
     assert.equal(result.body.articlePath, join(result.body.dir, 'article.md'))
-    assert.match(result.body.command, /^dswritesync sync/)
     assert.ok(await stat(join(result.body.dir, 'article.md')))
     assert.ok(await stat(join(result.body.dir, 'images', 'cover.jpg')))
     // 导出只是出文件:状态一动不动,已发布只等用户确认
@@ -221,7 +201,7 @@ test('production/dispatch 路由:按选中平台写 outbox 任务,状态仍不�
     let handler = null
     const ctx = {
       get: name => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
-      effect: fn => fn(),
+      effect: (fn, name) => { if (!name?.includes('nm pairing')) fn() },
       webServer: { register: (options) => { handler = options.handler } },
     }
     hostPlugin.apply(ctx)

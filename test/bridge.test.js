@@ -6,7 +6,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { digestInbox, digestReceipts, bridgeStatus, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS } from '../src/bridge.js'
+import { digestInbox, digestReceipts, bridgeStatus, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS, normalizeCaptureUrl } from '../src/bridge.js'
+import { applyOps } from '../src/ops.js'
 import { Store } from '../src/store.js'
 
 const root = await mkdtemp(join(tmpdir(), 'dswritesync-bridge-'))
@@ -254,15 +255,76 @@ test('回执里的非 http(s) 草稿链接被剥掉', async () => {
   assert.ok(!last.url, '危险链接必须剥掉')
 })
 
-test('bridgeStatus 读 auth 并统计队列', async () => {
+test('bridgeStatus 读 NM 配对结果并统计队列', async () => {
   const paths = bridgePaths()
   await mkdir(paths.root, { recursive: true })
-  await writeFile(paths.auth, JSON.stringify({ token: 'secret-token', wsPort: 9527, startedAt: new Date().toISOString() }), { mode: 0o600 })
-  const status = await bridgeStatus()
-  assert.equal(status.configured, true)
-  assert.equal(status.token, 'secret-token')
-  assert.equal(status.port, 9527)
+  // 还没注册过:未配对,不炸
+  let status = await bridgeStatus()
+  assert.equal(status.paired, false)
   assert.ok(status.pending.inbox >= 0)
+  // 注册器(ADR 0012)写出的 native.json:设置页据此显示配对状态
+  await writeFile(join(paths.root, 'native.json'), JSON.stringify({
+    v: 1, hostName: 'app.dswritesync.plugin', extensionId: 'hhkhkekbflmcnpbiiihpmgecpaicblbd',
+    manifestPath: 'C:/plugin/native/app.dswritesync.plugin.json', supported: true,
+    vendors: { 'Google\\Chrome': true, 'Microsoft\\Edge': false }, registeredAt: new Date().toISOString(),
+  }))
+  status = await bridgeStatus()
+  assert.equal(status.paired, true)
+  assert.equal(status.extensionId, 'hhkhkekbflmcnpbiiihpmgecpaicblbd')
+  assert.deepEqual(status.browsers, ['Google\\Chrome'])
+  assert.ok(status.pending.outbox >= 0)
+})
+
+test('normalizeCaptureUrl 去掉 utm/fbclid/gclid 噪声、fragment 与尾斜杠', () => {
+  assert.equal(normalizeCaptureUrl('https://Example.com/a/?utm_source=rss&utm_medium=x&id=7#top'), 'https://example.com/a?id=7')
+  assert.equal(normalizeCaptureUrl('https://example.com/a/?fbclid=1&gclid=2&utm_content=3'), 'https://example.com/a')
+  assert.equal(normalizeCaptureUrl('https://example.com/a/?b=2&a=1'), 'https://example.com/a?a=1&b=2')
+  assert.equal(normalizeCaptureUrl('https://example.com/'), 'https://example.com/')
+  assert.equal(normalizeCaptureUrl('not a url'), null)
+})
+
+test('离线重复收进同一 URL(含 utm 噪声)只得到一张卡片,回执标 duplicate', async () => {
+  const first = {
+    operationId: 'test-dedup-1',
+    url: 'https://example.com/post/dedup?utm_source=rss',
+    title: '第一次收进',
+    body: '正文',
+  }
+  await dropInbox(first)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  const second = {
+    operationId: 'test-dedup-2',
+    url: 'https://example.com/post/dedup/?utm_medium=social&utm_campaign=x',
+    title: '离线又收了一次',
+    body: '正文',
+  }
+  await dropInbox(second)
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1, '重复件也走消化流程写回执')
+  const state = await store.read()
+  const hits = state.items.filter(row => typeof row.url === 'string' && row.url.startsWith('https://example.com/post/dedup'))
+  assert.equal(hits.length, 1, '灵感墙不能出现两张同源卡片')
+  assert.equal(hits[0].title, '第一次收进', '先到的卡片留下')
+  assert.equal(hits[0].via, 'capture')
+  const receipt = JSON.parse(await readFile(join(bridgePaths().receipts, 'import-test-dedup-2.json'), 'utf8'))
+  assert.equal(receipt.ok, true)
+  assert.equal(receipt.duplicate, true)
+  assert.equal(receipt.itemId, hits[0].id)
+})
+
+test('去重只作用于收进来源的卡片,手动建的卡不挡新收进', async () => {
+  await store.mutate('手动建卡', (draft) => {
+    applyOps(draft, [{ op: 'add_item', kind: 'web', title: '手动粘贴', body: '', url: 'https://example.com/manual' }])
+    return draft
+  })
+  await dropInbox({ operationId: 'test-dedup-manual', url: 'https://example.com/manual', title: '从浏览器收下', body: '' })
+  assert.equal((await digestInbox(store, store.filesDir)).imported, 1)
+  const state = await store.read()
+  const hits = state.items.filter(row => row.url === 'https://example.com/manual')
+  assert.equal(hits.length, 2, '手动卡与收进卡互不干扰')
+  const captured = hits.find(row => row.via === 'capture')
+  assert.ok(captured, '新收进的那张带 via=capture')
+  const receipt = JSON.parse(await readFile(join(bridgePaths().receipts, 'import-test-dedup-manual.json'), 'utf8'))
+  assert.ok(!receipt.duplicate, '手动卡不算重复')
 })
 
 test('适配器清单覆盖 20 个内容平台(排除 zip-download)', () => {

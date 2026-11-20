@@ -32,14 +32,6 @@ export function SettingsDialog() {
     fetchBridgeStatus().then(data => { if (alive) setBridge(data) }).catch(() => {})
     return () => { alive = false }
   }, [open])
-  const copyToken = async () => {
-    try {
-      await navigator.clipboard.writeText(bridge.token)
-      toast(t('桥接 Token 已复制'))
-    } catch (err) {
-      report(err)
-    }
-  }
   if (!open || !form) return null
   const close = () => setDesk({ settingsOpen: false })
   const set = (key, value) => setForm(f => ({ ...f, [key]: value }))
@@ -89,22 +81,21 @@ export function SettingsDialog() {
         </div>
         <div className="md-field">
           <span>{t('DSwritesync 浏览器扩展')}</span>
-          <p className="md-migrate-hint">{t('装上「DSwritesync」浏览器扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金等 19 个内容平台的草稿箱。')}</p>
-          {bridge === null ? null : bridge.configured ? (
+          <p className="md-migrate-hint">{t('装上「DSwritesync」浏览器扩展后,在任意网页一键收藏进灵感墙;成稿可一键投递到公众号、知乎、掘金等 19 个内容平台的草稿箱。扩展与工作台经 Native Messaging 直连:装好两边即自动配对,零 token、零粘贴、零端口。')}</p>
+          {bridge === null ? null : (
             <div className="md-migrate">
-              <div className="md-bridge-row">
-                <code className="md-bridge-token">{bridge.token.slice(0, 4)}…{bridge.token.slice(-4)}</code>
-                <button type="button" className="md-btn is-small" onClick={copyToken}>{t('复制 Token')}</button>
+              <div className="md-migrate-counts">{bridge.paired ? t('已配对 · {n} 个浏览器已注册', { n: bridge.browsers.length }) : t('未配对')}</div>
+              <div className="md-migrate-hint">
+                {bridge.paired
+                  ? t('收进与投递自动完成;DSH 没开着时收进的内容会在下次启动后出现在灵感墙。')
+                  : t('重启 DeepSeek Harness 会自动修复注册;同时确认本机装有 Node.js,再在扩展设置页看连接状态。')}
               </div>
-              <div className="md-migrate-hint">{t('服务地址 ws://127.0.0.1:{port}', { port: bridge.port ?? 9527 })}</div>
               <div className="md-migrate-hint">
                 {bridge.pending.inbox + bridge.pending.outbox + bridge.pending.receipts
-                  ? t('投递箱里还有 {n} 件没消化,起一次桥或等宿主下一轮处理', { n: bridge.pending.inbox + bridge.pending.outbox + bridge.pending.receipts })
-                  : t('桥已配置。终端跑 dswritesync serve 起桥,扩展即连。')}
+                  ? t('投递箱里还有 {n} 件没消化,等宿主下一轮处理', { n: bridge.pending.inbox + bridge.pending.outbox + bridge.pending.receipts })
+                  : t('投递箱是空的,收进与投递都已消化。')}
               </div>
             </div>
-          ) : (
-            <p className="md-migrate-hint">{t('还没配过桥:终端跑一次 dswritesync serve(端口 9527),Token 会生成在这里,粘进扩展设置即连。')}</p>
           )}
         </div>
         <div className="md-version">

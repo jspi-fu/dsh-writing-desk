@@ -1,6 +1,6 @@
 # 本地助手:Native Messaging 自动配对取代 CLI 桥
 
-Status: accepted(2026-11-19 grill 会话定案;取代 ADR 0010 的「CLI / 本地服务」实现路径。投递箱数据契约、ADR 0009 三条工作台联动与「dispatches ≠ 已发布」红线不变)
+Status: implemented(2026-11-19 grill 会话定案,2026-11-20 工单 #11 实现;取代 ADR 0010 的「CLI / 本地服务」实现路径。投递箱数据契约、ADR 0009 三条工作台联动与「dispatches ≠ 已发布」红线不变)
 
 ## 背景
 

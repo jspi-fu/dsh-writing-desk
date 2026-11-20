@@ -75,21 +75,13 @@ function DispatchList({ dispatches }) {
   )
 }
 
-/** 发布确认(工单 #9、ADR 0009):一键投递给浏览器扩展,或复制 dswritesync 命令兜底;
+/** 发布确认(工单 #9、ADR 0009/0012):一键投递给浏览器扩展(经本地助手下发);
  *  之后问一句「是否视为已发布?」——投递只到草稿箱,发布与否始终由用户确认。 */
 function PublishDialog({ item, result, onClose }) {
   const [marked, setMarked] = React.useState(true)
   const [picks, setPicks] = React.useState([])
   const [busy, setBusy] = React.useState(false)
   const dispatches = item.dispatches ?? []
-  const copy = async (text) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      toast(t('命令已复制'))
-    } catch (err) {
-      toast(err.message, { error: true })
-    }
-  }
   const confirm = () => {
     onClose()
     if (marked) dispatchOps([{ op: 'publish_item', id: item.id }], { label: t('确认发布') })
@@ -120,13 +112,6 @@ function PublishDialog({ item, result, onClose }) {
               disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
           </div>
           {dispatches.length ? <DispatchList dispatches={dispatches} /> : null}
-        </div>
-        <div className="md-field">
-          <span>{t('没有起桥时,复制命令同样能发')}</span>
-          <div className="md-cmd-row">
-            <code>{result.command}</code>
-            <IconButton icon="copy" label={t('复制同步命令')} onClick={() => copy(result.command)} />
-          </div>
         </div>
         <label className="md-check">
           <input type="checkbox" checked={marked} onChange={e => setMarked(e.target.checked)} />

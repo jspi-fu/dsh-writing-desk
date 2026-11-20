@@ -324,7 +324,7 @@ test('host 半片发布 writingDesk 服务,preset 子插件经它拿到同一份
     const provided = {}
     const ctx = {
       get: () => undefined,
-      effect: fn => fn(),
+      effect: (fn, name) => { if (!name?.includes('nm pairing')) fn() },
       provide: (name, value) => { provided[name] = value },
       webServer: { register() {} },
     }

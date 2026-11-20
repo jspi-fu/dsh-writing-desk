@@ -1,27 +1,30 @@
 /**
- * 本地服务 WebSocket Client - 连接 dswritesync serve
+ * 本地助手 NM Client(ADR 0012)——连接 app.dswritesync.plugin。
+ *
+ * 通道是 Native Messaging,不再有 WS/token/端口:
+ * - 短请求:`sendNativeMessage`,按请求起一个助手短进程(capture/catalog/tasks/claim/
+ *   content/receipt/status),失败时 lastError 供设置页展示。
+ * - 长端口:面板/对话框页打开期间 `connectNative`,助手 fs.watch outbox(1s 轮询兜底)
+ *   近实时推 task-available,并回推 capture-result;心跳消息顺带保活 MV3 SW。
+ * - SW 休眠期:chrome.alarms(30s 下限)一次性拉,投递最坏 30 秒到达。
+ * - 大文章:任务只下元数据,正文与图片按 ≤900KB 分片拉取,单分片失败重试。
  */
-import {
-  checkAllPlatformsAuth,
-  checkPlatformAuth,
-  getAdapter,
-} from '../adapters'
 import { markdownToHtml } from '@wechatsync/core'
 import { createLogger } from '../lib/logger'
 import { t } from '../lib/i18n'
 import { generateSyncId, performSync } from '../background/sync-service'
+import {
+  HOST_NAME,
+  assembleShards,
+  decodeUtf8,
+  inlineImageRefs,
+  mapDispatchResults,
+  type ContentResponse,
+  type DispatchResultRow,
+  type TaskMeta,
+} from './protocol'
 
 const logger = createLogger('BridgeClient')
-
-// 消息类型
-interface ResponseMessage {
-  id: string
-  result?: unknown
-  error?: {
-    code: number
-    message: string
-  }
-}
 
 /** 工作台目录（desk.catalog 的 payload）。 */
 export interface DeskCatalog {
@@ -44,38 +47,30 @@ export interface CapturePayload {
   replaceItemId?: string
 }
 
-/** 工作台回执（desk.capture-result 的 payload）。 */
+/** 收进结果:queued 表示已原子落 inbox;DSH 关闭时 dshActive=false,启动后出现在灵感墙。 */
 export interface CaptureResult {
   operationId: string
   ok: boolean
+  queued?: boolean
   itemId?: string
   error?: string
   duplicate?: boolean
   replaced?: boolean
+  dshActive?: boolean
 }
 
-interface PendingRequest<T> {
-  resolve: (value: T) => void
-  reject: (error: Error) => void
-  timeoutId: ReturnType<typeof setTimeout>
+/** 连接状态:paired = NM 通路可用;connected = 长端口已开;lastError 供排障。 */
+export interface BridgeStatus {
+  paired: boolean
+  connected: boolean
+  dshActive: boolean
+  lastError: string | null
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-// 分片上传会话
-interface PendingUpload {
-  chunks: Map<number, string>  // chunkIndex -> data
-  totalChunks: number
-  mimeType: string
-  platform: string
-  createdAt: number
-  timeoutId: ReturnType<typeof setTimeout>
-}
-
-const DEFAULT_SERVER_URL = 'ws://127.0.0.1:9527'
-const CATALOG_TIMEOUT_MS = 10_000
+const REQUEST_TIMEOUT_MS = 15_000
+const STATUS_CACHE_MS = 5_000
+const PORT_RETRY_MS = 5_000
+const SHARD_RETRIES = 2
 const CAPTURE_TIMEOUT_MS = 90_000
 
 const PENDING_SYNC_TASK_KEY = 'pendingSyncTask'
@@ -96,6 +91,10 @@ interface PendingSyncTask {
   }
   syncId: string
   at: number
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
 function optionalString(value: unknown): string | undefined {
@@ -187,429 +186,161 @@ async function clearPendingSyncTask(syncId: string): Promise<void> {
 }
 
 class BridgeClient {
-  private ws: WebSocket | null = null
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private serverUrl = DEFAULT_SERVER_URL
-
-  // 安全验证 token
-  private token: string | null = null
-
-  // Desk 协议 v1 握手状态
-  private authenticated = false
+  private port: chrome.runtime.Port | null = null
+  private portRetryTimer: ReturnType<typeof setTimeout> | null = null
+  private watchers = 0
+  private processing = false
   private lastError: string | null = null
-
-  // 等待工作台回执的请求
-  private pendingCatalogRequests = new Map<string, PendingRequest<DeskCatalog>>()
-  private pendingCaptureRequests = new Map<string, PendingRequest<CaptureResult>>()
-
-  // 温热/冷却双阶段重连配置
-  private reconnectAttempts = 0
-  private lastConnectedAt = 0 // 上次成功连接的时间戳
-  private activelyWatched = false // 用户正在查看设置页
-  private readonly WARM_WINDOW = 5 * 60 * 1000 // 5 分钟内视为温热
-  // 温热阶段：刚断开，快速重连
-  private readonly warmMinInterval = 500   // 500ms
-  private readonly warmMaxInterval = 5000  // 5s 封顶
-  // 冷却阶段：长时间未连接，减少资源消耗
-  private readonly coldMinInterval = 10000 // 10s
-  private readonly coldMaxInterval = 60000 // 60s 封顶
-  private readonly maxReconnectAttempts = Infinity // bridgeEnabled=true 时永远重试
-
-  // 分片上传管理
-  private pendingUploads = new Map<string, PendingUpload>()
-  private readonly UPLOAD_TIMEOUT = 60000  // 60 秒超时
-  private readonly MAX_CONCURRENT_UPLOADS = 5  // 最大并发上传数
+  private lastDshActive = false
+  private statusCache: { at: number; status: BridgeStatus } | null = null
 
   /**
-   * 设置安全验证 token
+   * 短请求:按请求起一个助手进程。sendNativeMessage 没有内建超时,这里自己兜,
+   * 超时按未配对处理,避免设置页状态永远转圈。
    */
-  setToken(token: string): void {
-    this.token = token.trim() || null
-    this.lastError = null
-    logger.debug('Token set')
+  private request<T>(method: string, params?: Record<string, unknown>, timeoutMs = REQUEST_TIMEOUT_MS): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        this.lastError = t('本地助手没有回应(超时)')
+        reject(new Error(this.lastError))
+      }, timeoutMs)
+      try {
+        chrome.runtime.sendNativeMessage(HOST_NAME, { method, ...(params ? { params } : {}) }, response => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          const error = chrome.runtime.lastError?.message
+          if (error) {
+            this.lastError = nativeErrorText(error)
+            reject(new Error(this.lastError))
+            return
+          }
+          if (!isRecord(response)) {
+            this.lastError = t('本地助手没有回应')
+            reject(new Error(this.lastError))
+            return
+          }
+          if (typeof response.error === 'string' && response.error) {
+            this.lastError = response.error
+            reject(new Error(response.error))
+            return
+          }
+          this.lastError = null
+          if (response.dshActive === true || response.dshActive === false) {
+            this.lastDshActive = response.dshActive as boolean
+          }
+          resolve(response as T)
+        })
+      } catch (error) {
+        settled = true
+        clearTimeout(timer)
+        this.lastError = (error as Error).message || String(error)
+        reject(error instanceof Error ? error : new Error(this.lastError))
+      }
+    })
   }
 
-  /**
-   * 清除 token
-   */
-  clearToken(): void {
-    this.token = null
-    this.authenticated = false
-  }
-
-  /**
-   * 已完成 hello 握手（认证通过）
-   */
-  isAuthenticated(): boolean {
-    return this.authenticated && this.isConnected()
-  }
-
-  /**
-   * 最近一次连接/认证错误，供设置页展示
-   */
+  /** 最近一次错误,供设置页展示。 */
   getLastError(): string | null {
     return this.lastError
   }
 
-  /**
-   * 设置服务器地址（支持远程桥接）
-   */
-  setServerUrl(url: string): void {
-    this.serverUrl = url || DEFAULT_SERVER_URL
-    logger.debug(`Server URL set to ${this.serverUrl}`)
-  }
-
-  /**
-   * 获取当前服务器地址
-   */
-  getServerUrl(): string {
-    return this.serverUrl
-  }
-
-  /**
-   * 连接到本地 DSwritesync 服务（Desk 协议 v1）
-   */
-  connect(): void {
-    if (!this.token) {
-      this.lastError = t('未配置桥接 Token')
-      return
-    }
-
-    // 清理旧连接
-    if (this.ws) {
-      if (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING) {
-        return
-      }
-      // 清理非 OPEN/CONNECTING 状态的连接
-      this.ws.onclose = null
-      this.ws.onerror = null
-      this.ws.onmessage = null
-      this.ws.onopen = null
-      this.ws = null
-    }
-
-    this.authenticated = false
-    logger.debug(`Connecting to ${this.serverUrl} (attempt ${this.reconnectAttempts + 1})`)
-
-    try {
-      this.ws = new WebSocket(this.serverUrl)
-
-      this.ws.onopen = () => {
-        logger.debug('Connected to local service, sending hello')
-        // Desk 协议：首帧必须是 hello；认证后 token 不再逐条携带
-        const hello = {
-          kind: 'hello',
-          token: this.token,
-          version: chrome.runtime.getManifest().version,
-          lang: navigator.language,
-        }
-        try {
-          this.ws?.send(JSON.stringify(hello))
-        } catch (error) {
-          logger.error('Failed to send hello:', error)
-        }
-      }
-
-      this.ws.onmessage = (event) => {
-        this.handleMessage(event.data)
-      }
-
-      this.ws.onclose = (event) => {
-        const wasAuthenticated = this.authenticated
-        this.authenticated = false
-        this.ws = null
-        this.rejectPendingRequests(t('连接已断开'))
-
-        // 缺 token / token 不匹配：等待用户在设置页更新 token 或地址，避免反复重试刷屏
-        if (event.code === 4001 || event.code === 4003) {
-          this.lastError = event.code === 4001
-            ? t('本地服务未收到桥接 Token')
-            : t('桥接 Token 与本地服务不匹配')
-          logger.warn(`Desk handshake rejected (${event.code}); reconnect paused until token changes`)
-          return
-        }
-
-        logger.debug(`Disconnected (code: ${event.code}, authenticated: ${wasAuthenticated}), scheduling reconnect...`)
-        this.scheduleReconnect()
-      }
-
-      this.ws.onerror = () => {
-        // error 事件后通常会触发 close，不需要在这里重连
-        logger.debug('Connection error')
-      }
-    } catch (error) {
-      logger.error('Connection failed:', error)
-      this.ws = null
-      this.scheduleReconnect()
-    }
-  }
-
-  /**
-   * 断开连接
-   */
-  disconnect(): void {
-    this.reconnectAttempts = this.maxReconnectAttempts // 防止自动重连
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
-    this.authenticated = false
-    this.rejectPendingRequests(t('连接已断开'))
-    if (this.ws) {
-      this.ws.onclose = null // 防止触发重连
-      this.ws.close()
-      this.ws = null
-    }
-  }
-
-  /**
-   * 检查是否已连接
-   */
+  /** 长端口是否开着(面板/对话框打开期间为真)。 */
   isConnected(): boolean {
-    return this.ws?.readyState === WebSocket.OPEN
+    return this.port !== null
   }
 
   /**
-   * 计划重连（指数退避）
+   * 连接状态(paired/connected/dshActive/lastError)。端口开着就是已配对;
+   * 否则用短请求探一次(5s 缓存,避免设置页每 3 秒轮询都拉起短进程)。
    */
-  private scheduleReconnect(): void {
-    if (this.reconnectTimer) return
-
-    if (!this.token) {
-      this.lastError = t('未配置桥接 Token')
-      return
+  async getStatus(): Promise<BridgeStatus> {
+    if (this.port) {
+      return { paired: true, connected: true, dshActive: this.lastDshActive, lastError: null }
     }
-
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      logger.debug('Max reconnect attempts reached, stopping')
-      return
+    const cached = this.statusCache
+    if (cached && Date.now() - cached.at < STATUS_CACHE_MS) return cached.status
+    let status: BridgeStatus
+    try {
+      const response = await this.request<{ dshActive?: boolean }>('status')
+      status = { paired: true, connected: false, dshActive: response.dshActive === true, lastError: null }
+    } catch (error) {
+      status = { paired: false, connected: false, dshActive: false, lastError: (error as Error).message }
     }
-
-    // 只在本地服务启用时重连，避免无意义的后台重试消耗资源
-    chrome.storage.local.get('bridgeEnabled').then(storage => {
-      if (!storage.bridgeEnabled) {
-        logger.debug('Bridge disabled, skip reconnect')
-        return
-      }
-      this._doScheduleReconnect()
-    }).catch(() => this._doScheduleReconnect())
+    this.statusCache = { at: Date.now(), status }
+    return status
   }
 
-  private _doScheduleReconnect(): void {
-    // 温热/冷却双阶段退避
-    const timeSinceLastConnection = Date.now() - this.lastConnectedAt
-    const isWarm = this.activelyWatched
-      || (this.lastConnectedAt > 0 && timeSinceLastConnection < this.WARM_WINDOW)
+  // ============ 长端口(面板/对话框打开期间) ============
 
-    let interval: number
-    if (isWarm) {
-      // 温热：刚断开，server 可能在重启，快速重连
-      // 500ms, 1s, 2s, 4s, 5s, 5s, ...
-      interval = Math.min(
-        this.warmMinInterval * Math.pow(2, this.reconnectAttempts),
-        this.warmMaxInterval
-      )
-    } else {
-      // 冷却：长时间未连接，server 可能没启动，慢速重试
-      // 10s, 20s, 40s, 60s, 60s, ...
-      interval = Math.min(
-        this.coldMinInterval * Math.pow(2, this.reconnectAttempts),
-        this.coldMaxInterval
-      )
-    }
-
-    logger.debug(`Reconnecting in ${interval / 1000}s (${isWarm ? 'warm' : 'cold'})...`)
-
-    this.reconnectAttempts++
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null
-      this.connect()
-    }, interval)
-  }
-
-  /**
-   * 设置用户是否正在关注连接状态（如打开设置页）
-   * 关注时使用温热策略快速重连
-   */
+  /** 页面要近实时推送时调用(设置页/AppShell 挂载);引用计数,归零断开端口。 */
   setActivelyWatched(active: boolean): void {
-    this.activelyWatched = active
-    // 开始关注时，如果未连接，立即尝试重连
-    if (active && !this.isConnected()) {
-      this.reconnectAttempts = 0
-      if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer)
-        this.reconnectTimer = null
-      }
-      this.connect()
-    }
+    this.watchers = Math.max(0, this.watchers + (active ? 1 : -1))
+    if (active && this.watchers === 1) this.connectPort()
+    if (!active && this.watchers === 0) this.disconnectPort()
   }
 
-  /**
-   * 重置重连计数（供外部调用）
-   */
-  resetReconnect(): void {
-    this.reconnectAttempts = 0
-    if (!this.isConnected()) {
-      this.connect()
-    }
-  }
-
-  /**
-   * 处理入站帧：
-   * - Desk 协议帧：hello-ok / event / ack
-   * - 上游请求帧：{id, method, params}（CLI 转发到扩展的调用）
-   */
-  private async handleMessage(data: string): Promise<void> {
-    let message: any
+  private connectPort(): void {
+    if (this.port || this.portRetryTimer) return
     try {
-      message = JSON.parse(data)
-    } catch {
-      logger.error('Failed to parse incoming frame')
-      return
-    }
-
-    if (message?.kind === 'hello-ok') {
-      this.authenticated = true
-      this.lastError = null
-      this.reconnectAttempts = 0
-      this.lastConnectedAt = Date.now()
-      if (this.reconnectTimer) {
-        clearTimeout(this.reconnectTimer)
-        this.reconnectTimer = null
-      }
-      logger.debug(`Desk handshake complete (protocol v${message.version ?? '?'})`)
-      return
-    }
-
-    if (message?.kind === 'event') {
-      this.handleEventFrame(message)
-      return
-    }
-
-    if (message?.kind === 'ack') {
-      this.handleAckFrame(message)
-      return
-    }
-
-    // 其余按上游请求帧处理（握手后不再逐条校验 token；握手前兼容旧协议）
-    if (typeof message?.id !== 'string' || typeof message?.method !== 'string') {
-      logger.debug('Ignoring unrecognized frame')
-      return
-    }
-    logger.debug('Received request:', message.method)
-
-    let result: unknown
-    let error: { code: number; message: string } | undefined
-
-    if (!this.authenticated) {
-      if (!this.token) {
-        error = {
-          code: 401,
-          message: 'Bridge token not configured',
+      const port = chrome.runtime.connectNative(HOST_NAME)
+      port.onMessage.addListener(message => this.handlePortMessage(message))
+      port.onDisconnect.addListener(() => {
+        this.port = null
+        const error = chrome.runtime.lastError?.message
+        if (error) this.lastError = nativeErrorText(error)
+        logger.debug('NM port disconnected')
+        // 面板还开着就重连(注册漂移自愈窗口里保持可用)
+        if (this.watchers > 0) {
+          this.portRetryTimer = setTimeout(() => {
+            this.portRetryTimer = null
+            this.connectPort()
+          }, PORT_RETRY_MS)
         }
-      } else if (message.token !== this.token) {
-        logger.warn('Invalid token received')
-        error = {
-          code: 403,
-          message: 'Invalid or missing token',
-        }
-      }
-    }
-
-    if (!error) {
-      try {
-        result = await this.handleMethod(message.method, message.params)
-      } catch (e) {
-        error = {
-          code: -1,
-          message: (e as Error).message,
-        }
-      }
-    }
-
-    const response: ResponseMessage = {
-      id: message.id,
-      result,
-      error,
-    }
-
-    try {
-      this.ws?.send(JSON.stringify(response))
-    } catch (sendError) {
-      logger.error('Failed to send response:', sendError)
-    }
-  }
-
-  /**
-   * 处理 CLI 推送的 desk.* 事件
-   */
-  private handleEventFrame(frame: { event?: string; id?: string; payload?: unknown }): void {
-    const payload = isRecord(frame.payload) ? frame.payload : {}
-
-    if (frame.event === 'desk.catalog') {
-      const id = typeof frame.id === 'string' ? frame.id : ''
-      const pending = this.pendingCatalogRequests.get(id)
-      if (!pending) {
-        logger.debug(`Unexpected desk.catalog event (id: ${id || 'none'})`)
-        return
-      }
-      clearTimeout(pending.timeoutId)
-      this.pendingCatalogRequests.delete(id)
-      pending.resolve(this.normalizeCatalog(payload))
-      return
-    }
-
-    if (frame.event === 'desk.capture-result') {
-      const operationId = typeof payload.operationId === 'string' ? payload.operationId : ''
-      const pending = this.pendingCaptureRequests.get(operationId)
-      if (!pending) {
-        logger.debug(`Capture result without pending request: ${operationId || 'none'}`)
-        return
-      }
-      clearTimeout(pending.timeoutId)
-      this.pendingCaptureRequests.delete(operationId)
-      pending.resolve(this.toCaptureResult(operationId, payload))
-      return
-    }
-
-    if (frame.event === 'desk.log') {
-      const text = typeof payload.message === 'string' ? payload.message : ''
-      if (!text) return
-      const level = typeof payload.level === 'string' ? payload.level : 'info'
-      if (level === 'error') logger.error(`[desk] ${text}`)
-      else if (level === 'warn' || level === 'warning') logger.warn(`[desk] ${text}`)
-      else logger.debug(`[desk] ${text}`)
-      return
-    }
-
-    logger.debug(`Unhandled desk event: ${frame.event ?? 'unknown'}`)
-  }
-
-  /**
-   * 处理 desk.capture 的入队 ack：ok:false 立即失败，queued 仍等 capture-result。
-   */
-  private handleAckFrame(frame: { id?: string; ok?: boolean; operationId?: string; error?: unknown }): void {
-    const operationId = typeof frame.operationId === 'string'
-      ? frame.operationId
-      : (typeof frame.id === 'string' ? frame.id : '')
-    const pending = this.pendingCaptureRequests.get(operationId)
-    if (!pending) return
-
-    if (frame.ok === false) {
-      clearTimeout(pending.timeoutId)
-      this.pendingCaptureRequests.delete(operationId)
-      pending.resolve({
-        operationId,
-        ok: false,
-        error: typeof frame.error === 'string' && frame.error ? frame.error : t('工作台拒绝了收进请求'),
       })
-      return
+      this.port = port
+      this.lastError = null
+      logger.debug('NM port connected')
+    } catch (error) {
+      this.lastError = (error as Error).message || String(error)
+      logger.warn('NM port connect failed:', error)
     }
-
-    logger.debug(`Capture queued: ${operationId}`)
   }
 
-  private normalizeCatalog(payload: Record<string, unknown>): DeskCatalog {
+  private disconnectPort(): void {
+    if (this.portRetryTimer) {
+      clearTimeout(this.portRetryTimer)
+      this.portRetryTimer = null
+    }
+    if (!this.port) return
+    const port = this.port
+    this.port = null
+    try {
+      port.disconnect()
+    } catch { /* 已经断开 */ }
+  }
+
+  private handlePortMessage(message: unknown): void {
+    if (!isRecord(message)) return
+    if (message.event === 'task-available') {
+      void this.processPendingTasks()
+      return
+    }
+    if (message.event === 'capture-result') {
+      const payload = isRecord(message.payload) ? message.payload : {}
+      chrome.runtime.sendMessage({ type: 'BRIDGE_CAPTURE_RESULT', payload }).catch(() => {})
+      return
+    }
+    // heartbeat:保活 MV3 SW,业务上忽略
+    logger.debug('NM port frame:', String(message.event ?? 'unknown'))
+  }
+
+  // ============ 收进 / 目录 ============
+
+  normalizeCatalog(payload: Record<string, unknown>): DeskCatalog {
     const tags = Array.isArray(payload.tags)
       ? payload.tags.filter((tag): tag is string => typeof tag === 'string')
       : []
@@ -626,439 +357,217 @@ class BridgeClient {
     }
   }
 
-  private toCaptureResult(operationId: string, payload: Record<string, unknown>): CaptureResult {
-    const result: CaptureResult = { operationId, ok: payload.ok === true }
-    if (typeof payload.itemId === 'string') result.itemId = payload.itemId
-    if (typeof payload.error === 'string') result.error = payload.error
-    if (payload.duplicate === true) result.duplicate = true
-    if (payload.replaced === true) result.replaced = true
-    return result
-  }
-
-  private rejectPendingRequests(reason: string): void {
-    for (const pending of this.pendingCatalogRequests.values()) {
-      clearTimeout(pending.timeoutId)
-      pending.reject(new Error(reason))
-    }
-    this.pendingCatalogRequests.clear()
-    for (const pending of this.pendingCaptureRequests.values()) {
-      clearTimeout(pending.timeoutId)
-      pending.reject(new Error(reason))
-    }
-    this.pendingCaptureRequests.clear()
-  }
-
-  private generateId(prefix: string): string {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  /** 请求工作台标签 / URL 目录(助手读 catalog.json,缺失给空表)。 */
+  async getCatalog(): Promise<DeskCatalog> {
+    const response = await this.request<Record<string, unknown>>('catalog')
+    return this.normalizeCatalog(response)
   }
 
   /**
-   * 向工作台推送 desk.* 事件（需已认证）。
+   * 提交收进:助手原子写 inbox 即刻持久化,ack(queued) 即成功。DSH 关闭时
+   * dshActive=false,由页面提示「DSH 启动后出现在灵感墙」;最终消化结果经
+   * capture-result 事件回推。NM 不可用时直接抛错,调用方降级为复制 Markdown。
    */
-  sendEvent(event: string, payload?: unknown, id?: string): boolean {
-    if (!this.isAuthenticated()) return false
-    const frame: Record<string, unknown> = { kind: 'event', event }
-    if (id) frame.id = id
-    if (payload !== undefined) frame.payload = payload
-    try {
-      this.ws!.send(JSON.stringify(frame))
-      return true
-    } catch (error) {
-      logger.error('Failed to send event:', error)
-      return false
-    }
-  }
-
-  /**
-   * 请求工作台标签 / URL 目录；按帧 id 匹配 desk.catalog。
-   */
-  getCatalog(): Promise<DeskCatalog> {
-    if (!this.isAuthenticated()) return Promise.reject(new Error(t('未连接到工作台')))
-
-    const id = this.generateId('catalog')
-    return new Promise<DeskCatalog>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.pendingCatalogRequests.delete(id)
-        reject(new Error(t('请求工作台目录超时')))
-      }, CATALOG_TIMEOUT_MS)
-
-      this.pendingCatalogRequests.set(id, { resolve, reject, timeoutId })
-
-      if (!this.sendEvent('desk.catalog-request', undefined, id)) {
-        clearTimeout(timeoutId)
-        this.pendingCatalogRequests.delete(id)
-        reject(new Error(t('未连接到工作台')))
-      }
-    })
-  }
-
-  /**
-   * 提交收进请求；ack.queued 只表示入队，最终结果以 capture-result 为准。
-   */
-  saveCapture(payload: CapturePayload): Promise<CaptureResult> {
-    if (!this.isAuthenticated()) return Promise.reject(new Error(t('未连接到工作台')))
-
+  async saveCapture(payload: CapturePayload): Promise<CaptureResult> {
     const operationId = typeof payload.operationId === 'string' && payload.operationId.trim()
       ? payload.operationId.trim()
-      : this.generateId('capture')
-    const framePayload = { ...payload, operationId }
-
-    // 同一 operationId 重发时，旧等待作废，避免两个超时器互删
-    const existing = this.pendingCaptureRequests.get(operationId)
-    if (existing) {
-      clearTimeout(existing.timeoutId)
-      this.pendingCaptureRequests.delete(operationId)
-      existing.reject(new Error(t('收进请求已重新提交')))
+      : generateId('capture')
+    const response = await this.request<Record<string, unknown>>('capture', { ...(payload as unknown as Record<string, unknown>), operationId })
+    return {
+      operationId: typeof response.operationId === 'string' ? response.operationId : operationId,
+      ok: true,
+      queued: true,
+      dshActive: response.dshActive === true,
     }
-
-    return new Promise<CaptureResult>((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        this.pendingCaptureRequests.delete(operationId)
-        reject(new Error(t('等待工作台回执超时')))
-      }, CAPTURE_TIMEOUT_MS)
-
-      this.pendingCaptureRequests.set(operationId, { resolve, reject, timeoutId })
-
-      if (!this.sendEvent('desk.capture', framePayload, operationId)) {
-        clearTimeout(timeoutId)
-        this.pendingCaptureRequests.delete(operationId)
-        reject(new Error(t('未连接到工作台')))
-      }
-    })
   }
 
-  /**
-   * 处理具体方法调用
-   */
-  private async handleMethod(
-    method: string,
-    params?: Record<string, unknown>
-  ): Promise<unknown> {
-    switch (method) {
-      case 'listPlatforms': {
-        const forceRefresh = (params?.forceRefresh as boolean) ?? false
-        return await checkAllPlatformsAuth(forceRefresh)
+  // ============ outbox 任务:元数据 → 分片拉取 → performSync → 回执 ============
+
+  /** 拉取并处理待投递任务;alarm/长端口事件/页面打开都会触发,内部串行化。 */
+  async processPendingTasks(): Promise<void> {
+    if (this.processing) return
+    this.processing = true
+    try {
+      for (;;) {
+        const response = await this.request<{ tasks?: unknown }>('tasks')
+        const tasks = Array.isArray(response.tasks) ? response.tasks.filter(isRecord) as unknown as TaskMeta[] : []
+        if (!tasks.length) break
+        for (const meta of tasks) {
+          await this.runTask(meta)
+        }
       }
+    } catch (error) {
+      logger.debug('Task pull unavailable:', error)
+    } finally {
+      this.processing = false
+    }
+  }
 
-      case 'checkAuth': {
-        const platform = params?.platform as string
-        if (!platform) throw new Error('Missing platform parameter')
-        return await checkPlatformAuth(platform)
-      }
-
-      case 'syncArticle': {
-        const platforms = params?.platforms as string[]
-        const articleData = params?.article as {
-          title: string
-          content?: string
-          markdown?: string
-          cover?: string
-        }
-
-        if (!platforms?.length) throw new Error('Missing platforms parameter')
-        if (!articleData?.title) throw new Error('Missing article title')
-        if (!articleData?.markdown && !articleData?.content) {
-          throw new Error('Missing article content (markdown or content required)')
-        }
-
-        // 工作台投递元数据（可选）：operationId / itemId / 标题，用于同步页提示与回执关联
-        const desk = isRecord(params?.desk) ? params.desk : null
-        const deskOperationId = optionalString(desk?.operationId)
-        const deskItemId = optionalString(desk?.itemId)
-        const deskTitle = optionalString(desk?.title)
-
-        // 复用调用方给的 syncId，保证进度消息能回到同一个页面
-        const syncId = optionalString(params?.syncId) || generateSyncId()
-
-        // 优先使用 markdown，转换为 HTML
-        let htmlContent = articleData.content || ''
-        const markdown = articleData.markdown || ''
-
-        if (markdown) {
-          try {
-            htmlContent = markdownToHtml(markdown)
-          } catch (e) {
-            logger.error('Markdown conversion failed:', e)
-            // 如果转换失败，使用简单的换行处理
-            htmlContent = markdown.replace(/\n/g, '<br>')
-          }
-        }
-
-        const article = {
-          title: articleData.title,
-          content: htmlContent,
-          html: htmlContent,
-          markdown: markdown,
-          cover: articleData.cover,
-        }
-
-        // performSync 前把任务写给同步页：侧栏已开则只写 storage（页面自行恢复），
-        // 否则打开 396x560 同步窗口。失败不阻断同步。
+  /** 拉一个内容本体,单分片失败重试(SHARD_RETRIES 次),不静默截断。 */
+  private async fetchBlob(operationId: string, name: string, shards: number): Promise<Uint8Array> {
+    const parts: string[] = []
+    for (let shard = 0; shard < shards; shard += 1) {
+      let lastError: Error | null = null
+      for (let attempt = 0; attempt <= SHARD_RETRIES; attempt += 1) {
         try {
-          const pendingTask: PendingSyncTask = {
-            ...(deskOperationId ? { operationId: deskOperationId } : {}),
-            ...(deskItemId ? { itemId: deskItemId } : {}),
-            title: deskTitle || articleData.title,
-            platforms,
-            article: {
-              title: articleData.title,
-              markdown: markdown || undefined,
-              content: htmlContent,
-              cover: articleData.cover,
-            },
-            syncId,
-            at: Date.now(),
-          }
-          await chrome.storage.local.set({ [PENDING_SYNC_TASK_KEY]: pendingTask })
-          await presentSyncTask()
+          const response = await this.request<ContentResponse>('content', { operationId, name, shard })
+          if (response.ok !== true || typeof response.data !== 'string') throw new Error(t('分片拉取失败'))
+          parts.push(response.data)
+          lastError = null
+          break
         } catch (error) {
-          logger.error('Failed to stage pending sync task:', error)
-        }
-
-        try {
-          // 使用 sync-service 进行同步（支持 DSL 平台 + CMS 账户、历史记录、状态保存）
-          const { results, syncId: completedSyncId } = await performSync(
-            article,
-            platforms,
-            { source: 'bridge', syncId },
-            {
-              onResult: (result) => {
-                chrome.runtime.sendMessage({
-                  type: 'SYNC_PROGRESS',
-                  payload: { result },
-                  syncId,
-                }).catch(() => {})
-              },
-              onImageProgress: (platform, current, total) => {
-                chrome.runtime.sendMessage({
-                  type: 'IMAGE_PROGRESS',
-                  payload: { platform, current, total },
-                  syncId,
-                }).catch(() => {})
-              },
-              onDetailProgress: (progress) => {
-                chrome.runtime.sendMessage({
-                  type: 'SYNC_DETAIL_PROGRESS',
-                  payload: progress,
-                  syncId,
-                }).catch(() => {})
-              },
-            }
-          )
-
-          return { results, syncId: completedSyncId }
-        } finally {
-          // 页面已读取时这里只剩 no-op；页面尚未打开时由 activeSyncState 承接终态
-          await clearPendingSyncTask(syncId)
+          lastError = error instanceof Error ? error : new Error(String(error))
         }
       }
+      if (lastError) throw lastError
+    }
+    return assembleShards(parts)
+  }
 
-      case 'extractArticle': {
-        // 从当前活动 tab 提取文章（通过 content script 消息通道）
-        const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
-        if (!tabs[0]?.id) throw new Error('No active tab found')
-        const tabId = tabs[0].id
+  private async runTask(meta: TaskMeta): Promise<void> {
+    const operationId = meta.operationId
+    try {
+      const claimed = await this.request<{ task?: TaskMeta }>('claim', { operationId })
+      const task = (isRecord(claimed.task) ? claimed.task : meta) as TaskMeta
+      const platforms = Array.isArray(task.platforms) ? task.platforms : []
+      if (!platforms.length) throw new Error(t('任务没有可投递的平台'))
 
+      const articleBytes = await this.fetchBlob(operationId, 'article', Math.max(1, task.article?.shards ?? 1))
+      const images = new Map<string, { bytes: Uint8Array; mime: string }>()
+      for (const image of task.images ?? []) {
         try {
-          const response = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_ARTICLE' })
-          return response?.article || null
-        } catch {
-          // content script 未加载，尝试注入后重试
-          await chrome.scripting.executeScript({
-            target: { tabId },
-            files: ['reader.js', 'Readability.js'],
+          images.set(image.ref, {
+            bytes: await this.fetchBlob(operationId, image.ref, Math.max(1, image.shards)),
+            mime: image.mime || 'application/octet-stream',
           })
-          // 注入 extractor content script
-          const manifest = chrome.runtime.getManifest()
-          const extractorScript = manifest.content_scripts
-            ?.flatMap(cs => cs.js || [])
-            .find(js => js.includes('extractor'))
-          if (extractorScript) {
-            await chrome.scripting.executeScript({
-              target: { tabId },
-              files: [extractorScript],
-            })
-          }
-          const response = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_ARTICLE' })
-          return response?.article || null
+        } catch (error) {
+          logger.warn(`Image shard fetch failed (${image.ref}), keeping raw ref:`, error)
         }
       }
-
-      case 'uploadImage': {
-        const imageData = params?.imageData as string
-        const mimeType = params?.mimeType as string
-        const platform = (params?.platform as string) || 'weibo'
-
-        if (!imageData) throw new Error('Missing imageData parameter')
-        if (!mimeType) throw new Error('Missing mimeType parameter')
-
-        return await this.performImageUpload(imageData, mimeType, platform)
-      }
-
-      // 分片上传：开始会话
-      case 'uploadImage:start': {
-        const uploadId = params?.uploadId as string
-        const totalChunks = params?.totalChunks as number
-        const mimeType = params?.mimeType as string
-        const platform = (params?.platform as string) || 'weibo'
-
-        if (!uploadId) throw new Error('Missing uploadId')
-        if (!totalChunks) throw new Error('Missing totalChunks')
-        if (!mimeType) throw new Error('Missing mimeType')
-
-        // 检查并发上传数
-        if (this.pendingUploads.size >= this.MAX_CONCURRENT_UPLOADS) {
-          throw new Error(`Too many concurrent uploads (max: ${this.MAX_CONCURRENT_UPLOADS})`)
-        }
-
-        // 设置超时清理
-        const timeoutId = setTimeout(() => {
-          this.cleanupUpload(uploadId, 'timeout')
-        }, this.UPLOAD_TIMEOUT)
-
-        // 创建上传会话
-        this.pendingUploads.set(uploadId, {
-          chunks: new Map(),
-          totalChunks,
-          mimeType,
-          platform,
-          createdAt: Date.now(),
-          timeoutId,
-        })
-
-        logger.debug(`Chunked upload started: ${uploadId}, ${totalChunks} chunks`)
-        return { success: true }
-      }
-
-      // 分片上传：接收分片
-      case 'uploadImage:chunk': {
-        const uploadId = params?.uploadId as string
-        const chunkIndex = params?.chunkIndex as number
-        const data = params?.data as string
-
-        if (!uploadId) throw new Error('Missing uploadId')
-        if (chunkIndex === undefined) throw new Error('Missing chunkIndex')
-        if (!data) throw new Error('Missing chunk data')
-
-        const upload = this.pendingUploads.get(uploadId)
-        if (!upload) {
-          throw new Error(`Upload session not found: ${uploadId}`)
-        }
-
-        // 存储分片
-        upload.chunks.set(chunkIndex, data)
-        logger.debug(`Chunk received: ${uploadId} [${chunkIndex + 1}/${upload.totalChunks}]`)
-
-        return { success: true, received: upload.chunks.size, total: upload.totalChunks }
-      }
-
-      // 分片上传：完成并上传
-      case 'uploadImage:complete': {
-        const uploadId = params?.uploadId as string
-
-        if (!uploadId) throw new Error('Missing uploadId')
-
-        const upload = this.pendingUploads.get(uploadId)
-        if (!upload) {
-          throw new Error(`Upload session not found: ${uploadId}`)
-        }
-
-        // 检查是否所有分片都已接收
-        if (upload.chunks.size !== upload.totalChunks) {
-          throw new Error(`Incomplete upload: received ${upload.chunks.size}/${upload.totalChunks} chunks`)
-        }
-
-        // 合并分片
-        const sortedChunks: string[] = []
-        for (let i = 0; i < upload.totalChunks; i++) {
-          const chunk = upload.chunks.get(i)
-          if (!chunk) {
-            throw new Error(`Missing chunk ${i}`)
-          }
-          sortedChunks.push(chunk)
-        }
-        const imageData = sortedChunks.join('')
-
-        logger.debug(`Chunks merged: ${uploadId}, total size: ${imageData.length}`)
-
-        // 清理会话
-        this.cleanupUpload(uploadId, 'completed')
-
-        // 执行实际上传
-        return await this.performImageUpload(imageData, upload.mimeType, upload.platform)
-      }
-
-      default:
-        throw new Error(`Unknown method: ${method}`)
+      const markdown = inlineImageRefs(decodeUtf8(articleBytes), images)
+      await this.dispatchArticle(task, markdown, platforms)
+      logger.debug(`Task dispatched: ${operationId}`)
+    } catch (error) {
+      const message = ((error as Error).message || String(error)).slice(0, 200)
+      logger.warn(`Task failed (${operationId}):`, message)
+      await this.writeDispatchReceipt(operationId, meta.itemId, [{ platform: '*', ok: false, error: message }]).catch(() => {})
     }
   }
 
-  /**
-   * 执行图片上传
-   * 将 base64 转为 Blob，使用统一的 uploadImage 方法
-   */
-  private async performImageUpload(
-    imageData: string,
-    mimeType: string,
-    platform: string
-  ): Promise<{ url: string; platform: string }> {
-    // 获取适配器
-    const adapter = await getAdapter(platform)
-    if (!adapter) {
-      throw new Error(`Platform not found: ${platform}`)
+  /** 任务下发:沿用 ADR 0010 的投递即弹对话框行为,落 pendingSyncTask 并执行同步。 */
+  private async dispatchArticle(
+    task: TaskMeta,
+    markdown: string,
+    platforms: string[],
+  ): Promise<void> {
+    let htmlContent = ''
+    try {
+      htmlContent = markdownToHtml(markdown)
+    } catch (error) {
+      logger.error('Markdown conversion failed:', error)
+      htmlContent = markdown.replace(/\n/g, '<br>')
     }
 
-    // 检查适配器是否支持图片上传
-    if (typeof adapter.uploadImage !== 'function') {
-      throw new Error(`Platform ${platform} does not support image upload`)
+    const article = {
+      title: task.title || t('工作台投递'),
+      content: htmlContent,
+      html: htmlContent,
+      markdown,
+    }
+    const syncId = generateSyncId()
+
+    try {
+      const pendingTask: PendingSyncTask = {
+        ...(task.itemId ? { operationId: task.operationId } : {}),
+        ...(task.itemId ? { itemId: task.itemId } : {}),
+        title: task.title || article.title,
+        platforms,
+        article: {
+          title: article.title,
+          markdown,
+          content: htmlContent,
+        },
+        syncId,
+        at: Date.now(),
+      }
+      await chrome.storage.local.set({ [PENDING_SYNC_TASK_KEY]: pendingTask })
+      await presentSyncTask()
+    } catch (error) {
+      logger.error('Failed to stage pending sync task:', error)
     }
 
-    // base64 转 Blob
-    const binaryStr = atob(imageData)
-    const bytes = new Uint8Array(binaryStr.length)
-    for (let i = 0; i < binaryStr.length; i++) {
-      bytes[i] = binaryStr.charCodeAt(i)
+    try {
+      const { results } = await performSync(
+        article,
+        platforms,
+        { source: 'bridge', syncId },
+        {
+          onResult: (result) => {
+            chrome.runtime.sendMessage({
+              type: 'SYNC_PROGRESS',
+              payload: { result },
+              syncId,
+            }).catch(() => {})
+          },
+          onImageProgress: (platform, current, total) => {
+            chrome.runtime.sendMessage({
+              type: 'IMAGE_PROGRESS',
+              payload: { platform, current, total },
+              syncId,
+            }).catch(() => {})
+          },
+          onDetailProgress: (progress) => {
+            chrome.runtime.sendMessage({
+              type: 'SYNC_DETAIL_PROGRESS',
+              payload: progress,
+              syncId,
+            }).catch(() => {})
+          },
+        },
+      )
+      const rows = mapDispatchResults(platforms, results) as DispatchResultRow[]
+      await this.writeDispatchReceipt(task.operationId, task.itemId, rows)
+    } finally {
+      // 页面已读取时这里只剩 no-op;页面尚未打开时由 activeSyncState 承接终态
+      await clearPendingSyncTask(syncId)
     }
-    const blob = new Blob([bytes], { type: mimeType })
-
-    // 调用统一的 uploadImage 接口
-    const url = await adapter.uploadImage(blob)
-    return { url, platform }
   }
 
-  /**
-   * 清理上传会话
-   */
-  private cleanupUpload(uploadId: string, reason: 'completed' | 'timeout' | 'error'): void {
-    const upload = this.pendingUploads.get(uploadId)
-    if (upload) {
-      clearTimeout(upload.timeoutId)
-      // 清理 chunks 以释放内存
-      upload.chunks.clear()
-      this.pendingUploads.delete(uploadId)
-      logger.debug(`Upload cleanup: ${uploadId} (${reason})`)
-    }
+  private async writeDispatchReceipt(operationId: string, itemId: string, results: DispatchResultRow[]): Promise<void> {
+    await this.request('receipt', { payload: { operationId, itemId, results } })
   }
+}
+
+function generateId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/** Chrome 的 NM 通道错误统一翻成可读文案,设置页与收进降级都靠它。 */
+function nativeErrorText(message: string): string {
+  if (/Error when communicating with the native messaging host/i.test(message)) {
+    return t('未配对:本地助手未注册或 Node.js 缺失,重启一次 DeepSeek Harness')
+  }
+  if (/Native host has exited/i.test(message)) {
+    return t('本地助手中途退出,请查看投递箱目录里的 helper.log')
+  }
+  return message
 }
 
 // 单例
 export const bridgeClient = new BridgeClient()
 
-// 启动连接（在 background 中调用）
+/** SW 启动时踢一次任务拉取(alarm 之外的第一拍)。 */
 export function startBridgeClient(): void {
-  bridgeClient.resetReconnect()
+  void bridgeClient.processPendingTasks()
 }
 
-// 停止连接
+/** 页面全部关闭后由引用计数接管;保留导出兼容旧调用面。 */
 export function stopBridgeClient(): void {
-  bridgeClient.disconnect()
+  bridgeClient.setActivelyWatched(false)
 }
 
-// 获取连接状态
-export function getBridgeStatus(): { connected: boolean; serverUrl: string; lastError: string | null } {
-  return {
-    connected: bridgeClient.isAuthenticated(),
-    serverUrl: bridgeClient.getServerUrl(),
-    lastError: bridgeClient.getLastError(),
-  }
+export async function getBridgeStatus(): Promise<BridgeStatus> {
+  return bridgeClient.getStatus()
 }
+
+export const CAPTURE_WAIT_MS = CAPTURE_TIMEOUT_MS

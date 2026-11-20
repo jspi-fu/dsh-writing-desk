@@ -19,6 +19,8 @@ const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
   personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', cover: 'media', score: 'num',
   contentOrigin: 'origin',
+  // 收进来源标记:离线去重只对浏览器收进(via=capture)的卡片判重,手动建的卡不受影响
+  via: 'text',
 }
 const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
 const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list', tone: 'num' }

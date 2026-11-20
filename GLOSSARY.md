@@ -136,7 +136,7 @@ _Avoid_: 发布、投递（在指代功能面时）
 _Avoid_: 桥（旧称）、CLI、本地服务（旧称，dswritesync serve 已于 2026-11-19 退役）、后端、服务器、MCP
 
 **配对（Pairing）**:
-扩展与插件的零配置互认：固定扩展 ID（manifest `key`）+ 插件注册的 NM host `allowed_origins` 白名单 + 浏览器强制 origin 校验；无 token、无粘贴、无端口。注册随 DSH 启动幂等自愈。
+扩展与插件的零配置互认：固定扩展 ID（manifest `key`，现为 `hhkhkekbflmcnpbiiihpmgecpaicblbd`）+ 插件注册的 NM host `app.dswritesync.plugin` 的 `allowed_origins` 白名单 + 浏览器强制 origin 校验；无 token、无粘贴、无端口。注册随 DSH 启动幂等自愈。
 _Avoid_: token 授权、握手、绑定、连接码
 
 **投递箱（Bridge mailbox）**:

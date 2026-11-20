@@ -127,11 +127,11 @@ The plugin is free and open source, with no keys bundled. Where a model is invol
 <summary><b>Can it publish directly?</b></summary>
 <br>
 
-It can reach <b>draft boxes</b>. Install the <a href="extension/">DSwritesync browser extension</a> and run <code>dswritesync serve</code>; the workbench settings page shows the bridge token — paste it into the extension settings, then the proof view can send a finished piece to 20 platforms' draft boxes in one click (WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault, Yuque, Xueqiu, Woshipm, 51CTO, Imooc, OSChina, Cnblogs, Eastmoney, Aliyun Developer Community, Xiaohongshu; most platforms use your own login state via their official Web APIs, Xiaohongshu uses page automation, and the extension re-uploads images). Platforms have no unified publish API, so a piece counts as published only when you confirm it; Xiaohongshu is saved to the browser-local draft box and the extension never clicks Publish.
+It can reach <b>draft boxes</b>. Just install the <a href="extension/">DSwritesync browser extension</a>: the extension pairs with the desk automatically over Native Messaging (the plugin registers a local helper when DSH starts — no token, no pasting, no ports), and the proof view sends a finished piece to 20 platforms' draft boxes in one click (WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault, Yuque, Xueqiu, Woshipm, 51CTO, Imooc, OSChina, Cnblogs, Eastmoney, Aliyun Developer Community, Xiaohongshu; most platforms use your own login state via their official Web APIs, Xiaohongshu uses page automation, and the extension re-uploads images). Platforms have no unified publish API, so a piece counts as published only when you confirm it; Xiaohongshu is saved to the browser-local draft box and the extension never clicks Publish.
 
 DSwritesync's side panel also has Capture (whole page or selection into the idea wall) and Sync (the current page to platform drafts); both share one settings page.
 
-Without the extension, copy the piece or save the folder as before: it defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside, plus a ready-to-paste `dswritesync sync` command.
+Without the extension, copy the piece or save the folder as before: it defaults to `~/Documents/Writing Desk/` with the article, cover and figures inside.
 
 </details>
 
@@ -187,11 +187,12 @@ npm pack                       # Build an installable tgz
 | --- | --- |
 | `client/` | UI: idea wall, content, schedule, styles, proof view, dock rail |
 | `src/` | Host API, state machine, harness tools & skills, local storage, bridge mailboxes |
-| `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel; extension in `extension/packages/extension`, CLI in `extension/packages/cli` (bin `dswritesync`) |
+| `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel (in `extension/packages/extension`) |
+| `native/` | Local helper (helper.bat/helper.mjs) and the NM registrar: the browser extension reaches the bridge mailbox over Native Messaging; MIT in this repo |
 | `scripts/` | Packaging, sandbox, sample assets, marketplace index |
 | `assets/` | Sample images and videos, all drawn by `scripts/gen-assets.py` |
 
-The extension and CLI are not part of the npm plugin package; `npm pack` ships the plugin itself only. The bridge architecture is documented in [ADR 0010](docs/adr/0010-dswritesync-wechatsync-fork.md) (superseding ADR 0009's implementation path), with research notes in [docs/research/](docs/research/). `extension/` is GPL-3.0; the rest of the repository remains MIT.
+The extension is not part of the npm plugin package; `npm pack` ships the plugin itself plus the `native/` local helper. The bridge architecture is documented in [ADR 0012](docs/adr/0012-bridge-native-messaging.md) (Native Messaging auto-pairing; the CLI/token path is retired, the mailbox contract still follows ADR 0009/0010), with research notes in [docs/research/](docs/research/). `extension/` is GPL-3.0; the rest of the repository remains MIT.
 
 Restart DeepSeek Harness after changing `src/`.
 

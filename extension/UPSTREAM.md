@@ -66,3 +66,8 @@ extension/
 - `package.json` 中原有的 `pnpm.onlyBuiltDependencies` 已移除：pnpm 11 不再读取该字段。
 - `pnpm-workspace.yaml` 的 `ignoredBuiltDependencies` 改为 pnpm 11 的 `allowBuilds: { esbuild: true }`，保留上游允许 esbuild 执行安装脚本的意图。
 - 依赖安装与构建使用独立 pnpm workspace，不进入主仓库的 npm 依赖图。
+## 桥从 CLI 平移为 Native Messaging(2026-11-20,ADR 0012)
+
+- 上游 Wechatsync 没有「工作台桥」这一层;ADR 0010 阶段的桥是 CLI(`dswritesync serve`,WS 9527 + 握手 token),2026-11-20 起整体退役。
+- 现行接入面:浏览器扩展 ↔ 本地助手(`native/helper.mjs`,主仓库 MIT 自研)经 Chrome Native Messaging(host `app.dswritesync.plugin`);扩展侧 `src/bridge/` 的 NM 客户端与 `BRIDGE_*` 消息面按协议事实与助手对齐,不拷贝任何上游或 StashDock 代码。
+- 上游 `packages/cli` 目录随退役删除;WS/HTTP 端口、token、auth.json 概念不复存在,投递箱文件契约(inbox/outbox/receipts、原子 rename 认领、operationId 回执)不变。

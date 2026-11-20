@@ -45,6 +45,8 @@ export interface StashSaveResponse {
   itemId?: string
   duplicate?: boolean
   replaced?: boolean
+  /** 助手判定 DSH 是否在运行:关着时收进已落盘,启动后出现在灵感墙。 */
+  dshActive?: boolean
   error?: string
   markdown?: string
 }
@@ -117,7 +119,7 @@ export async function requestStashCatalog(): Promise<StashCatalog> {
 export async function requestStashSave(payload: StashSavePayload): Promise<StashSaveResponse> {
   try {
     const response: unknown = await chrome.runtime.sendMessage({ type: 'STASH_SAVE', payload })
-    if (!isRecord(response)) return { ok: false, error: t('本地服务没有回应') }
+    if (!isRecord(response)) return { ok: false, error: t('本地助手没有回应') }
 
     if (response.ok === true) {
       return {
@@ -127,6 +129,7 @@ export async function requestStashSave(payload: StashSavePayload): Promise<Stash
         itemId: typeof response.itemId === 'string' ? response.itemId : undefined,
         duplicate: response.duplicate === true,
         replaced: response.replaced === true,
+        dshActive: response.dshActive === true,
       }
     }
 
@@ -136,7 +139,7 @@ export async function requestStashSave(payload: StashSavePayload): Promise<Stash
       markdown: typeof response.markdown === 'string' ? response.markdown : undefined,
     }
   } catch (error) {
-    return { ok: false, error: (error as Error).message || t('本地服务没有回应') }
+    return { ok: false, error: (error as Error).message || t('本地助手没有回应') }
   }
 }
 

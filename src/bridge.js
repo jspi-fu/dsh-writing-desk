@@ -1,10 +1,9 @@
-// 桥接投递箱(ADR 0009):浏览器扩展与本机 dswritesync 桥进程只通过
-// ~/.dsh/writing-desk/bridge/ 的文件与工作台交换数据——
-//   inbox/import-*.json    桥写,host 消化成灵感(add_item)
-//   outbox/publish-*.json  host 写,桥监听下发给扩展发布
-//   receipts/import-*.json host 写给桥的导入回执
-//   receipts/dispatch-*.json 桥写给 host 的发布回执,消化成 item.dispatches
-//   auth.json              桥写的连接信息(0600),host 只读给设置页展示
+// 桥接投递箱(ADR 0009,接入面见 ADR 0012):浏览器扩展经本地助手(NM host)
+// 与 ~/.dsh/writing-desk/bridge/ 的文件和工作台交换数据——
+//   inbox/import-*.json    助手写,host 消化成灵感(add_item)
+//   outbox/publish-*.json  host 写,助手分片下发给扩展发布
+//   receipts/import-*.json host 写给助手的导入回执
+//   receipts/dispatch-*.json 助手写给 host 的发布回执,消化成 item.dispatches
 //   catalog.json           host 原子写的标签 / URL 索引,扩展收进前读取判断冲突
 // 写路径唯一入口仍是 applyOps(红线);文件认领用原子 rename,桌面与网页两个宿主进程
 // 并发消化同一批文件不重不漏;operationId 让桥侧重试也能拿到同一份回执。
@@ -14,6 +13,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { applyOps } from './ops.js'
+import { readPairing } from './pairing.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
 
@@ -49,7 +49,6 @@ export function bridgePaths() {
     inbox: join(root, 'inbox'),
     outbox: join(root, 'outbox'),
     receipts: join(root, 'receipts'),
-    auth: join(root, 'auth.json'),
     catalog: join(root, 'catalog.json'),
   }
 }
@@ -125,6 +124,30 @@ function newImageName() {
   return `b${Date.now().toString(36)}${imageCounter.toString(36)}`
 }
 
+/**
+ * 收进 URL 的规范化:去 fragment、尾斜杠与 utm_*、fbclid、gclid 噪声,查询参数
+ * 排序保证同页不同参数顺序得到同一个键(清单思想引自 StashDock,实现自研)。
+ * 离线重复收进靠它判重;不合法 URL 返回 null,不做去重。
+ * @param {string} url - 原始 URL。
+ * @returns {string|null} 规范化后的 URL。
+ */
+export function normalizeCaptureUrl(url) {
+  let parsed
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  parsed.hash = ''
+  const kept = [...parsed.searchParams.entries()]
+    .filter(([key]) => !/^(utm_\w+|fbclid|gclid)$/i.test(key))
+    .sort(([a], [b]) => a.localeCompare(b))
+  const query = kept.map(([key, value]) => `${key}=${value}`).join('&')
+  const cleanPath = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, '') : parsed.pathname
+  return `${parsed.origin}${cleanPath}${query ? `?${query}` : ''}`
+}
+
 /** 校验并折算成 add_item / update_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */
 async function importOp(payload, filesDir, draft) {
   const url = typeof payload.url === 'string' ? payload.url.trim() : ''
@@ -146,12 +169,20 @@ async function importOp(payload, filesDir, draft) {
     source: text(payload.siteName, 100),
     tags,
     media: cover ? { src: cover } : null,
+    via: 'capture',
   }
   // 替换只在扩展从 catalog 命中冲突并带上 replaceItemId 时发生;目标不存在就退回新增,
   // duplicate 本身由扩展的 catalog 决定,宿主不猜。
   const replaceItemId = typeof payload.replaceItemId === 'string' ? payload.replaceItemId : ''
   if (replaceItemId && draft.items.some(row => row.id === replaceItemId)) {
     return { op: 'update_item', id: replaceItemId, ...fields }
+  }
+  // 离线去重(工单 #11 用户故事 7):同一条 URL(含 utm 噪声)只落一张卡。
+  // 只对收进来源(via=capture)的既有卡片判重,手动建的卡不受影响。
+  const key = normalizeCaptureUrl(url)
+  if (key) {
+    const hit = draft.items.find(row => row.via === 'capture' && normalizeCaptureUrl(row.url) === key)
+    if (hit) return { duplicateOf: hit.id }
   }
   return { op: 'add_item', ...fields }
 }
@@ -213,9 +244,15 @@ export async function digestInbox(store, filesDir) {
         const seen = draft.bridgeSeen?.[operationId]
         if (seen) {
           if (seen.digest !== digest) throw new Error(tr('同一编号的投递内容与上次不同,拒绝处理'))
-          return { id: seen.result?.id, replaced: seen.result?.replaced, replay: true }
+          return { id: seen.result?.id, ...(seen.result?.duplicate ? { duplicate: true } : {}), replaced: seen.result?.replaced, replay: true }
         }
         const op = await importOp(payload, filesDir, draft)
+        // 去重命中:不落库,直接把已存在的卡片写进回执,扩展端显示「已收过」
+        if (op.duplicateOf) {
+          const out = { id: op.duplicateOf, duplicate: true }
+          rememberSeen(draft, operationId, digest, out)
+          return out
+        }
         const { receipts, errors } = applyOps(draft, [op])
         if (errors.length) throw new Error(errors[0])
         const out = { id: receipts[0]?.target, replaced: op.op === 'update_item' }
@@ -226,6 +263,7 @@ export async function digestInbox(store, filesDir) {
         ok: true,
         itemId: result.id,
         operationId,
+        ...(result.duplicate ? { duplicate: true } : {}),
         ...(result.replaced ? { replaced: true } : {}),
         ...(result.replay ? { replay: true } : {}),
       })
@@ -365,20 +403,9 @@ export async function writeCatalog(store) {
 }
 
 /**
- * 读桥的连接信息(auth.json 由 dswritesync serve 写,host 只读)。
- * @returns {Promise<{configured: boolean, token?: string, port?: number, startedAt?: string}>}
+ * 设置页要的桥状态:NM 配对结果(注册器每次启动写 bridge/native.json)+ 投递箱
+ * 里各队列的待处理数。token/auth.json 已随 CLI 退役(ADR 0012)。
  */
-export async function readBridgeAuth() {
-  try {
-    const raw = JSON.parse(await readFile(bridgePaths().auth, 'utf8'))
-    if (typeof raw.token !== 'string' || !raw.token) return { configured: false }
-    return { configured: true, token: raw.token, port: Number.isFinite(raw.wsPort) ? raw.wsPort : undefined, startedAt: raw.startedAt }
-  } catch {
-    return { configured: false }
-  }
-}
-
-/** 设置页要的桥状态:连接信息 + 投递箱里各队列的待处理数。 */
 export async function bridgeStatus() {
   const paths = bridgePaths()
   const count = async dir => {
@@ -388,9 +415,12 @@ export async function bridgeStatus() {
       return 0
     }
   }
-  const auth = await readBridgeAuth()
+  const pairing = await readPairing()
   return {
-    ...auth,
+    paired: pairing?.paired ?? false,
+    extensionId: pairing?.extensionId ?? null,
+    registeredAt: pairing?.registeredAt ?? null,
+    browsers: pairing?.browsers ?? [],
     pending: {
       inbox: await count(paths.inbox),
       outbox: await count(paths.outbox),

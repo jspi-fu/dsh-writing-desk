@@ -7,11 +7,12 @@ import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, writeCatalog, writePublishTask } from './bridge.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
-import { exportForCli } from './publish.js'
+import { exportPublishPackage } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
 import { exportSkill } from './learn.js'
 import { applyOps, newId } from './ops.js'
 import { migrateMediaDesk, summarizeMediaDesk } from './migrate.js'
+import { applyPairing } from './pairing.js'
 import { publicSettings, Settings } from './settings.js'
 import { dshHome, Store } from './store.js'
 import { currentLang, tr, withLang } from './i18n.js'
@@ -244,7 +245,7 @@ async function route(ctx, store, desk, req, res) {
       return json(res, 200, { state, canUndo: store.undo.length > 0 })
     }
     if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read()), defaultExportDir: defaultExportDir() })
-    // 设置页的桥接区块(ADR 0009):连接信息由 dswritesync serve 写进 auth.json,这里只读。
+    // 设置页的桥接区块(ADR 0012):NM 配对状态由注册器写进 bridge/native.json,这里只读。
     if (path === 'bridge/status') return json(res, 200, await bridgeStatus())
     // 设置页的迁移入口:只读概览,不落库。迁移本身走下面的 POST migrate。
     if (path === 'migrate/preview') {
@@ -347,16 +348,15 @@ async function route(ctx, store, desk, req, res) {
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
     }
-    // 发布交接(工单 #9):只出文件与命令,绝不写已发布状态——是否已发布由用户确认(publish_item)。
+    // 发布交接(工单 #9):只出文件,绝不写已发布状态——是否已发布由用户确认(publish_item)。
     case 'production/export': {
       const settings = await desk.settings.read()
       const state = await store.read()
       const item = state.items.find(row => row.id === body.id)
       if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以导出的成稿') })
-      const exported = await exportForCli(item.production, {
+      const exported = await exportPublishPackage(item.production, {
         filesDir: store.filesDir,
         exportDir: resolveExportDir(settings.exportDir),
-        platforms: (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p)),
       })
       const next = await store.mutate(tr('导出发布包'), (draft) => {
         const target = draft.items.find(row => row.id === body.id)
@@ -365,7 +365,7 @@ async function route(ctx, store, desk, req, res) {
       }, { undoable: false })
       return json(res, 200, { ...exported, state: next })
     }
-    // 一键投递(ADR 0009):发布包导出后把任务写进 outbox,dswritesync 桥监听下发给浏览器扩展。
+    // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手(NM)分片下发浏览器扩展。
     // 平台只放行桥适配器清单里的;投递本身不改状态,回执经 digestReceipts 落 dispatches。
     case 'production/dispatch': {
       const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p))
@@ -374,7 +374,7 @@ async function route(ctx, store, desk, req, res) {
       const state = await store.read()
       const item = state.items.find(row => row.id === body.id)
       if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以发布的成稿') })
-      const exported = await exportForCli(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir), platforms })
+      const exported = await exportPublishPackage(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
       const articleMd = await readFile(exported.articlePath, 'utf8')
       // 任务里的图片键与正文里的相对引用一致(images/xxx),桥读文件转 data URI 后才下发扩展
       const images = Object.fromEntries(exported.imageFiles.map(ref => [ref, join(exported.dir, ref)]))
@@ -449,5 +449,10 @@ export default {
     timer.unref?.()
     return () => clearInterval(timer)
   }, 'dsh-writing-desk: bridge digest timer')
+  // NM 自动配对(ADR 0012):每次启动幂等重写 host manifest 与各浏览器 vendor 键,
+  // 换安装路径后扩展无需重装即自愈;失败不打断插件加载,设置页可见未配对状态。
+  ctx.effect(() => {
+    applyPairing().catch(error => console.error('[writing-desk] NM 配对失败:', error?.message ?? error))
+  }, 'dsh-writing-desk: nm pairing')
   },
 }

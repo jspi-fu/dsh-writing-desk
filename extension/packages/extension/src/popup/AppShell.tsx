@@ -22,11 +22,13 @@ function useConnectionState(): ConnectionState {
   const [state, setState] = useState<ConnectionState>('unknown')
 
   useEffect(() => {
+    // 面板打开期间开 NM 长端口(ADR 0012):投递与收进回执近实时,离开时归还
+    chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_START' }).catch(() => {})
     let mounted = true
     const poll = () => {
       chrome.runtime.sendMessage({ type: 'BRIDGE_STATUS' }).then(response => {
         if (!mounted || !response || response.error) return
-        setState(response.connected ? 'on' : response.enabled ? 'waiting' : 'off')
+        setState(response.connected ? 'on' : response.paired ? 'waiting' : 'off')
       }).catch(() => {})
     }
     poll()
@@ -34,6 +36,7 @@ function useConnectionState(): ConnectionState {
     return () => {
       mounted = false
       clearInterval(timer)
+      chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_STOP' }).catch(() => {})
     }
   }, [])
 
@@ -59,7 +62,7 @@ function ConnectionStatus() {
   return (
     <span
       className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-      title={t('DSwritesync 本地服务连接状态')}
+      title={t('DSwritesync 本地助手连接状态')}
     >
       <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
       {label}

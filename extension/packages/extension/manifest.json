@@ -11,6 +11,7 @@
     "48": "assets/icon-48.png",
     "128": "assets/icon-128.png"
   },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAivCHf4Yq/GoWGzNG/c5iZrJjX+bChcNG0X7sSie0rHjnxJwjsuAsxS+qhlBTzq1dKbk2PtLQkQSsO6xeJbJ7kQAFcdmVbTVyu16ArL/AHK2Kx7/NH+G6aB6xzlmOFIuadCW1iabdzHVx7YTTaTWGXEr87rr+o+teOKlmWSeErb9KH/+EDLyohrH911UGq2nqTAWEbk/GlhbFNMdaRGsE5fxsAwTszpubIImRiqEDmjfMCxSjd30s7Ny4EM9FMth0k2Oe/9w8cBOCf7xeGb/oiXi9+7mdFeoivcv/V7mkTknlR+/D5dGgGgvzDy6tu4BO7DEF/8auMNCzNjtx0JNOhwIDAQAB",
   "action": {
     "default_icon": "assets/icon-48.png",
     "default_title": "__MSG_actionTitle__"
@@ -27,7 +28,9 @@
     "scripting",
     "tabs",
     "downloads",
-    "sidePanel"
+    "sidePanel",
+    "nativeMessaging",
+    "alarms"
   ],
   "host_permissions": [
     "http://*/*",

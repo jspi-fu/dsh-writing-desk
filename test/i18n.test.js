@@ -138,7 +138,7 @@ test('GET state 按请求头的语言换示例文字', async () => {
     let handler = null
     const ctx = {
       get: name => (name === 'connection' ? { requestRejection: () => undefined } : undefined),
-      effect: fn => fn(),
+      effect: (fn, name) => { if (!name?.includes('nm pairing')) fn() },
       webServer: { register: (options) => { handler = options.handler } },
     }
     plugin.apply(ctx)

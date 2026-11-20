@@ -116,6 +116,7 @@ export function StashPage() {
   const urlRef = useRef('')
   const requestId = useRef(0)
   const started = useRef(false)
+  const lastOperationId = useRef('')
   const noticeTimer = useRef<number | null>(null)
   const copyTimer = useRef<number | null>(null)
 
@@ -267,8 +268,10 @@ export function StashPage() {
 
   const submitSave = async (replaceItemId?: string) => {
     const cleanTitle = title.trim()
+    const operationId = createOperationId()
+    lastOperationId.current = operationId
     const payload = {
-      operationId: createOperationId(),
+      operationId,
       url,
       title: cleanTitle,
       body,
@@ -302,6 +305,8 @@ export function StashPage() {
           urls: { ...previous.urls, [url]: itemId },
         }))
       }
+      // DSH 没开着:收进已原子落盘,启动后上墙(ADR 0012,不再降级复制 Markdown)
+      if (response.dshActive === false) showNotice('已收进。图文创作台没在运行，它下次启动后会出现在灵感墙')
       return
     }
 
@@ -356,6 +361,31 @@ export function StashPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [conflictOpen])
 
+  // 收进回执实时回推(长端口,ADR 0012):DSH 在跑时卡片几秒内上墙,这里把 itemId
+  // 记下来供冲突判断;消化失败或判重也如实告知,不让「已收进」冒充成功。
+  useEffect(() => {
+    const listener = (message: unknown) => {
+      const msg = message as { type?: unknown; payload?: Record<string, unknown> }
+      if (msg?.type !== 'BRIDGE_CAPTURE_RESULT' || typeof msg.payload !== 'object' || msg.payload === null) return
+      const payload = msg.payload as { operationId?: unknown; ok?: unknown; itemId?: unknown; duplicate?: unknown; error?: unknown }
+      if (typeof payload.operationId === 'string' && payload.operationId !== lastOperationId.current) return
+      if (payload.ok !== true) {
+        showNotice(typeof payload.error === 'string' && payload.error
+          ? `${t('收进没有被工作台收下')}：${payload.error}`
+          : t('收进没有被工作台收下'))
+        return
+      }
+      const itemId = typeof payload.itemId === 'string' ? payload.itemId : null
+      if (itemId) {
+        setSavedItemId(itemId)
+        setCatalog(previous => ({ ...previous, urls: { ...previous.urls, [urlRef.current]: itemId } }))
+      }
+      if (payload.duplicate === true) showNotice(t('这条链接已经收进过，没有重复建卡'))
+    }
+    chrome.runtime.onMessage.addListener(listener)
+    return () => chrome.runtime.onMessage.removeListener(listener)
+  }, [])
+
   useEffect(() => () => {
     if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current)
     if (copyTimer.current !== null) window.clearTimeout(copyTimer.current)
@@ -397,9 +427,9 @@ export function StashPage() {
                 <div className="flex items-start gap-2.5">
                   <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-[13px] font-medium">{t('本地服务未连接')}</p>
+                    <p className="text-[13px] font-medium">{t('本地助手未配对')}</p>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
-                      {t('先运行 dswritesync serve，并在设置中粘贴桥接 Token。')}
+                      {t('重启一次 DeepSeek Harness 会自动修复注册，并确认本机装有 Node.js；详情见设置页的连接状态。')}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button type="button" onClick={() => void checkBridge()} className={SECONDARY_BUTTON_CLASS}>

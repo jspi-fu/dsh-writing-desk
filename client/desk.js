@@ -217,7 +217,7 @@ export async function revealSaved(id) {
   }
 }
 
-// 发布交接(工单 #9):导出 CLI 原生发布包。只出文件与命令,是否已发布由用户在确认框里决定。
+// 发布交接(工单 #9):导出发布包(article.md + images/)。只出文件,是否已发布由用户在确认框里决定。
 export async function exportForPublish(id) {
   try {
     const data = await request('production/export', { id })
@@ -229,7 +229,7 @@ export async function exportForPublish(id) {
   }
 }
 
-// 一键投递(ADR 0009):发布包导出后把任务写进 outbox,dswritesync 桥监听下发给浏览器扩展,
+// 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手(NM)分片下发浏览器扩展,
 // 扩展只到草稿箱;回执由 host 消化成 item.dispatches,状态仍由用户确认。
 export async function dispatchPublish(id, platforms) {
   try {
@@ -242,7 +242,7 @@ export async function dispatchPublish(id, platforms) {
   }
 }
 
-// 设置页桥接区块:读 auth.json 里的连接信息与队列计数。
+// 设置页桥接区块:读 NM 配对状态与队列计数。
 export async function fetchBridgeStatus() {
   return request('bridge/status')
 }

@@ -16,3 +16,6 @@ prototype/
 
 # 扩展打包产物
 extension/*.zip
+
+# NM 注册器每次启动重写的运行时生成物
+native/app.dswritesync.plugin.json

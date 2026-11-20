@@ -334,9 +334,6 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-root .md-field input, .md-root .md-field select { height: 36px; padding: 0 11px; }
 .md-root .md-field input:focus, .md-root .md-field select:focus, .md-root .md-field textarea:focus { border-color: var(--ink); }
 .md-form-foot { display: flex; gap: 6px; margin-top: 4px; }
-/* 发布交接(工单 #9):可复制的同步命令行 */
-.md-cmd-row { display: flex; align-items: center; gap: 4px; }
-.md-cmd-row code { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-md); border: .5px solid var(--line-strong); background: var(--card); overflow-x: auto; white-space: nowrap; font-size: 12px; line-height: 18px; }
 .md-capture-tabs { display: flex; gap: 2px; padding: 4px; margin-bottom: 14px; border-radius: var(--r-md); background: var(--hover); }
 .md-capture-tabs button { flex: 1; height: 28px; border-radius: var(--r-sm); text-align: center; color: var(--ink3); font-size: 12.5px; }
 .md-capture-tabs button.is-on { background: var(--card); color: var(--ink); box-shadow: var(--dsw-elevation-soft); }
@@ -1121,9 +1118,6 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-root .md-field input, .md-root .md-field select { height: 36px; padding: 0 11px; }
 .md-root .md-field input:focus, .md-root .md-field select:focus, .md-root .md-field textarea:focus { border-color: var(--ink); }
 .md-form-foot { display: flex; gap: 6px; margin-top: 4px; }
-/* 发布交接(工单 #9):可复制的同步命令行 */
-.md-cmd-row { display: flex; align-items: center; gap: 4px; }
-.md-cmd-row code { flex: 1; min-width: 0; padding: 8px 10px; border-radius: var(--r-md); border: .5px solid var(--line-strong); background: var(--card); overflow-x: auto; white-space: nowrap; font-size: 12px; line-height: 18px; }
 .md-capture-tabs { display: flex; gap: 2px; padding: 4px; margin-bottom: 14px; border-radius: var(--r-md); background: var(--hover); }
 .md-capture-tabs button { flex: 1; height: 28px; border-radius: var(--r-sm); text-align: center; color: var(--ink3); font-size: 12.5px; }
 .md-capture-tabs button.is-on { background: var(--card); color: var(--ink); box-shadow: var(--dsw-elevation-soft); }
@@ -1813,8 +1807,6 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-dispatch-list a:hover { text-decoration: underline; }
 .md-dispatch-error { color: #d13c35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .md-dispatch-list time { margin-left: auto; color: var(--ink4); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.md-bridge-row { display: flex; align-items: center; gap: 10px; }
-.md-bridge-token { padding: 5px 10px; border-radius: var(--r-sm); border: .5px solid var(--line-strong); background: var(--card); font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
 
 /* 收下与托盘胶囊(ADR 0011)：落点提示、胶囊卡、卡到卡合并的高亮 */
 .md-root.is-dropping::after { content: ''; position: fixed; inset: 10px; border-radius: var(--r-lg); outline: 1.5px dashed var(--ink3); outline-offset: -1px; pointer-events: none; z-index: 6; }

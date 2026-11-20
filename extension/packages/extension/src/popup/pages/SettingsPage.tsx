@@ -1,11 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
-  Check,
   ChevronRight,
-  Copy,
   Eye,
   EyeOff,
   Plug,
@@ -17,7 +15,6 @@ import { platformDisplayName } from '@/lib/platform-names'
 import { useI18n } from '../LocaleProvider'
 
 const HIDDEN_PLATFORMS_KEY = 'hiddenPlatforms'
-const SERVE_COMMAND = 'dswritesync serve'
 
 const LANGUAGE_OPTIONS: { value: LanguagePreference; label: string }[] = [
   { value: 'system', label: '跟随系统' },
@@ -33,11 +30,9 @@ interface PlatformInfo {
 }
 
 interface BridgeStatus {
-  enabled: boolean
+  paired: boolean
   connected: boolean
-  hasToken: boolean
-  tokenTail: string
-  serverUrl: string
+  dshActive: boolean
   lastError: string | null
 }
 
@@ -85,33 +80,23 @@ export function SettingsPage() {
   const { t, preference, setPreference } = useI18n()
   const [view, setView] = useState<'main' | 'platforms'>('main')
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>({
-    enabled: false,
+    paired: false,
     connected: false,
-    hasToken: false,
-    tokenTail: '',
-    serverUrl: '',
+    dshActive: false,
     lastError: null,
   })
   const [cmsAccountCount, setCmsAccountCount] = useState(0)
   const [floatingButtonEnabled, setFloatingButtonEnabled] = useState(false)
   const [deepCleanEnabled, setDeepCleanEnabled] = useState(false)
-  const [serverUrlInput, setServerUrlInput] = useState('')
-  const serverUrlTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [allPlatforms, setAllPlatforms] = useState<PlatformInfo[]>([])
   const [hiddenPlatforms, setHiddenPlatforms] = useState<Set<string>>(new Set())
-  const [copied, setCopied] = useState(false)
-  const [tokenInput, setTokenInput] = useState('')
-  const [tokenBusy, setTokenBusy] = useState(false)
-  const [tokenNotice, setTokenNotice] = useState<{ tone: 'info' | 'error'; text: string } | null>(null)
 
   const applyBridgeStatus = (response: any) => {
     if (!response || response.error) return
     setBridgeStatus({
-      enabled: response.enabled ?? false,
+      paired: response.paired ?? false,
       connected: response.connected ?? false,
-      hasToken: response.hasToken ?? false,
-      tokenTail: response.tokenTail ?? '',
-      serverUrl: response.serverUrl ?? '',
+      dshActive: response.dshActive ?? false,
       lastError: response.lastError ?? null,
     })
   }
@@ -122,10 +107,7 @@ export function SettingsPage() {
 
   useEffect(() => {
     chrome.runtime.sendMessage({ type: 'BRIDGE_STATUS' }, response => {
-      if (response && !response.error) {
-        applyBridgeStatus(response)
-        setServerUrlInput(response.serverUrl || '')
-      }
+      if (response && !response.error) applyBridgeStatus(response)
     })
 
     chrome.storage.local.get(
@@ -156,16 +138,10 @@ export function SettingsPage() {
         }
       }
     )
-
-    return () => {
-      if (serverUrlTimer.current) clearTimeout(serverUrlTimer.current)
-    }
   }, [])
 
-  // 设置页打开期间加速本地服务重连；离开时恢复正常重连策略
+  // 设置页打开期间开长端口并轮询状态;离开时归还引用计数
   useEffect(() => {
-    if (!bridgeStatus.enabled) return
-
     chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_START' })
     const interval = setInterval(refreshBridgeStatus, 3000)
 
@@ -173,84 +149,7 @@ export function SettingsPage() {
       clearInterval(interval)
       chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_STOP' })
     }
-  }, [bridgeStatus.enabled])
-
-  const toggleBridge = () => {
-    const enabling = !bridgeStatus.enabled
-
-    chrome.runtime.sendMessage({ type: enabling ? 'BRIDGE_ENABLE' : 'BRIDGE_DISABLE' }, response => {
-      if (response?.needToken) {
-        setTokenNotice({ tone: 'error', text: '请先粘贴工作台设置页显示的 Token' })
-        return
-      }
-      if (!response?.success) {
-        if (response?.error) setTokenNotice({ tone: 'error', text: response.error })
-        return
-      }
-      setTokenNotice(null)
-      refreshBridgeStatus()
-    })
-  }
-
-  const saveToken = () => {
-    const token = tokenInput.trim()
-    if (token.length < 16) {
-      setTokenNotice({ tone: 'error', text: 'Token 至少 16 个字符' })
-      return
-    }
-
-    setTokenBusy(true)
-    chrome.runtime.sendMessage({ type: 'BRIDGE_SET_TOKEN', payload: { token } }, response => {
-      setTokenBusy(false)
-      if (!response?.success) {
-        setTokenNotice({ tone: 'error', text: response?.error || '保存失败' })
-        return
-      }
-      setTokenInput('')
-      setTokenNotice({ tone: 'info', text: 'Token 已保存' })
-      refreshBridgeStatus()
-    })
-  }
-
-  const clearToken = () => {
-    setTokenBusy(true)
-    chrome.runtime.sendMessage({ type: 'BRIDGE_CLEAR_TOKEN' }, response => {
-      setTokenBusy(false)
-      if (!response?.success) {
-        setTokenNotice({ tone: 'error', text: response?.error || '清除失败' })
-        return
-      }
-      setTokenNotice({ tone: 'info', text: 'Token 已清除' })
-      refreshBridgeStatus()
-    })
-  }
-
-  const handleServerUrlChange = (value: string) => {
-    setServerUrlInput(value)
-    if (serverUrlTimer.current) clearTimeout(serverUrlTimer.current)
-    serverUrlTimer.current = setTimeout(() => {
-      chrome.runtime.sendMessage({
-        type: 'BRIDGE_SET_SERVER_URL',
-        payload: { url: value.trim() },
-      })
-      setBridgeStatus(prev => ({ ...prev, serverUrl: value.trim() }))
-    }, 800)
-  }
-
-  const copyServeCommand = async () => {
-    try {
-      await navigator.clipboard.writeText(SERVE_COMMAND)
-    } catch {
-      const textarea = document.createElement('textarea')
-      textarea.value = SERVE_COMMAND
-      document.body.appendChild(textarea)
-      textarea.select()
-      document.execCommand('copy')
-      textarea.remove()
-    }
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
+  }, [])
 
   const toggleFloatingButton = () => {
     const next = !floatingButtonEnabled
@@ -291,17 +190,11 @@ export function SettingsPage() {
   // 按当前列表过滤计算，避免 hiddenPlatforms 含已下线平台时计数偏小甚至为负
   const shownCount = allPlatforms.filter(p => !hiddenPlatforms.has(p.id)).length
 
-  const connectionStatus = !bridgeStatus.enabled
-    ? t('未启用')
+  const connectionStatus = !bridgeStatus.paired
+    ? t('未配对')
     : bridgeStatus.connected
-      ? t('已连接')
-      : bridgeStatus.hasToken
-        ? t('等待连接…')
-        : t('未设置 Token')
-
-  const [serveHintBefore, serveHintAfter] = t(
-    '由 {command} 在本机启动。工作台设置页显示 Token，粘贴到这里。'
-  ).split('{command}')
+      ? t('已配对')
+      : t('已配对 · 连接待建立')
 
   if (view === 'platforms') {
     return (
@@ -372,96 +265,34 @@ export function SettingsPage() {
         <div className="space-y-6">
           <Section title={t('连接')}>
             <div className="flex min-h-[56px] items-center gap-3 px-4 py-3">
-              {bridgeStatus.connected ? (
+              {bridgeStatus.paired ? (
                 <PlugZap className="h-5 w-5 flex-shrink-0 text-emerald-500" />
               ) : (
                 <Plug className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{t('DSwritesync 本地服务')}</p>
+                <p className="text-sm font-medium">{t('DSwritesync 本地助手')}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{connectionStatus}</p>
                 {bridgeStatus.lastError && (
                   <p className="mt-1 text-xs text-destructive">{t(bridgeStatus.lastError)}</p>
                 )}
               </div>
-              <Switch checked={bridgeStatus.enabled} onChange={toggleBridge} />
             </div>
 
-            <div className="space-y-3 px-4 py-3">
+            <div className="space-y-2 px-4 py-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                {serveHintBefore}
-                <code className="rounded bg-muted/60 px-1 py-0.5 text-[11px]">{SERVE_COMMAND}</code>
-                {serveHintAfter}
+                {t('扩展与图文创作台经浏览器 Native Messaging 直连:装好两边即自动配对,零 token、零粘贴、零端口。')}
               </p>
-
-              <div>
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-medium text-muted-foreground">{t('桥接 Token')}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {bridgeStatus.hasToken
-                      ? t('已保存 · 尾号 {tail}', { tail: bridgeStatus.tokenTail || '****' })
-                      : t('未设置')}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    value={tokenInput}
-                    onChange={event => {
-                      setTokenInput(event.target.value)
-                      if (tokenNotice?.tone === 'error') setTokenNotice(null)
-                    }}
-                    placeholder={bridgeStatus.hasToken ? t('粘贴新 Token 以替换') : t('粘贴工作台显示的 Token')}
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 font-mono text-xs outline-none transition-colors focus:border-foreground"
-                  />
-                  <button
-                    type="button"
-                    onClick={saveToken}
-                    disabled={tokenBusy || !tokenInput.trim()}
-                    className="h-10 flex-shrink-0 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground transition-opacity disabled:opacity-40"
-                  >
-                    {tokenBusy ? t('保存中…') : t('保存')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearToken}
-                    disabled={tokenBusy || !bridgeStatus.hasToken}
-                    className="h-10 flex-shrink-0 rounded-md border border-border px-3 text-xs font-medium transition-colors hover:bg-muted/50 disabled:opacity-40"
-                  >
-                    {t('清除')}
-                  </button>
-                </div>
-                {tokenNotice && (
-                  <p className={cn(
-                    'mt-1.5 text-xs',
-                    tokenNotice.tone === 'error' ? 'text-destructive' : 'text-emerald-600'
-                  )}>
-                    {t(tokenNotice.text)}
-                  </p>
-                )}
-              </div>
-
-              <label className="block">
-                <span className="mb-1.5 block text-[11px] font-medium text-muted-foreground">{t('服务地址')}</span>
-                <input
-                  type="text"
-                  value={serverUrlInput}
-                  onChange={event => handleServerUrlChange(event.target.value)}
-                  placeholder="ws://127.0.0.1:9527"
-                  className="h-10 w-full rounded-md border border-border bg-background px-3 font-mono text-xs outline-none transition-colors focus:border-foreground"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={copyServeCommand}
-                className="flex h-9 w-full items-center justify-center gap-1.5 rounded-md border border-border text-xs font-medium transition-colors hover:bg-muted/50"
-              >
-                {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-                {copied ? t('已复制') : t('复制 dswritesync serve')}
-              </button>
+              {!bridgeStatus.paired && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t('未配对时:重启一次 DeepSeek Harness(启动即自动注册修复),确认本机装有 Node.js,然后回到本页查看状态。')}
+                </p>
+              )}
+              {bridgeStatus.paired && !bridgeStatus.dshActive && (
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  {t('图文创作台没在运行:现在收进的网页会在它下次启动后出现在灵感墙。')}
+                </p>
+              )}
             </div>
           </Section>
 

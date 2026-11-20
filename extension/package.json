@@ -13,7 +13,6 @@
     "build": "pnpm -r build",
     "build:core": "pnpm --filter @wechatsync/core build",
     "build:extension": "pnpm --filter @wechatsync/extension build",
-    "build:cli": "pnpm --filter @wechatsync/cli build",
     "test": "pnpm -r test",
     "lint": "eslint packages --ext .ts,.tsx",
     "typecheck": "pnpm -r typecheck",

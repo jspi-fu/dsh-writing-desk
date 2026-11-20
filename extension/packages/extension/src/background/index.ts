@@ -8,7 +8,7 @@ import {
 } from '../adapters'
 import * as wordpressAdapter from '../adapters/cms/wordpress'
 import * as metaweblogAdapter from '../adapters/cms/metaweblog'
-import { startBridgeClient, stopBridgeClient, getBridgeStatus, bridgeClient, type CapturePayload } from '../bridge/client'
+import { startBridgeClient, bridgeClient, getBridgeStatus, type CapturePayload } from '../bridge/client'
 import { createLogger } from '../lib/logger'
 import { initI18n, t } from '../lib/i18n'
 import { checkSyncFrequency, recordSync } from '../lib/rate-limit'
@@ -36,12 +36,7 @@ type MessageAction =
   | { type: 'OPEN_SYNC_PAGE'; path?: string }
   | { type: 'TEST_CMS_CONNECTION'; payload: { type: CMSType; url: string; username: string; password: string } }
   | { type: 'SYNC_TO_CMS'; payload: { accountId: string; article: any } }
-  | { type: 'BRIDGE_ENABLE' }
-  | { type: 'BRIDGE_DISABLE' }
   | { type: 'BRIDGE_STATUS' }
-  | { type: 'BRIDGE_SET_TOKEN'; payload: { token: string } }
-  | { type: 'BRIDGE_CLEAR_TOKEN' }
-  | { type: 'BRIDGE_SET_SERVER_URL'; payload: { url: string } }
   | { type: 'BRIDGE_WATCH_START' }
   | { type: 'BRIDGE_WATCH_STOP' }
   | { type: 'STASH_EXTRACT'; payload?: { tabId?: number } }
@@ -278,73 +273,8 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       }
     }
 
-    case 'BRIDGE_ENABLE': {
-      // token 由用户从工作台设置页粘贴；扩展不再自动生成
-      const storage = await chrome.storage.local.get(['bridgeToken', 'bridgeServerUrl'])
-      const token = typeof storage.bridgeToken === 'string' ? storage.bridgeToken.trim() : ''
-      if (!token) {
-        return { success: false, needToken: true }
-      }
-
-      await chrome.storage.local.set({ bridgeEnabled: true })
-      bridgeClient.setToken(token)
-      bridgeClient.setServerUrl(storage.bridgeServerUrl || '')
-      startBridgeClient()
-      logger.info('Bridge enabled')
-      return { success: true }
-    }
-
-    case 'BRIDGE_DISABLE': {
-      // 只关闭连接，保留 token（下次启用时复用）
-      await chrome.storage.local.set({ bridgeEnabled: false })
-      bridgeClient.clearToken()
-      stopBridgeClient()
-      logger.info('Bridge disabled')
-      return { success: true }
-    }
-
-    case 'BRIDGE_SET_TOKEN': {
-      const token = typeof message.payload?.token === 'string' ? message.payload.token.trim() : ''
-      if (token.length < 16) {
-        return { success: false, error: t('Token 至少 16 个字符') }
-      }
-
-      await chrome.storage.local.set({ bridgeToken: token })
-      bridgeClient.setToken(token)
-
-      // 启用状态下换 token：立即用新 token 重连
-      const { bridgeEnabled } = await chrome.storage.local.get('bridgeEnabled')
-      if (bridgeEnabled) {
-        bridgeClient.disconnect()
-        bridgeClient.resetReconnect()
-      }
-
-      return { success: true, hasToken: true, tokenTail: token.slice(-4) }
-    }
-
-    case 'BRIDGE_CLEAR_TOKEN': {
-      await chrome.storage.local.remove('bridgeToken')
-      bridgeClient.clearToken()
-      stopBridgeClient()
-      logger.info('Bridge token cleared')
-      return { success: true }
-    }
-
-    case 'BRIDGE_SET_SERVER_URL': {
-      const url = message.payload.url
-      await chrome.storage.local.set({ bridgeServerUrl: url || '' })
-      bridgeClient.setServerUrl(url)
-
-      // 地址变更后，启用状态下断开重连
-      const { bridgeEnabled } = await chrome.storage.local.get('bridgeEnabled')
-      if (bridgeEnabled) {
-        bridgeClient.disconnect()
-        bridgeClient.resetReconnect()
-      }
-      return { success: true }
-    }
-
     case 'BRIDGE_WATCH_START': {
+      // 面板/设置页打开期间开长端口,投递与收进回执近实时
       bridgeClient.setActivelyWatched(true)
       return { success: true }
     }
@@ -355,17 +285,8 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'BRIDGE_STATUS': {
-      const storage = await chrome.storage.local.get(['bridgeEnabled', 'bridgeToken', 'bridgeServerUrl'])
-      const bridgeStatus = getBridgeStatus()
-      const token = typeof storage.bridgeToken === 'string' ? storage.bridgeToken : ''
-      return {
-        enabled: storage.bridgeEnabled ?? false,
-        connected: bridgeStatus.connected,
-        hasToken: Boolean(token),
-        tokenTail: token ? token.slice(-4) : '',
-        serverUrl: storage.bridgeServerUrl || bridgeStatus.serverUrl,
-        lastError: bridgeStatus.lastError,
-      }
+      // 配对状态(ADR 0012):paired = NM 通路可用;lastError 供排障
+      return await getBridgeStatus()
     }
 
     case 'STASH_EXTRACT': {
@@ -667,47 +588,23 @@ chrome.runtime.onInstalled.addListener(async details => {
   await initAdapters()
 })
 
-// 旧版本把本地服务命名为 MCP；迁移一次，保留用户已粘贴的 token。
-const LEGACY_BRIDGE_KEYS = ['mcpEnabled', 'mcpToken', 'mcpServerUrl'] as const
+// WS 桥时代的存储全部退役(ADR 0012):token/开关/地址不再有任何意义,一次性清掉。
+const LEGACY_BRIDGE_KEYS = ['mcpEnabled', 'mcpToken', 'mcpServerUrl', 'bridgeEnabled', 'bridgeToken', 'bridgeServerUrl'] as const
 
 async function migrateLegacyBridgeSettings(): Promise<void> {
-  const legacy = await chrome.storage.local.get([...LEGACY_BRIDGE_KEYS])
-  const patch: Record<string, unknown> = {}
-  if (legacy.mcpEnabled !== undefined) patch.bridgeEnabled = legacy.mcpEnabled
-  if (legacy.mcpToken !== undefined) patch.bridgeToken = legacy.mcpToken
-  if (legacy.mcpServerUrl !== undefined) patch.bridgeServerUrl = legacy.mcpServerUrl
-  if (Object.keys(patch).length === 0) return
-
-  const current = await chrome.storage.local.get(Object.keys(patch))
-  for (const key of Object.keys(patch)) {
-    if (current[key] !== undefined) delete patch[key]
-  }
-  if (Object.keys(patch).length > 0) {
-    await chrome.storage.local.set(patch)
-  }
-  await chrome.storage.local.remove([...LEGACY_BRIDGE_KEYS])
+  await chrome.storage.local.remove([...LEGACY_BRIDGE_KEYS]).catch(() => {})
 }
 
-/** 启动时初始化本地服务（如果已启用） */
-async function initBridgeIfEnabled(): Promise<void> {
-  await migrateLegacyBridgeSettings()
-  const storage = await chrome.storage.local.get(['bridgeEnabled', 'bridgeToken', 'bridgeServerUrl'])
-  if (!storage.bridgeEnabled) return
+// 启动:清旧键,踢一次任务拉取(alarm 未注册前的第一拍)
+migrateLegacyBridgeSettings().finally(() => startBridgeClient())
 
-  const token = typeof storage.bridgeToken === 'string' ? storage.bridgeToken.trim() : ''
-  if (!token) {
-    logger.info('Bridge enabled but no token; waiting for token from settings')
-    return
-  }
-
-  bridgeClient.setToken(token)
-  bridgeClient.setServerUrl(storage.bridgeServerUrl || '')
-  logger.info('Starting Bridge client with stored token...')
-  startBridgeClient()
-}
-
-// 启动本地服务客户端（如果已启用）
-initBridgeIfEnabled()
+// SW 休眠期的投递兜底:30 秒一次一次性拉(alarm 下限 0.5 分钟)
+const BRIDGE_POLL_ALARM = 'bridge-poll'
+chrome.alarms.create(BRIDGE_POLL_ALARM, { periodInMinutes: 0.5, delayInMinutes: 0.5 })
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== BRIDGE_POLL_ALARM) return
+  void bridgeClient.processPendingTasks()
+})
 
 /**
  * 预检查平台认证状态（后台静默执行）
