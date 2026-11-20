@@ -178,7 +178,6 @@ npm install && npm test        # Host 逻辑测试
 npm run watch                  # 监听 client/ 并重新打包
 npm run index                  # 发布后更新 index.json 的版本和发布时间
 cd extension && pnpm install && pnpm build:extension  # 构建 DSwritesync 扩展
-pnpm --filter @wechatsync/cli build                   # 构建 dswritesync CLI
 scripts/dev-sandbox.sh         # 在隔离的 DSH_HOME 里跑网页版，不碰 ~/.dsh
 npm pack                       # 打出可安装的 tgz
 ```
@@ -194,7 +193,7 @@ npm pack                       # 打出可安装的 tgz
 | `scripts/` | 打包、沙盒、示例素材生成、插件市场索引 |
 | `assets/` | 示例图片和视频，全部由 `scripts/gen-assets.py` 程序绘制 |
 
-扩展不进 npm 插件包；`npm pack` 的产物是插件本体加 `native/` 本地助手。桥接架构见 [ADR 0012](docs/adr/0012-bridge-native-messaging.md)（Native Messaging 自动配对，CLI/token 已退役；投递箱数据契约仍循 ADR 0009/0010），参考项目的研究笔记在 [docs/research/](docs/research/)。`extension/` 按 GPL-3.0 发布，仓库其余部分仍 MIT。
+扩展不进 npm 插件包；`npm pack` 的产物是插件本体加 `native/` 本地助手。扩展接入面(Native Messaging 自动配对)见 [ADR 0012](docs/adr/0012-bridge-native-messaging.md)（Native Messaging 自动配对，CLI/token 已退役；投递箱数据契约仍循 ADR 0009/0010），参考项目的研究笔记在 [docs/research/](docs/research/)。`extension/` 按 GPL-3.0 发布，仓库其余部分仍 MIT。
 
 改了 `src/` 要重启 DeepSeek Harness。
 

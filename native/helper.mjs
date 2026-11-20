@@ -50,6 +50,20 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+/** 原子写 JSON(临时文件 + rename;Windows 覆盖报 EPERM/EEXIST 时先删再改)。 */
+export async function writeJsonAtomic(file, value) {
+  await fsp.mkdir(path.dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.tmp`
+  await fsp.writeFile(tmp, JSON.stringify(value))
+  try {
+    await fsp.rename(tmp, file)
+  } catch (error) {
+    if (error.code !== 'EPERM' && error.code !== 'EEXIST') throw error
+    await fsp.rm(file, { force: true })
+    await fsp.rename(tmp, file)
+  }
+}
+
 /** 只允许安全字符进文件名,防止把 operationId 拼出目录穿越。 */
 export function safeOperationId(value) {
   return typeof value === 'string' && /^[\w-]{1,200}$/.test(value) ? value : null
@@ -89,19 +103,6 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
       return JSON.parse(await fsp.readFile(file, 'utf8'))
     } catch {
       return null
-    }
-  }
-
-  async function writeJsonAtomic(file, value) {
-    const tmp = `${file}.${process.pid}.tmp`
-    await fsp.writeFile(tmp, JSON.stringify(value))
-    try {
-      await fsp.rename(tmp, file)
-    } catch (error) {
-      // Windows 上 rename 覆盖已有文件会报 EPERM/EEXIST,退化成先删再改
-      if (error.code !== 'EPERM' && error.code !== 'EEXIST') throw error
-      await fsp.rm(file, { force: true })
-      await fsp.rename(tmp, file)
     }
   }
 
@@ -398,12 +399,13 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
     }
   }
 
-  return { handlers, ensureDirs, readJson, writeJsonAtomic, dshActive, ringLog, listTasks, taskMeta, recoverStaleClaims, pollCaptureResults, blobsFor, loadTask }
+  return { handlers, ensureDirs, readJson, dshActive, ringLog, listTasks, taskMeta, recoverStaleClaims, pollCaptureResults, blobsFor, loadTask }
 }
 
 /**
- * 主入口:短请求模式处理一条消息即随 stdin 关闭退出;长端口模式(stdin 保持
- * 打开)挂 outbox/receipts 监听与心跳,直到扩展断开。
+ * 主入口:短请求模式(sendNativeMessage)只回响应,绝不推事件帧——Chrome 把
+ * 首帧当响应,事件混进来会把收进误判成别的结果。长端口(connectNative)必须
+ * 先发 {method:'connect'} 握手,之后才挂 outbox/receipts 监听与心跳。
  */
 export async function main({ argv = process.argv, env = process.env, input = process.stdin, write = writeMessage } = {}) {
   const origin = originFromArgv(argv)
@@ -433,16 +435,22 @@ export async function main({ argv = process.argv, env = process.env, input = pro
     } catch { /* 扫描失败不影响下一轮 */ }
   }
 
-  let watcher = null
-  try {
-    watcher = fs.watch(paths.outbox, () => { void scan() })
-  } catch { /* 目录不存在时靠轮询兜底 */ }
-  const pollTimer = setInterval(() => { void scan() }, 1000)
-  const heartbeatTimer = setInterval(() => send({ event: 'heartbeat' }), 20_000)
-  const stopTimers = () => {
-    clearInterval(pollTimer)
-    clearInterval(heartbeatTimer)
-    if (watcher) watcher.close()
+  let stopLongMode = null
+  const startLongMode = () => {
+    if (stopLongMode) return
+    let watcher = null
+    try {
+      watcher = fs.watch(paths.outbox, () => { void scan() })
+    } catch { /* 目录不存在时靠轮询兜底 */ }
+    const pollTimer = setInterval(() => { void scan() }, 1000)
+    // 心跳顺带保活 MV3 SW(端口消息重置 SW 空闲计时)
+    const heartbeatTimer = setInterval(() => send({ event: 'heartbeat' }), 20_000)
+    stopLongMode = () => {
+      clearInterval(pollTimer)
+      clearInterval(heartbeatTimer)
+      if (watcher) watcher.close()
+    }
+    void scan()
   }
 
   try {
@@ -466,6 +474,11 @@ export async function main({ argv = process.argv, env = process.env, input = pro
           write({ ok: false, error: 'invalid json' })
           continue
         }
+        if (isPlainObject(message) && message.method === 'connect') {
+          startLongMode()
+          write({ ok: true, connected: true })
+          continue
+        }
         const handler = isPlainObject(message) && typeof message.method === 'string'
           ? core.handlers[message.method]
           : null
@@ -484,7 +497,7 @@ export async function main({ argv = process.argv, env = process.env, input = pro
       }
     }
   } finally {
-    stopTimers()
+    stopLongMode?.()
   }
 }
 

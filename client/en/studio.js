@@ -99,15 +99,11 @@ export const STUDIO = {
   '会话 {n} 字': 'Session: {n} word{s}',
   '当前 {n} 字': 'Current: {n} word{s}',
 
-  // 发布交接（工单 #9：导出发布包 + 可复制命令 + 用户确认发布状态）
+  // 发布交接（工单 #9：导出发布包 + 用户确认发布状态）
   '发布': 'Publish',
   '导出中…': 'Exporting…',
   '发布包(article.md + images/):{dir}': 'Publish pack (article.md + images/): {dir}',
-  '先用 --dry-run 预览': 'Preview with --dry-run first',
   '确认无误后同步': 'Sync once it looks right',
-  '复制预览命令': 'Copy preview command',
-  '复制同步命令': 'Copy sync command',
-  '命令已复制': 'Command copied',
   '视为已发布(上传后只进草稿箱,状态由你确认)': 'Mark as published (uploads land in drafts; you confirm the status)',
   '确认发布': 'Confirm publish',
   '已导出发布包,还没标记发布;之后可在内容页手动改状态': 'Publish pack exported, not marked as published. Change the status on the content page anytime',

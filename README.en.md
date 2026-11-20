@@ -176,7 +176,6 @@ npm install && npm test        # Host logic tests
 npm run watch                  # Rebuild client/ on change
 npm run index                  # Refresh index.json after a release
 cd extension && pnpm install && pnpm build:extension  # build the DSwritesync extension
-pnpm --filter @wechatsync/cli build                   # build the dswritesync CLI
 scripts/dev-sandbox.sh         # Run the web build in an isolated DSH_HOME
 npm pack                       # Build an installable tgz
 ```
@@ -192,7 +191,7 @@ npm pack                       # Build an installable tgz
 | `scripts/` | Packaging, sandbox, sample assets, marketplace index |
 | `assets/` | Sample images and videos, all drawn by `scripts/gen-assets.py` |
 
-The extension is not part of the npm plugin package; `npm pack` ships the plugin itself plus the `native/` local helper. The bridge architecture is documented in [ADR 0012](docs/adr/0012-bridge-native-messaging.md) (Native Messaging auto-pairing; the CLI/token path is retired, the mailbox contract still follows ADR 0009/0010), with research notes in [docs/research/](docs/research/). `extension/` is GPL-3.0; the rest of the repository remains MIT.
+The extension is not part of the npm plugin package; `npm pack` ships the plugin itself plus the `native/` local helper. The extension hookup (Native Messaging auto-pairing) is documented in [ADR 0012](docs/adr/0012-bridge-native-messaging.md) (Native Messaging auto-pairing; the CLI/token path is retired, the mailbox contract still follows ADR 0009/0010), with research notes in [docs/research/](docs/research/). `extension/` is GPL-3.0; the rest of the repository remains MIT.
 
 Restart DeepSeek Harness after changing `src/`.
 

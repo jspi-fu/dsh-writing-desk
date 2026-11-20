@@ -71,7 +71,6 @@ const REQUEST_TIMEOUT_MS = 15_000
 const STATUS_CACHE_MS = 5_000
 const PORT_RETRY_MS = 5_000
 const SHARD_RETRIES = 2
-const CAPTURE_TIMEOUT_MS = 90_000
 
 const PENDING_SYNC_TASK_KEY = 'pendingSyncTask'
 const SYNC_TASK_WINDOW_WIDTH = 396
@@ -95,10 +94,6 @@ interface PendingSyncTask {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value : undefined
 }
 
 type ExtensionContextInfo = { contextType: string; documentUrl?: string }
@@ -301,6 +296,9 @@ class BridgeClient {
           }, PORT_RETRY_MS)
         }
       })
+      // 助手只在收到 connect 握手后才进入长端口模式(推事件帧);短请求
+      // (sendNativeMessage)永远只回响应,首帧即答案
+      port.postMessage({ method: 'connect' })
       this.port = port
       this.lastError = null
       logger.debug('NM port connected')
@@ -450,7 +448,12 @@ class BridgeClient {
     } catch (error) {
       const message = ((error as Error).message || String(error)).slice(0, 200)
       logger.warn(`Task failed (${operationId}):`, message)
-      await this.writeDispatchReceipt(operationId, meta.itemId, [{ platform: '*', ok: false, error: message }]).catch(() => {})
+      // 回执行逐平台失败:宿主 digestReceipts 按 BRIDGE_ADAPTERS 过滤,平台名不在
+      // 清单里的行会被剥掉,不能用通配符占位。平台名拿不到时不写回执,留在
+      // .claiming 里交给助手的 stale 认领恢复(它读得到任务文件里的平台清单)。
+      const platforms = Array.isArray(meta.platforms) ? meta.platforms.filter(p => typeof p === 'string') : []
+      if (!platforms.length) return
+      await this.writeDispatchReceipt(operationId, meta.itemId, platforms.map(platform => ({ platform, ok: false, error: message }))).catch(() => {})
     }
   }
 
@@ -561,13 +564,6 @@ export function startBridgeClient(): void {
   void bridgeClient.processPendingTasks()
 }
 
-/** 页面全部关闭后由引用计数接管;保留导出兼容旧调用面。 */
-export function stopBridgeClient(): void {
-  bridgeClient.setActivelyWatched(false)
-}
-
 export async function getBridgeStatus(): Promise<BridgeStatus> {
   return bridgeClient.getStatus()
 }
-
-export const CAPTURE_WAIT_MS = CAPTURE_TIMEOUT_MS

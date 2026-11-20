@@ -140,12 +140,14 @@ export function normalizeCaptureUrl(url) {
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
   parsed.hash = ''
-  const kept = [...parsed.searchParams.entries()]
-    .filter(([key]) => !/^(utm_\w+|fbclid|gclid)$/i.test(key))
-    .sort(([a], [b]) => a.localeCompare(b))
-  const query = kept.map(([key, value]) => `${key}=${value}`).join('&')
+  // URLSearchParams.delete/sort 保留百分号编码,值里含 &/= 的参数不会拼坏
+  for (const key of [...parsed.searchParams.keys()]) {
+    if (/^(utm_\w+|fbclid|gclid)$/i.test(key)) parsed.searchParams.delete(key)
+  }
+  parsed.searchParams.sort()
+  parsed.search = parsed.searchParams.toString()
   const cleanPath = parsed.pathname.length > 1 ? parsed.pathname.replace(/\/+$/, '') : parsed.pathname
-  return `${parsed.origin}${cleanPath}${query ? `?${query}` : ''}`
+  return `${parsed.origin}${cleanPath}${parsed.search}`
 }
 
 /** 校验并折算成 add_item / update_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */

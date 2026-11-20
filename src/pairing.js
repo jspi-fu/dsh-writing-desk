@@ -4,10 +4,10 @@
 // 鉴权靠固定扩展 ID 白名单 + 浏览器内核校验,零 token、零端口。
 // StashDock 需要注册用 exe 是因其逻辑在 Rust;我们是 Node,直写更简。
 import { execFile } from 'node:child_process'
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { EXTENSION_ID, HOST_NAME } from '../native/helper.mjs'
+import { EXTENSION_ID, HOST_NAME, writeJsonAtomic } from '../native/helper.mjs'
 import { dshHome } from './store.js'
 
 // Chromium 分支的 NM 注册表 vendor 键(HKCU\Software\<vendor>\NativeMessagingHosts)。
@@ -35,19 +35,6 @@ export function pairingPaths({ home = dshHome(), pluginDir = join(dirname(fileUR
     helperBat: join(pluginDir, 'helper.bat'),
     manifest: join(pluginDir, `${HOST_NAME}.json`),
     record: join(root, 'native.json'),
-  }
-}
-
-async function writeJsonAtomic(file, value) {
-  await mkdir(dirname(file), { recursive: true })
-  const tmp = `${file}.${process.pid}.tmp`
-  await writeFile(tmp, JSON.stringify(value, null, 2))
-  try {
-    await rename(tmp, file)
-  } catch (error) {
-    if (error.code !== 'EPERM' && error.code !== 'EEXIST') throw error
-    await rm(file, { force: true })
-    await rename(tmp, file)
   }
 }
 
