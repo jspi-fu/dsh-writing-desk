@@ -85,7 +85,7 @@ export function PlatformList({
         {isSyncing && (
           <>
             <div className="flex items-center gap-2">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" strokeWidth={1.6} />
               <span className="text-sm font-medium">{t('同步中')}</span>
             </div>
             <span className="text-sm tabular-nums text-muted-foreground">
@@ -100,13 +100,13 @@ export function PlatformList({
             </span>
             <div className="flex items-center gap-2">
               {successCount > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-xs text-green-600">
-                  <Check className="w-3 h-3" />{successCount}
+                <span className="inline-flex items-center gap-0.5 text-xs text-status-published">
+                  <Check className="w-3 h-3" strokeWidth={1.6} />{successCount}
                 </span>
               )}
               {failedCount > 0 && (
-                <span className="inline-flex items-center gap-0.5 text-xs text-red-500">
-                  <X className="w-3 h-3" />{failedCount}
+                <span className="inline-flex items-center gap-0.5 text-xs text-status-danger">
+                  <X className="w-3 h-3" strokeWidth={1.6} />{failedCount}
                 </span>
               )}
             </div>
@@ -202,8 +202,8 @@ function PlatformRow({
         isIdle && platform.isAuthenticated && 'cursor-pointer hover:bg-muted/60',
         isIdle && !platform.isAuthenticated && 'cursor-pointer opacity-50 hover:opacity-70',
         isIdle && isSelected && 'bg-primary/5',
-        isDone && result?.success && 'bg-green-50 dark:bg-green-950/20',
-        isDone && result && !result.success && 'bg-red-50 dark:bg-red-950/20',
+        isDone && result?.success && 'bg-status-published/10',
+        isDone && result && !result.success && 'bg-status-danger/10',
       )}
     >
       {/* Status indicator */}
@@ -262,33 +262,34 @@ function RowIndicator({
 }) {
   if (result) {
     return result.success ? (
-      <div className="w-5 h-5 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center flex-shrink-0">
-        <Check className="w-3 h-3 text-green-600 dark:text-green-400" />
+      <div className="w-5 h-5 rounded-full bg-status-published/15 flex items-center justify-center flex-shrink-0">
+        <Check className="w-3 h-3 text-status-published" strokeWidth={1.6} />
       </div>
     ) : (
-      <div className="w-5 h-5 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center flex-shrink-0">
-        <X className="w-3 h-3 text-red-600 dark:text-red-400" />
+      <div className="w-5 h-5 rounded-full bg-status-danger/15 flex items-center justify-center flex-shrink-0">
+        <X className="w-3 h-3 text-status-danger" strokeWidth={1.6} />
       </div>
     )
   }
   if (isInProgress) {
-    return <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" />
+    return <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" strokeWidth={1.6} />
   }
   if (isWaiting) {
-    return <div className="w-4 h-4 rounded-full border-2 border-gray-300 dark:border-gray-600 flex-shrink-0" />
+    // 等待中的呼吸环:brief 承诺的「圆环呼吸变实心」;与未登录的静环靠动效区分
+    return <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/50 animate-pulse flex-shrink-0" />
   }
   // Idle
   if (!isAuthenticated) {
-    return <div className="w-4 h-4 rounded-full border-2 border-gray-200 dark:border-gray-700 flex-shrink-0" />
+    return <div className="w-4 h-4 rounded-full border-2 border-border flex-shrink-0" />
   }
   return (
     <div className={cn(
       'w-[18px] h-[18px] rounded border-2 transition-colors flex items-center justify-center flex-shrink-0',
       isSelected
         ? 'bg-primary border-primary'
-        : 'border-gray-300 dark:border-gray-500'
+        : 'border-muted-foreground/40'
     )}>
-      {isSelected && <Check className="w-3 h-3 text-white" />}
+      {isSelected && <Check className="w-3 h-3 text-primary-foreground" strokeWidth={1.6} />}
     </div>
   )
 }
@@ -320,13 +321,8 @@ function RowInfo({
       return (
         <span className="flex items-center gap-1 flex-shrink-0">
           {result.message && (
-            <span className="relative group">
-              <span className="text-[10px] text-gray-400 truncate block" style={{ maxWidth: '140px' }}>
-                {result.message}
-              </span>
-              <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-[11px] text-white bg-gray-800 rounded-md whitespace-nowrap opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50">
-                {result.message}
-              </span>
+            <span className="text-[10px] text-muted-foreground truncate block max-w-[140px]" title={result.message}>
+              {result.message}
             </span>
           )}
           <a
@@ -337,22 +333,20 @@ function RowInfo({
             onClick={e => e.stopPropagation()}
           >
             {result.draftOnly ? t('草稿') : t('查看')}
-            <ExternalLink className="w-3 h-3" />
+            <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
           </a>
         </span>
       )
     }
     if (!result.success) {
       return (
-        <span
-          className="text-xs text-red-500 dark:text-red-400 truncate max-w-[120px] flex-shrink-0"
-          title={result.error}
-        >
+        // 失败原因是关键诊断,行内完整给出,不藏进 hover
+        <span className="text-xs text-status-danger text-right flex-shrink-0 min-w-0">
           {translateAdapterError(result.error) || t('失败')}
         </span>
       )
     }
-    return <span className="text-xs text-green-600 dark:text-green-400 flex-shrink-0">{t('完成')}</span>
+    return <span className="text-xs text-status-published flex-shrink-0">{t('完成')}</span>
   }
 
   // In progress
@@ -399,7 +393,7 @@ function RowInfo({
   if (!platform.isAuthenticated) {
     return (
       <span className="text-xs text-muted-foreground flex items-center gap-0.5 flex-shrink-0">
-        {t('去登录')} <ChevronRight className="w-3 h-3" />
+        {t('去登录')} <ChevronRight className="w-3 h-3" strokeWidth={1.6} />
       </span>
     )
   }

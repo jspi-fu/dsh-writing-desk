@@ -15,11 +15,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // 直接在 content script 中使用 fetch
     // 注意：content script 的 fetch 不会自动注入 msToken/a_bogus
     // 需要通过 background 使用 chrome.scripting.executeScript 在 MAIN world 执行
-    fetch(url, {
-      ...options,
-      credentials: 'include',
-    })
-      .then(async (response) => {
+    ;(async () => {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          credentials: 'include',
+        })
         const text = await response.text()
         let data
         try {
@@ -29,11 +30,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         }
         logger.debug('Fetch response:', data)
         sendResponse({ success: true, data })
-      })
-      .catch((err) => {
+      } catch (err: any) {
         logger.error('Fetch error:', err)
         sendResponse({ success: false, error: err.message })
-      })
+      }
+    })()
 
     return true // 异步响应
   }

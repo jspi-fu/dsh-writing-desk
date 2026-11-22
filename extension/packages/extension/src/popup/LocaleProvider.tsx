@@ -43,10 +43,11 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
     initI18n()
     const unsubscribe = onLanguageChange(setLang)
 
-    void readLanguagePreference().then(stored => {
+    void (async () => {
+      const stored = await readLanguagePreference()
       setPreferenceState(stored)
       applyPreference(stored)
-    })
+    })()
 
     return unsubscribe
   }, [])

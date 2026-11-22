@@ -53,11 +53,15 @@ type MessageAction =
  * 消息处理
  */
 chrome.runtime.onMessage.addListener((message: MessageAction, sender, sendResponse) => {
-  handleMessage(message, sender)
-    .then(sendResponse)
-    .catch(error => sendResponse({ error: error.message }))
+  ;(async () => {
+    try {
+      sendResponse(await handleMessage(message, sender))
+    } catch (error: any) {
+      sendResponse({ error: error.message })
+    }
+  })()
 
-  return true // 异步响应
+  return true // 保持消息通道开启，等待异步回执
 })
 
 async function handleMessage(message: MessageAction, sender?: chrome.runtime.MessageSender) {

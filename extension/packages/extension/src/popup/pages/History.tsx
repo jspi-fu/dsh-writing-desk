@@ -1,15 +1,18 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { CheckCircle, XCircle, ExternalLink, Clock, Trash2, ImageIcon, Loader2 } from 'lucide-react'
 import { platformDisplayName } from '@/lib/platform-names'
 import { translateAdapterError } from '@/lib/i18n'
 import { useSyncStore } from '../stores/sync'
 import { Button } from '../components/ui/Button'
+import { EmptyState } from '../components/EmptyState'
 import { useI18n } from '../LocaleProvider'
 
 export function HistoryPage() {
   const { history, loadHistory } = useSyncStore()
   const { t, lang } = useI18n()
   const locale = lang === 'zh' ? 'zh-CN' : 'en-US'
+  // 清空全部历史不可恢复,两步确认防误触
+  const [confirmingClear, setConfirmingClear] = useState(false)
 
   useEffect(() => {
     loadHistory()
@@ -17,6 +20,7 @@ export function HistoryPage() {
 
   const clearHistory = async () => {
     await chrome.storage.local.remove('syncHistory')
+    setConfirmingClear(false)
     loadHistory()
   }
 
@@ -51,32 +55,47 @@ export function HistoryPage() {
   if (history.length === 0) {
     return (
       <div className="flex h-full flex-col p-4">
-        <h1 className="mb-4 text-lg font-semibold tracking-tight">{t('历史')}</h1>
-        <div className="flex flex-1 flex-col items-center justify-center text-muted-foreground">
-          <Clock className="w-12 h-12 mb-4 opacity-50" />
-          <p>{t('暂无同步历史')}</p>
-        </div>
+        <EmptyState icon={Clock} message={t('暂无同步历史')} className="flex-1" />
       </div>
     )
   }
 
   return (
     <div className="flex h-full flex-col p-4">
-      <h1 className="mb-4 text-lg font-semibold tracking-tight">{t('历史')}</h1>
-
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-muted-foreground">
           {t('最近 {count} 条记录', { count: history.length })}
         </h2>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={clearHistory}
-          className="text-xs text-muted-foreground hover:text-destructive"
-        >
-          <Trash2 className="w-3.5 h-3.5 mr-1" />
-          {t('清空')}
-        </Button>
+        {confirmingClear ? (
+          <span className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void clearHistory()}
+              className="h-7 text-xs text-status-danger hover:text-status-danger"
+            >
+              {t('清空')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setConfirmingClear(false)}
+              className="h-7 text-xs text-muted-foreground"
+            >
+              {t('取消')}
+            </Button>
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setConfirmingClear(true)}
+            className="text-xs text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1"  strokeWidth={1.6} />
+            {t('清空')}
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto space-y-3">
@@ -103,14 +122,14 @@ export function HistoryPage() {
                   />
                 ) : (
                   <div className="w-16 h-16 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                    <ImageIcon className="w-6 h-6 text-muted-foreground" />
+                    <ImageIcon className="w-6 h-6 text-muted-foreground" strokeWidth={1.6} />
                   </div>
                 )}
 
                 <div className="flex-1 min-w-0">
                   {/* 标题和时间 */}
                   <div className="flex items-start justify-between gap-2 mb-1">
-                    <h3 className="font-medium text-sm line-clamp-2">{item.title}</h3>
+                    <h3 className="font-article-serif font-medium text-sm line-clamp-2">{item.title}</h3>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {formatTime(item.startTime ?? item.timestamp ?? Date.now())}
                     </span>
@@ -119,24 +138,24 @@ export function HistoryPage() {
                   {/* 统计 */}
                   <div className="flex items-center gap-3 text-xs">
                     {item.status === 'syncing' ? (
-                      <div className="flex items-center gap-1 text-blue-600">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <div className="flex items-center gap-1 text-status-draft">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={1.6} />
                         <span>{t('同步中...')}</span>
                       </div>
                     ) : item.status === 'cancelled' ? (
-                      <div className="flex items-center gap-1 text-gray-500">
-                        <XCircle className="w-3.5 h-3.5" />
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <XCircle className="w-3.5 h-3.5" strokeWidth={1.6} />
                         <span>{t('已取消')}</span>
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-1 text-green-600">
-                          <CheckCircle className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1 text-status-published">
+                          <CheckCircle className="w-3.5 h-3.5" strokeWidth={1.6} />
                           <span>{t('{count} 成功', { count: successCount })}</span>
                         </div>
                         {failedCount > 0 && (
-                          <div className="flex items-center gap-1 text-red-600">
-                            <XCircle className="w-3.5 h-3.5" />
+                          <div className="flex items-center gap-1 text-status-danger">
+                            <XCircle className="w-3.5 h-3.5" strokeWidth={1.6} />
                             <span>{t('{count} 失败', { count: failedCount })}</span>
                           </div>
                         )}
@@ -144,7 +163,7 @@ export function HistoryPage() {
                     )}
                   </div>
 
-                  {/* 平台列表 */}
+                  {/* 平台列表:失败原因行内给全,不做 hover 才能看的诊断 */}
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {results.map((result) => (
                       <div
@@ -152,15 +171,14 @@ export function HistoryPage() {
                         className={`
                           inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs
                           ${result.success
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                            : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            ? 'bg-status-published/10 text-status-published'
+                            : 'bg-status-danger/10 text-status-danger'
                           }
                         `}
-                        title={!result.success && result.error ? translateAdapterError(result.error) : undefined}
                       >
-                        <span>{platformDisplayName(result.platform, result.platformName || result.platform)}</span>
+                        <span className="whitespace-nowrap">{platformDisplayName(result.platform, result.platformName || result.platform)}</span>
                         {!result.success && result.error && (
-                          <span className="opacity-60 truncate max-w-[80px]">: {translateAdapterError(result.error)}</span>
+                          <span className="opacity-80">: {translateAdapterError(result.error)}</span>
                         )}
                         {result.postUrl && (
                           <a
@@ -170,7 +188,7 @@ export function HistoryPage() {
                             className="hover:opacity-70"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
                           </a>
                         )}
                       </div>

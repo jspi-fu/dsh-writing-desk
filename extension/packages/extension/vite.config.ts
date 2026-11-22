@@ -4,7 +4,7 @@ import { crx } from '@crxjs/vite-plugin'
 import yaml from '@modyfi/vite-plugin-yaml'
 import { resolve } from 'path'
 import { createRequire } from 'node:module'
-import { copyFileSync, mkdirSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import baseManifest from './manifest.json'
 
 const manifest = baseManifest
@@ -14,40 +14,15 @@ function copyStaticFilesPlugin() {
   return {
     name: 'copy-static-files',
     writeBundle() {
-
-      // 复制 rules 目录
-      const rulesDir = resolve(__dirname, 'rules')
-      const distRulesDir = resolve(__dirname, 'dist/rules')
-
-      if (existsSync(rulesDir)) {
-        if (!existsSync(distRulesDir)) {
-          mkdirSync(distRulesDir, { recursive: true })
-        }
-
-        const files = readdirSync(rulesDir)
-        for (const file of files) {
-          copyFileSync(
-            resolve(rulesDir, file),
-            resolve(distRulesDir, file)
-          )
-          console.log(`[copy-static] Copied rules/${file}`)
-        }
-      }
-
       // 复制 reader 脚本（避免被 vite 转换为 ES modules）
-      const readerDir = resolve(__dirname, 'public/lib')
+      // 唯一来源是 src/lib/reader/，与打包引用共用一份
+      const readerDir = resolve(__dirname, 'src/lib/reader')
       const distDir = resolve(__dirname, 'dist')
 
-      if (existsSync(readerDir)) {
-        const readerFiles = ['reader.js', 'Readability.js']
-        for (const file of readerFiles) {
-          const srcPath = resolve(readerDir, file)
-          const destPath = resolve(distDir, file)
-          if (existsSync(srcPath)) {
-            copyFileSync(srcPath, destPath)
-            console.log(`[copy-static] Copied ${file} to dist/`)
-          }
-        }
+      const readerFiles = ['reader.js', 'Readability.js']
+      for (const file of readerFiles) {
+        copyFileSync(resolve(readerDir, file), resolve(distDir, file))
+        console.log(`[copy-static] Copied ${file} to dist/`)
       }
 
       // 修改输出的 manifest.json，添加 reader 脚本到 content_scripts
@@ -79,6 +54,8 @@ function copyStaticFilesPlugin() {
 export default defineConfig(({ mode }) => {
   const isDev = mode === 'development'
   return {
+    // 静态文件全部由 copyStaticFilesPlugin 下发，无 public 目录
+    publicDir: false,
     plugins: [
       {
         name: 'worker-markdown-entities',

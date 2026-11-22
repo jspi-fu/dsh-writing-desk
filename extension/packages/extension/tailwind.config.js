@@ -39,6 +39,12 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        status: {
+          outline: "hsl(var(--status-outline))",
+          draft: "hsl(var(--status-draft))",
+          published: "hsl(var(--status-published))",
+          danger: "hsl(var(--status-danger))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",

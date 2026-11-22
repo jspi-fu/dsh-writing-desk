@@ -1,11 +1,11 @@
 // dsh-writing-desk host 半片：/writing-desk/* 接口、文件服务。
 // 成稿在 DSH 创作会话里发生(ADR 0006),这里只剩数据、看板与人工介入的服务面,没有任何模型调用。
-import { createReadStream } from 'node:fs'
+import { createReadStream, existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, writeCatalog, writePublishTask } from './bridge.js'
+import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, touchHeartbeat, writeCatalog, writePublishTask } from './bridge.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { exportPublishPackage } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
@@ -13,11 +13,13 @@ import { exportSkill } from './learn.js'
 import { applyOps, newId } from './ops.js'
 import { migrateMediaDesk, summarizeMediaDesk } from './migrate.js'
 import { applyPairing } from './pairing.js'
-import { publicSettings, Settings } from './settings.js'
+import { Settings, publicSettings } from './settings.js'
+import { buildStylePrompt, messagesFromEvents } from './style-material.js'
 import { dshHome, Store } from './store.js'
 import { currentLang, tr, withLang } from './i18n.js'
 import { localizeSamples, samplesNeedLocale } from './seed.js'
 import { createVersionCheck } from './version.js'
+import { workDoc, workHasText, workOfId, workTitle } from './work.js'
 
 const ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets')
 const MAX_JSON = 4_000_000
@@ -57,6 +59,57 @@ async function readJson(req) {
   } catch {
     throw Object.assign(new Error(tr('请求不是有效的 JSON')), { status: 400 })
   }
+}
+
+// 让用户在系统原生的文件夹选择器里挑成稿目录。
+// 三个平台各用系统自带的对话框，不引入依赖；用户取消时返回 null。
+function runExec(file, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { windowsHide: true, timeout: 10 * 60 * 1000, maxBuffer: 1024 * 1024, ...options }, (error, stdout, stderr) => {
+      if (error) {
+        // 取消在几个平台上都表现为非零退出；这里只把明确的取消当取消。
+        if (/cancel/i.test(String(stderr || error.message || ''))) return resolve('')
+        if (file === 'zenity' && error.code === 1) return resolve('')
+        return reject(Object.assign(new Error(tr('无法打开文件夹选择器')), { status: 500, cause: error }))
+      }
+      resolve(String(stdout ?? ''))
+    })
+  })
+}
+
+async function pickFolder(initial = '') {
+  const chosen = value => {
+    const path = String(value ?? '').trim()
+    if (!path) return null
+    if (!existsSync(path)) throw Object.assign(new Error(tr('文件夹不存在')), { status: 400 })
+    return path
+  }
+  const start = typeof initial === 'string' ? initial : ''
+  if (process.platform === 'win32') {
+    const title = tr('选择成稿保存文件夹')
+    const script = [
+      'Add-Type -AssemblyName System.Windows.Forms',
+      '$d = New-Object System.Windows.Forms.FolderBrowserDialog',
+      `$d.Description = '${title.replace(/'/g, "''")}'`,
+      '$d.UseDescriptionForTitle = $true',
+      '$d.ShowNewFolderButton = $true',
+      `$start = '${start.replace(/'/g, "''")}'`,
+      'if ($start -and (Test-Path -LiteralPath $start)) { $d.SelectedPath = $start }',
+      '$r = $d.ShowDialog()',
+      'if ($r -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($d.SelectedPath) }',
+    ].join('\n')
+    const encoded = Buffer.from(script, 'utf16le').toString('base64')
+    return chosen(await runExec('powershell.exe', ['-NoProfile', '-STA', '-EncodedCommand', encoded]))
+  }
+  if (process.platform === 'darwin') {
+    const apple = start
+      ? `POSIX path of (choose folder with prompt "${tr('选择成稿保存文件夹')}" default location POSIX file "${start.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+      : `POSIX path of (choose folder with prompt "${tr('选择成稿保存文件夹')}")`
+    return chosen(await runExec('osascript', ['-e', apple]))
+  }
+  const args = ['--file-selection', '--directory', `--title=${tr('选择成稿保存文件夹')}`]
+  if (start) args.push(`--filename=${start}/`)
+  return chosen(await runExec('zenity', args))
 }
 
 /** 支持 Range，视频才能正常拖动和循环。 */
@@ -269,9 +322,11 @@ async function route(ctx, store, desk, req, res) {
 
   if (path === 'upload') return handleUpload(req, store, res)
   if (path === 'migrate') {
+    // 先读勾选再读旧工作台:请求体只能读一次。
+    const body = await readJson(req)
     const { raw, paths } = await readMediaDesk()
     const media = await copyMigrationMedia(raw, paths, store.filesDir)
-    const result = await store.mutate(tr('从自媒体工作台迁移'), (draft) => migrateMediaDesk(draft, raw, { media }))
+    const result = await store.mutate(tr('从自媒体工作台迁移'), (draft) => migrateMediaDesk(draft, raw, { media, selection: body.selection }))
     return json(res, 200, { ...result, state: await store.read() })
   }
   const body = await readJson(req)
@@ -289,32 +344,47 @@ async function route(ctx, store, desk, req, res) {
       await writeCatalog(store).catch(() => {})
       return json(res, 200, { label, state: await store.read(), canUndo: store.undo.length > 0 })
     }
-    case 'production/save': {
+case 'pick-folder': {
+      // 只负责弹系统选择器,不写状态;选完由调用方自己决定用它做什么。
+      const path = await pickFolder(typeof body.initial === 'string' ? body.initial : '')
+      return json(res, 200, path ? { path } : { canceled: true })
+    }
+    // 作品的保存(ADR 0015):落盘记录(savedPath/savedHashes/savedAt)挂在 Work 根上,
+    // current 只放内容。路由参数 body.id 的语义是作品 id——素材不再有自己的稿。
+    case 'work/save': {
       const settings = await desk.settings.read()
       const state = await store.read()
-      const item = state.items.find(row => row.id === body.id)
-      if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以保存的成稿') })
-      const saved = await saveProduction(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
-      const next = await store.mutate('保存成稿', (draft) => {
-        const target = draft.items.find(row => row.id === body.id)
-        if (target?.production) {
-          target.production.savedPath = saved.path
-          target.production.savedHashes = saved.hashes
-          target.production.savedAt = new Date().toISOString()
+      const work = workOfId(state, body.id)
+      if (!workHasText(work)) return json(res, 400, { error: tr('这份作品还没有正文') })
+      // 首次保存先让用户选文件夹;取消就什么都不写。
+      let target
+      if (body.pick) {
+        const picked = await pickFolder(work.savedPath || resolveExportDir(settings.exportDir))
+        if (!picked) return json(res, 200, { canceled: true })
+        target = picked
+      }
+      const saved = await saveProduction(workDoc(work), { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir), target })
+      const next = await store.mutate(tr('保存作品'), (draft) => {
+        const target = workOfId(draft, body.id)
+        if (target) {
+          target.savedPath = saved.path
+          target.savedHashes = saved.hashes
+          target.savedAt = new Date().toISOString()
         }
         return draft
       }, { undoable: false })
       return json(res, 200, { ...saved, state: next })
     }
-    case 'production/reveal': {
+    case 'work/reveal': {
       // 路径只取自保存记录，不接受请求里传来的路径
       const state = await store.read()
-      const path = state.items.find(row => row.id === body.id)?.production?.savedPath
+      const path = workOfId(state, body.id)?.savedPath
       if (!path) return json(res, 400, { error: tr('还没有保存过') })
       const command = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'explorer' : 'xdg-open'
       execFile(command, [path], () => {})
       return json(res, 200, { path })
     }
+    // 发布交接(ADR 0009/0015):只出文件,绝不写已发布——发布仍是用户确认(publish_work)。
     case 'settings': {
       const updated = await desk.settings.update(body)
       return json(res, 200, { ...publicSettings(updated), defaultExportDir: defaultExportDir() })
@@ -348,43 +418,81 @@ async function route(ctx, store, desk, req, res) {
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
     }
-    // 发布交接(工单 #9):只出文件,绝不写已发布状态——是否已发布由用户确认(publish_item)。
-    case 'production/export': {
+    case 'work/export': {
       const settings = await desk.settings.read()
       const state = await store.read()
-      const item = state.items.find(row => row.id === body.id)
-      if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以导出的成稿') })
-      const exported = await exportPublishPackage(item.production, {
+      const work = workOfId(state, body.id)
+      if (!workHasText(work)) return json(res, 400, { error: tr('这份作品还没有正文') })
+      const exported = await exportPublishPackage(workDoc(work), {
         filesDir: store.filesDir,
         exportDir: resolveExportDir(settings.exportDir),
       })
       const next = await store.mutate(tr('导出发布包'), (draft) => {
-        const target = draft.items.find(row => row.id === body.id)
-        if (target?.production) target.production.cliPath = exported.dir
+        const target = workOfId(draft, body.id)
+        if (target) target.cliPath = exported.dir
         return draft
       }, { undoable: false })
       return json(res, 200, { ...exported, state: next })
     }
-    // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手(NM)分片下发浏览器扩展。
-    // 平台只放行桥适配器清单里的;投递本身不改状态,回执经 digestReceipts 落 dispatches。
-    case 'production/dispatch': {
+    // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手分片下发浏览器扩展。
+    // 平台只放行桥适配器清单里的;投递本身不改状态,回执经 digestReceipts 落 publication.dispatches。
+    case 'work/dispatch': {
       const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p))
       if (!platforms.length) return json(res, 400, { error: tr('至少选一个可投递的平台') })
       const settings = await desk.settings.read()
       const state = await store.read()
-      const item = state.items.find(row => row.id === body.id)
-      if (!item?.production?.article) return json(res, 400, { error: tr('还没有可以发布的成稿') })
-      const exported = await exportPublishPackage(item.production, { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const work = workOfId(state, body.id)
+      if (!workHasText(work)) return json(res, 400, { error: tr('这份作品还没有正文') })
+      const exported = await exportPublishPackage(workDoc(work), { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
       const articleMd = await readFile(exported.articlePath, 'utf8')
       // 任务里的图片键与正文里的相对引用一致(images/xxx),桥读文件转 data URI 后才下发扩展
       const images = Object.fromEntries(exported.imageFiles.map(ref => [ref, join(exported.dir, ref)]))
-      const task = await writePublishTask({ itemId: body.id, title: item.production.title, articleMd, images, platforms })
+      // 桥协议的 itemId 字段沿用旧名,值是作品 id(扩展侧读的是同一字段,不用跟着改)
+      const task = await writePublishTask({ itemId: work.id, title: workTitle(work), articleMd, images, platforms })
       const next = await store.mutate(tr('导出发布包'), (draft) => {
-        const target = draft.items.find(row => row.id === body.id)
-        if (target?.production) target.production.cliPath = exported.dir
+        const target = workOfId(draft, body.id)
+        if (target) target.cliPath = exported.dir
         return draft
       }, { undoable: false })
       return json(res, 200, { operationId: task.operationId, dir: exported.dir, state: next })
+    }
+    // 风格学习(ADR 0014):把选中作品的创作会话转录 + 发布稿拼成一段材料,
+    // 返回给客户端预填到新开的风格会话里。这里不写 Store,也不调模型。
+    case 'style/learn': {
+      const workIds = Array.isArray(body.workIds)
+        ? [...new Set(body.workIds.filter(id => typeof id === 'string' && id))]
+        : []
+      if (!workIds.length) return json(res, 400, { error: tr('没有选作品') })
+      if (workIds.length > 6) return json(res, 400, { error: tr('一次最多学习 6 篇作品') })
+      const state = await store.read()
+      const works = workIds.map(id => workOfId(state, id)).filter(Boolean)
+      if (works.length !== workIds.length) return json(res, 404, { error: tr('作品不存在') })
+      if (works.some(work => !workHasText(work))) return json(res, 400, { error: tr('所选作品还没有正文') })
+      // sessionQuery 是宿主注入的可选能力:拿不到就只用发布稿,并在 missing 里告诉用户。
+      const sessionQuery = typeof ctx.get === 'function' ? ctx.get('sessionQuery') : undefined
+      const readings = {}
+      for (const work of works) {
+        const sessionIds = [...new Set((Array.isArray(work.sessionIds) ? work.sessionIds : []).filter(id => typeof id === 'string' && id))].slice(0, 8)
+        if (!sessionIds.length) {
+          readings[work.id] = { error: tr('没有登记创作会话') }
+          continue
+        }
+        if (typeof sessionQuery?.readSession !== 'function') {
+          readings[work.id] = { error: tr('宿主没有提供会话读取能力') }
+          continue
+        }
+        const messages = []
+        for (const sessionId of sessionIds) {
+          try {
+            const snapshot = await sessionQuery.readSession(sessionId)
+            messages.push(...messagesFromEvents(snapshot?.events))
+          } catch {
+            // 单个会话读不到不致命:其余会话继续读,最后按有无文字记 missing。
+          }
+        }
+        readings[work.id] = { messages, error: messages.length ? '' : tr('创作会话里没有可读的文字') }
+      }
+      return json(res, 200, buildStylePrompt(state, works, readings, { name: typeof body.name === 'string' ? body.name : '' }))
     }
     default: return json(res, 404, { error: tr('接口不存在') })
   }
@@ -445,7 +553,15 @@ export default {
   // 投递箱轮询(ADR 0009):桥写进 inbox 的采集件不必等用户刷新页面,3 秒内自动上墙。
   // unref:定时器不挡进程退出,宿主关掉时它不叫住;清理仍走 effect disposer。
   ctx.effect(() => {
-    const timer = setInterval(() => digestBridge(store), 3000)
+    let lastBeat = 0
+    const timer = setInterval(() => {
+      digestBridge(store)
+      // 心跳(ADR 0012):helper 靠它判活,10s 一拍足够,不必跟 3s 消化节奏走
+      if (Date.now() - lastBeat >= 10_000) {
+        lastBeat = Date.now()
+        touchHeartbeat().catch(() => {})
+      }
+    }, 3000)
     timer.unref?.()
     return () => clearInterval(timer)
   }, 'dsh-writing-desk: bridge digest timer')

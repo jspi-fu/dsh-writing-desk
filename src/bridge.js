@@ -10,7 +10,7 @@
 // 扩展采集的网页内容回传后,这里仍按不可信输入对待:URL 只放行 http(s)、字段限长、
 // data URI 封面落成 files/ 素材后才能进 media。
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { applyOps } from './ops.js'
 import { readPairing } from './pairing.js'
@@ -50,6 +50,7 @@ export function bridgePaths() {
     outbox: join(root, 'outbox'),
     receipts: join(root, 'receipts'),
     catalog: join(root, 'catalog.json'),
+    heartbeat: join(root, 'heartbeat'),
   }
 }
 
@@ -57,6 +58,22 @@ export async function ensureBridgeDirs() {
   const paths = bridgePaths()
   for (const dir of [paths.root, paths.inbox, paths.outbox, paths.receipts]) {
     await mkdir(dir, { recursive: true })
+  }
+  return paths
+}
+
+/**
+ * 宿主心跳:helper 的 dshActive 靠它判断宿主是否在跑。catalog.json 只在标签/URL
+ * 结构变化时才写(writeCatalog 的省盘策略),安静的书桌会让 mtime 停在最后一次
+ * 变化,在跑的宿主被误报成「没在运行」;心跳只承担活性,低频 touch 即可。
+ */
+export async function touchHeartbeat() {
+  const paths = await ensureBridgeDirs()
+  const now = new Date()
+  try {
+    await utimes(paths.heartbeat, now, now)
+  } catch {
+    await writeFile(paths.heartbeat, '')
   }
   return paths
 }
@@ -281,8 +298,9 @@ export async function digestInbox(store, filesDir) {
 }
 
 /**
- * 消化发布回执:dispatch-*.json 里的逐平台结果落成 item.dispatches。
- * dispatches 只记录「投递到了哪、草稿链接是什么」,绝不改 status(已发布仍由用户确认)。
+ * 消化发布回执:dispatch-*.json 里的逐平台结果落成作品的 publication.dispatches(ADR 0013)。
+ * 回执里的 itemId 字段沿用桥协议旧名,值是作品 id;dispatches 只记录「投递到了哪、草稿链接是什么」,
+ * 成功回执最多把状态推到「已投递」,绝不写已发布(已发布仍由用户确认)。
  * @param {object} store - 工作台 Store。
  */
 export async function digestReceipts(store) {
@@ -315,7 +333,7 @@ export async function digestReceipts(store) {
           } catch { safeUrl = null }
         }
         ops.push({
-          op: 'record_dispatch',
+          op: 'record_work_dispatch',
           id: payload.itemId,
           dispatch: {
             platform: row.platform,
@@ -347,8 +365,8 @@ export async function digestReceipts(store) {
 }
 
 /**
- * 写一份发布任务到 outbox,给桥监听下发。
- * @param {object} task - {itemId, title, articleMd, images, platforms}。
+ * 写一份发布任务到 outbox,给桥监听下发。itemId 沿用桥协议旧名,值是作品 id(扩展侧不用改)。
+ * @param {object} task - {itemId(作品 id), title, articleMd, images, platforms}。
  * @returns {Promise<{operationId: string, file: string}>}
  */
 export async function writePublishTask(task) {

@@ -165,28 +165,31 @@ window.addEventListener('message', (event) => {
       closeSyncDialog()
     } else if (data.type === 'START_SYNC') {
       const syncId = data.syncId
-      chrome.runtime.sendMessage({
-        type: 'SYNC_ARTICLE',
-        payload: {
-          article: data.article,
-          platforms: data.platforms,
-          source: 'weixin-editor',
-          syncId,
-        },
-      }).then(response => {
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'SYNC_COMPLETE',
-          results: response.results,
-          rateLimitWarning: response.rateLimitWarning,
-          syncId,
-        }), '*')
-      }).catch(error => {
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'SYNC_ERROR',
-          error: (error as Error).message,
-          syncId,
-        }), '*')
-      })
+      ;(async () => {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'SYNC_ARTICLE',
+            payload: {
+              article: data.article,
+              platforms: data.platforms,
+              source: 'weixin-editor',
+              syncId,
+            },
+          })
+          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
+            type: 'SYNC_COMPLETE',
+            results: response.results,
+            rateLimitWarning: response.rateLimitWarning,
+            syncId,
+          }), '*')
+        } catch (error) {
+          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
+            type: 'SYNC_ERROR',
+            error: (error as Error).message,
+            syncId,
+          }), '*')
+        }
+      })()
     }
   } catch { /* ignore */ }
 })
@@ -214,11 +217,13 @@ chrome.runtime.onMessage.addListener((message) => {
 // Respond to popup's article extraction and panel expansion
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'EXTRACT_ARTICLE' && isEditorPage()) {
-    extractArticle().then(article => {
-      sendResponse({ article })
-    }).catch(() => {
-      sendResponse({ article: null })
-    })
+    ;(async () => {
+      try {
+        sendResponse({ article: await extractArticle() })
+      } catch {
+        sendResponse({ article: null })
+      }
+    })()
     return true
   }
   if (message.type === 'EXPAND_SYNC_PANEL') {

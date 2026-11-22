@@ -22,13 +22,14 @@ extension/
   LICENSE
   packages/core/            # @wechatsync/core
   packages/extension/       # @wechatsync/extension
-  packages/cli/             # @wechatsync/cli;src/bridge/ 为本地服务桥
 ```
 
-- 上游 `packages/mcp-server/` 已移除（2026-11-19）；其 `ExtensionBridge` / 消息类型并入 `packages/cli/src/bridge/`，接入面只保留 CLI + skill。
-- 三个包的 `src/`、构建配置、`package.json`、`manifest.json`、`public/`、`assets/`、`test/`、`__tests__/` 均按上游原样复制，作为 vendoring 基线。
+- 上游 `packages/mcp-server/` 与 `packages/cli/` 均已移除（mcp-server 2026-11-19 并入当时的 CLI，CLI 2026-11-20 随 ADR 0012 整体退役，见文末）。
+- 两个包的 `src/`、构建配置、`package.json`、`manifest.json`、`assets/`、`__tests__/` 均按上游原样复制，作为 vendoring 基线。
+- 上游遗留物已删除（2026-11-22）：`packages/extension/test/test-sdk.html`（CDN + 内联脚本的旧测试页）、`ROADMAP.md`（上游路线图，「直接发布」条目与本项目「只到草稿箱」红线冲突）、`packages/extension/public/lib/`（reader 库重复副本，与 `src/lib/reader/` 字节一致，已收敛为单一份额并改由构建脚本从 `src/lib/reader/` 复制）。
 - 源文件头与版权声明保持原样；vendoring 阶段未修改 upstream 源码。
-- vendoring 阶段的唯一改动是根 `package.json` 的脚本与 `packageManager` 字段（yarn → pnpm）。之后的 DSwritesync 修改（品牌、侧栏、采集协议、CLI `serve`、i18n、清理）见 `NOTICE` 与 ADR 0010，均按 GPL-3.0 发布。
+- vendoring 阶段的唯一改动是根 `package.json` 的脚本与 `packageManager` 字段（yarn → pnpm）。之后的 DSwritesync 修改（品牌、侧栏、采集协议、i18n、清理）见 `NOTICE` 与 ADR 0010，均按 GPL-3.0 发布。
+- `tsc` 已改为纯类型检查（tsconfig `noEmit`），不再把 `.js/.d.ts` 编译产物吐进 `src/`（上游遗留行为）；core 不再使用 tsup 构建（其产物从未被消费，包以 TS 源码形态被 extension 引用）。
 
 ## 复制时的排除项
 
@@ -39,7 +40,7 @@ extension/
 - 根目录及包内的 `README.md`、`CHANGELOG.md`、`CONTRIBUTING.md`（本项目后续自行撰写文档）
 - 上游 `docs/` 与 `yarn.lock`（非构建必需）
 
-## 私有 submodule（未包含）
+## 私有 submodule（未检出）
 
 上游 `.gitmodules` 声明了私有适配器 submodule：
 
@@ -50,8 +51,8 @@ extension/
 ```
 
 - 本次复制时该 submodule 未检出，目录为空（gitlink `ec378eab262778ff5053d0ddf87451b7b821e516`）。
-- 私有适配器（含小红书 `xiaohongshu`）属于闭源内容，不随 GPL 源码分发；当前基座不包含对应平台适配器。
-- 若后续需要小红书等平台，必须另行获得私有仓库访问权，不能从公开源码补齐。
+- 上游的私有闭源适配器仍未包含，也不能从公开源码补齐。
+- 但小红书平台在 ADR 0010 修订（2026-11-19）中以**页面自动化**方式自研落地：`packages/core/src/adapters/platforms/private/xiaohongshu.ts` 是本仓库原创实现（随 GPL-3.0 源码分发），不是上游私有代码，也没有 submodule。
 
 ## 为什么保留 `@wechatsync/*` 包名
 

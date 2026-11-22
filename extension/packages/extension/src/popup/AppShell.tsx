@@ -25,14 +25,17 @@ function useConnectionState(): ConnectionState {
     // 面板打开期间开 NM 长端口(ADR 0012):投递与收进回执近实时,离开时归还
     chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_START' }).catch(() => {})
     let mounted = true
-    const poll = () => {
-      chrome.runtime.sendMessage({ type: 'BRIDGE_STATUS' }).then(response => {
+    const poll = async () => {
+      try {
+        const response = await chrome.runtime.sendMessage({ type: 'BRIDGE_STATUS' })
         if (!mounted || !response || response.error) return
         setState(response.connected ? 'on' : response.paired ? 'waiting' : 'off')
-      }).catch(() => {})
+      } catch {
+        // 桥状态轮询失败不打断面板
+      }
     }
-    poll()
-    const timer = setInterval(poll, 5000)
+    void poll()
+    const timer = setInterval(() => void poll(), 5000)
     return () => {
       mounted = false
       clearInterval(timer)
@@ -46,17 +49,18 @@ function useConnectionState(): ConnectionState {
 function ConnectionStatus() {
   const { t } = useI18n()
   const state = useConnectionState()
+  // 词汇与设置页同一组:未配对 / 连接中 / 已连接,同一时刻全应用只有一个说法
   const label = state === 'unknown'
     ? t('检查中')
     : state === 'on'
       ? t('已连接')
       : state === 'waiting'
         ? t('连接中')
-        : t('未连接')
+        : t('未配对')
   const dot = state === 'on'
-    ? 'bg-emerald-500'
+    ? 'bg-status-published'
     : state === 'waiting'
-      ? 'bg-amber-500'
+      ? 'bg-status-outline'
       : 'bg-muted-foreground/40'
 
   return (
@@ -64,7 +68,7 @@ function ConnectionStatus() {
       className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
       title={t('DSwritesync 本地助手连接状态')}
     >
-      <span className={cn('h-1.5 w-1.5 rounded-full', dot)} />
+      <span className={cn('h-2 w-2 rounded-full', dot)} />
       {label}
     </span>
   )
@@ -90,13 +94,18 @@ export function AppShell() {
   // The FAB asks the service worker to open /sync; a freshly opened panel may
   // read the route from storage, an already-open one gets the message.
   useEffect(() => {
-    chrome.storage.local.get('panelRoute').then(result => {
-      const route = result.panelRoute
-      if (typeof route === 'string' && route.startsWith('/')) {
-        chrome.storage.local.remove('panelRoute')
-        navigate(route, { replace: true })
+    ;(async () => {
+      try {
+        const result = await chrome.storage.local.get('panelRoute')
+        const route = result.panelRoute
+        if (typeof route === 'string' && route.startsWith('/')) {
+          chrome.storage.local.remove('panelRoute')
+          navigate(route, { replace: true })
+        }
+      } catch {
+        // 路由恢复失败不影响面板默认页
       }
-    }).catch(() => {})
+    })()
 
     const listener = (message: { type?: string; path?: string }) => {
       if (message?.type === 'PANEL_NAVIGATE' && typeof message.path === 'string') {
@@ -110,36 +119,16 @@ export function AppShell() {
 
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
-      <header className="flex flex-none items-center gap-2 border-b border-border/70 px-4 py-3">
-        <img src="/assets/icon-48.png" alt="" className="h-6 w-6 rounded-md" />
-        <h1 className="text-[15px] font-semibold tracking-tight">DSwritesync</h1>
-        <div className="ml-auto flex items-center gap-1.5">
-          <ConnectionStatus />
-          <button
-            onClick={() => navigate('/settings')}
-            aria-label={t('设置')}
-            title={t('设置')}
-            className={cn(
-              'flex h-8 w-8 items-center justify-center rounded-full transition-colors',
-              settingsActive
-                ? 'bg-muted text-foreground'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-            )}
-          >
-            <Settings className="h-4 w-4" />
-          </button>
-        </div>
-      </header>
-
-      <nav className="flex-none px-4 pb-3 pt-2.5">
-        <div className="flex rounded-xl bg-muted p-0.5">
+      {/* 浏览器侧栏标题栏已有品牌,页内不再重复:一行放下切换栏 + 连接状态 + 设置 */}
+      <header className="flex flex-none items-center gap-2 border-b border-border/70 px-3 py-2.5">
+        <nav className="flex min-w-0 flex-1 rounded-xl bg-muted p-0.5">
           {tabs.map(tab => (
             <NavLink
               key={tab.path}
               to={tab.path}
               end={tab.path === '/'}
               className={({ isActive }) => cn(
-                'flex h-8 flex-1 items-center justify-center rounded-[11px] text-[13px] font-medium transition-colors',
+                'flex h-8 min-w-0 flex-1 items-center justify-center rounded-[11px] px-1 text-[13px] font-medium transition-colors',
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
@@ -148,8 +137,22 @@ export function AppShell() {
               {tab.label}
             </NavLink>
           ))}
-        </div>
-      </nav>
+        </nav>
+        <ConnectionStatus />
+        <button
+          onClick={() => navigate('/settings')}
+          aria-label={t('设置')}
+          title={t('设置')}
+          className={cn(
+            'flex h-8 w-8 flex-none items-center justify-center rounded-full transition-colors',
+            settingsActive
+              ? 'bg-muted text-foreground'
+              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+          )}
+        >
+          <Settings className="h-4 w-4" strokeWidth={1.6} />
+        </button>
+      </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
         <Routes>

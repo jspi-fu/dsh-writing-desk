@@ -1,15 +1,11 @@
 /**
  * 统一的悬浮同步按钮 (FAB)
+ *
+ * 书桌语言:墨黑胶囊 + 单 path 描边图标,无装饰动效;文案只有一份,
+ * label 与 title 同文,原生 tooltip 即提示。
  */
 
 import { onLanguageChange, t } from './i18n'
-
-const PULSE_KEYFRAMES = `
-  @keyframes wcs-pulse {
-    0%, 100% { box-shadow: 0 4px 12px rgba(7,193,96,0.35); }
-    50% { box-shadow: 0 4px 20px rgba(7,193,96,0.6), 0 0 0 8px rgba(7,193,96,0.1); }
-  }
-`
 
 export interface FabOptions {
   onClick: () => void
@@ -17,15 +13,20 @@ export interface FabOptions {
   bottom?: string
 }
 
-/**
- * 创建悬浮同步按钮，带 pulse 动画 + tooltip
- */
+/** 单 path 同步图标:两端弧+箭头,1.6 描边,跟随 currentColor。 */
+const SYNC_ICON = `
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/>
+  </svg>
+`
+
 export function createSyncFab(options: FabOptions): HTMLElement {
   const { onClick, bottom = '88px' } = options
 
   const btn = document.createElement('div')
   btn.id = 'wechatsync-fab'
-  btn.title = t('同步文章')
+  btn.setAttribute('role', 'button')
   btn.style.cssText = `
     position: fixed !important;
     right: 24px !important;
@@ -33,61 +34,33 @@ export function createSyncFab(options: FabOptions): HTMLElement {
     height: 40px !important;
     padding: 0 16px !important;
     border-radius: 20px !important;
-    background: linear-gradient(135deg, #07c160 0%, #06ad56 100%) !important;
-    box-shadow: 0 4px 12px rgba(7, 193, 96, 0.35) !important;
+    background: #17181c !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18) !important;
     cursor: pointer !important;
     z-index: 2147483646 !important;
     display: flex !important;
     align-items: center !important;
-    gap: 6px !important;
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s !important;
+    gap: 7px !important;
+    transition: transform 0.15s ease-out, opacity 0.15s ease-out !important;
     user-select: none !important;
-    color: white !important;
-    font-size: 14px !important;
+    color: #ffffff !important;
+    font-size: 13px !important;
     font-weight: 500 !important;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif !important;
     border: none !important;
   `
   btn.innerHTML = `
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="white">
-      <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-    </svg>
-    <span data-wcs-fab-label style="color:white;font-size:14px;font-weight:500;">${t('同步')}</span>
+    ${SYNC_ICON}
+    <span data-wcs-fab-label style="color:inherit;font-size:13px;font-weight:500;">${t('同步文章')}</span>
   `
+  btn.title = t('同步文章')
 
-  // pulse 动画样式
-  const style = document.createElement('style')
-  style.textContent = PULSE_KEYFRAMES
-  document.head.appendChild(style)
-  btn.style.animation = 'wcs-pulse 1.2s ease-in-out 3'
-
-  // tooltip
-  const tooltip = document.createElement('div')
-  tooltip.textContent = t('点击同步文章到多平台')
-  tooltip.style.cssText = `
-    position: absolute !important;
-    right: 100% !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    margin-right: 10px !important;
-    padding: 6px 12px !important;
-    background: rgba(0,0,0,0.75) !important;
-    color: white !important;
-    font-size: 12px !important;
-    border-radius: 6px !important;
-    white-space: nowrap !important;
-    pointer-events: none !important;
-    opacity: 0 !important;
-    transition: opacity 0.2s !important;
-  `
-  btn.appendChild(tooltip)
-
-  // 内容脚本不重载，语言切换后直接换掉已有 FAB 的 title / tooltip 文案
+  // 内容脚本不重载,语言切换后直接换掉已有 FAB 的文案
   const label = btn.querySelector<HTMLElement>('[data-wcs-fab-label]')
   const applyLanguage = () => {
-    btn.title = t('同步文章')
-    tooltip.textContent = t('点击同步文章到多平台')
-    if (label) label.textContent = t('同步')
+    const text = t('同步文章')
+    btn.title = text
+    if (label) label.textContent = text
   }
   const unsubscribe = onLanguageChange(() => {
     if (!btn.isConnected) {
@@ -98,14 +71,10 @@ export function createSyncFab(options: FabOptions): HTMLElement {
   })
 
   btn.addEventListener('mouseenter', () => {
-    btn.style.transform = 'scale(1.05)'
-    btn.style.boxShadow = '0 6px 20px rgba(7, 193, 96, 0.45)'
-    tooltip.style.opacity = '1'
+    btn.style.opacity = '0.88'
   })
   btn.addEventListener('mouseleave', () => {
-    btn.style.transform = 'scale(1)'
-    btn.style.boxShadow = '0 4px 12px rgba(7, 193, 96, 0.35)'
-    tooltip.style.opacity = '0'
+    btn.style.opacity = '1'
   })
   btn.addEventListener('click', onClick)
 

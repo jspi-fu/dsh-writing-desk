@@ -1,11 +1,15 @@
 /**
- * NM 客户端单测(缝 3,ADR 0012):mock chrome.runtime(sendNativeMessage /
+ * NM 客户端单测(ADR 0012):mock chrome.runtime(sendNativeMessage /
  * connectNative)与 sync-service,覆盖任务分片拉取组装、单分片失败重试、
  * 长端口事件分发、未配对路径。
+ *
+ * 拆深模块后不再戳单例私有字段(旧 resetClientState 正是"测试面不是接口"的
+ * 实证):每个用例通过注入假 NM host 构造全新 BridgeClient 组合——chrome NM
+ * 与假件两个适配器构成真缝,状态隔离由新实例天然保证。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 // 静态导入让 vi.mock 在模块图装载前生效
-import { bridgeClient } from '../src/bridge/client'
+import { BridgeClient } from '../src/bridge/client'
 import { performSync } from '../src/background/sync-service'
 
 // chrome 全局由 vitest.setup.ts 挂好,这里只取引用(vitest.setup 不能当模块 import:
@@ -39,6 +43,19 @@ function makePort() {
     die: undefined,
   }
   return port
+}
+
+// 假 NM host:消息面仍走 chromeMock.runtime(便于按帧断言),lastError 沿用
+// chrome"回调存续期"约定就地读取
+function makeBridge(): BridgeClient {
+  return new BridgeClient({
+    host: {
+      sendNativeMessage: (hostName, message, callback) =>
+        chromeMock.runtime.sendNativeMessage(hostName, message, callback),
+      connectNative: (hostName: string) => chromeMock.runtime.connectNative(hostName),
+      lastError: () => chromeMock.runtime.lastError?.message,
+    },
+  })
 }
 
 // tasks → claim → content(正文 + 图片)→ receipt 全链路模拟
@@ -101,22 +118,10 @@ function install(handler: NativeHandler) {
   })
 }
 
-function resetClientState() {
-  const client = bridgeClient as any
-  client.watchers = 0
-  client.processing = false
-  client.port = null
-  client.portRetryTimer = null
-  client.lastError = null
-  client.statusCache = null
-  client.lastDshActive = false
-}
-
 beforeEach(() => {
   vi.clearAllMocks()
   lastReceipt = null
   activePort = null
-  resetClientState()
   sendNativeMessage.mockReset()
   chromeMock.runtime.sendNativeMessage = sendNativeMessage
   chromeMock.runtime.connectNative = vi.fn(() => {
@@ -138,7 +143,7 @@ beforeEach(() => {
 describe('NM client:任务下发', () => {
   it('tasks → claim → 分片拉取组装 → performSync → receipt,正文与图片完整还原', async () => {
     install(createResponder())
-    await bridgeClient.processPendingTasks()
+    await makeBridge().processPendingTasks()
 
     expect(lastReceipt).not.toBeNull()
     expect(lastReceipt.operationId).toBe('pub-1')
@@ -169,7 +174,7 @@ describe('NM client:任务下发', () => {
       }
       responder(request, callback)
     })
-    await bridgeClient.processPendingTasks()
+    await makeBridge().processPendingTasks()
     expect(failedOnce).toBe(true)
     expect(lastReceipt).not.toBeNull()
   })
@@ -177,21 +182,23 @@ describe('NM client:任务下发', () => {
 
 describe('NM client:长端口', () => {
   it('watch 引用计数:首次打开连接端口并发 connect 握手,归零断开', () => {
-    bridgeClient.setActivelyWatched(true)
+    const client = makeBridge()
+    client.setActivelyWatched(true)
     expect(chromeMock.runtime.connectNative).toHaveBeenCalledWith('app.dswritesync.plugin')
     // 助手只在 connect 握手后才进入长端口模式(推事件帧)
     expect(activePort.postMessage).toHaveBeenCalledWith({ method: 'connect' })
-    bridgeClient.setActivelyWatched(true)
+    client.setActivelyWatched(true)
     expect(chromeMock.runtime.connectNative).toHaveBeenCalledTimes(1)
-    bridgeClient.setActivelyWatched(false)
-    bridgeClient.setActivelyWatched(false)
+    client.setActivelyWatched(false)
+    client.setActivelyWatched(false)
     expect(activePort.disconnect).toHaveBeenCalledTimes(1)
-    expect(bridgeClient.isConnected()).toBe(false)
+    expect(client.isConnected()).toBe(false)
   })
 
   it('task-available 事件触发任务拉取,capture-result 转发为运行时消息', async () => {
     install(createResponder())
-    bridgeClient.setActivelyWatched(true)
+    const client = makeBridge()
+    client.setActivelyWatched(true)
     expect(typeof activePort.emit).toBe('function')
 
     activePort.emit({ event: 'task-available' })
@@ -208,8 +215,8 @@ describe('NM client:长端口', () => {
     // 面板还开着时断连:5 秒后自动重连(这里只断言清理与状态)
     activePort.die()
     await new Promise(resolve => setTimeout(resolve, 0))
-    expect(bridgeClient.isConnected()).toBe(false)
-    bridgeClient.setActivelyWatched(false)
+    expect(client.isConnected()).toBe(false)
+    client.setActivelyWatched(false)
   })
 })
 
@@ -220,11 +227,12 @@ describe('NM client:未配对路径', () => {
       callback(undefined)
       chromeMock.runtime.lastError = undefined
     })
-    const status = await bridgeClient.getStatus()
+    const client = makeBridge()
+    const status = await client.getStatus()
     expect(status.paired).toBe(false)
     expect(status.lastError).toContain('未配对')
 
-    await expect(bridgeClient.saveCapture({
+    await expect(client.saveCapture({
       url: 'https://example.com/a', title: 't', body: 'b',
     })).rejects.toThrow(/未配对/)
   })
@@ -233,7 +241,7 @@ describe('NM client:未配对路径', () => {
     install((_request, callback) => {
       callback({ ok: false, error: 'Node.js not found in PATH. Install Node.js, then restart DSH and reload the extension.' })
     })
-    const status = await bridgeClient.getStatus()
+    const status = await makeBridge().getStatus()
     expect(status.paired).toBe(false)
     expect(status.lastError).toContain('Node.js not found')
   })
@@ -245,7 +253,7 @@ describe('NM client:未配对路径', () => {
       }
       callback({ ok: false, error: `unexpected method ${request.method}` })
     })
-    const result = await bridgeClient.saveCapture({ url: 'https://example.com/a', title: 't', body: 'b' })
+    const result = await makeBridge().saveCapture({ url: 'https://example.com/a', title: 't', body: 'b' })
     expect(result.ok).toBe(true)
     expect(result.queued).toBe(true)
     expect(result.dshActive).toBe(false)
@@ -260,7 +268,7 @@ describe('NM client:目录', () => {
       }
       callback({ ok: false, error: 'unexpected' })
     })
-    const catalog = await bridgeClient.getCatalog()
+    const catalog = await makeBridge().getCatalog()
     expect(catalog.tags).toEqual(['参考'])
     expect(catalog.urls).toEqual({ 'https://a': 'it_a' })
   })

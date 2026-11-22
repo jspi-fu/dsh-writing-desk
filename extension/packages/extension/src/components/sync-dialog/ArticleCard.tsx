@@ -1,28 +1,37 @@
 import { Check, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useI18n } from '@/popup/LocaleProvider'
+import { EmptyState } from '@/popup/components/EmptyState'
 import type { Article } from './types'
 
 interface ArticleCardProps {
   article: Article | null
+  /** 文章提取是异步的:loading 时渲染骨架,而不是把「未检测到」的假空态说出去 */
+  loading?: boolean
   compact?: boolean
 }
 
-export function ArticleCard({ article, compact }: ArticleCardProps) {
+export function ArticleCard({ article, loading, compact }: ArticleCardProps) {
   const { t } = useI18n()
+
+  if (loading) {
+    return (
+      <div className="rounded-lg p-3 bg-muted/50 border border-border/60" aria-busy="true">
+        <div className="flex gap-3 animate-pulse">
+          <div className="w-16 h-16 rounded bg-muted flex-shrink-0" />
+          <div className="flex-1 space-y-2 py-1">
+            <div className="h-3.5 w-3/4 rounded bg-muted" />
+            <div className="h-3 w-1/2 rounded bg-muted" />
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   if (!article) {
     return (
-      <div className="rounded-lg p-3 bg-muted/50">
-        <div className="py-3 space-y-2">
-          <div className="flex items-center justify-center text-muted-foreground">
-            <FileText className="w-5 h-5 mr-2" />
-            <span className="text-sm">{t('当前页面未检测到文章')}</span>
-          </div>
-          <p className="text-xs text-muted-foreground text-center">
-            {t('请在文章页面使用')}
-          </p>
-        </div>
+      <div className="rounded-lg p-4 bg-muted/50">
+        <EmptyState icon={FileText} message={t('当前页面未检测到文章,请在文章页面使用')} className="py-2" />
       </div>
     )
   }
@@ -39,7 +48,7 @@ export function ArticleCard({ article, compact }: ArticleCardProps) {
             />
           )}
           <div className="flex-1 min-w-0">
-            <h2 className="font-medium text-sm line-clamp-2">{article.title}</h2>
+            <h2 className="font-article-serif font-medium text-sm line-clamp-2">{article.title}</h2>
           </div>
         </div>
       </div>
@@ -47,10 +56,10 @@ export function ArticleCard({ article, compact }: ArticleCardProps) {
   }
 
   return (
-    <div className="rounded-lg p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-900">
+    <div className="rounded-lg p-3 bg-status-published/10 border border-status-published/30">
       <div className="flex items-center gap-1.5 mb-2">
-        <Check className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-        <span className="text-xs font-medium text-green-700 dark:text-green-400">
+        <Check className="w-3.5 h-3.5 text-status-published" strokeWidth={1.6} />
+        <span className="text-xs font-medium text-status-published">
           {t('已识别文章，选择平台后同步')}
         </span>
       </div>
@@ -63,7 +72,7 @@ export function ArticleCard({ article, compact }: ArticleCardProps) {
           />
         )}
         <div className="flex-1 min-w-0">
-          <h2 className="font-medium text-sm line-clamp-2">{article.title}</h2>
+          <h2 className="font-article-serif font-medium text-sm line-clamp-2">{article.title}</h2>
           {article.summary && (
             <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
               {article.summary}

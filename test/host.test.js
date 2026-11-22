@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -220,6 +221,10 @@ test('saveProduction 写出文章、封面和配图，标题里的路径字符�
     // 再存一次写回同一个文件夹
     p.savedPath = saved.path
     assert.equal((await saveProduction({ ...p, title: '改名了' }, { filesDir, exportDir: join(dir, 'out') })).path, saved.path)
+    // 用户在系统选择器里另选了文件夹:显式 target 优先于 savedPath
+    const picked = join(dir, 'picked')
+    assert.equal((await saveProduction(p, { filesDir, exportDir: join(dir, 'out'), target: picked })).path, picked)
+    assert.ok(existsSync(join(picked, '文章.md')))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -305,18 +310,26 @@ test('harvestText 抽出正文，去掉脚本和导航', async () => {
   await assert.rejects(harvestText('http://127.0.0.1/x'), /本机|内网/)
 })
 
-test('排期：排上日历就是待发布，取消排期退回草稿，已发布不动', () => {
+test('排期：排上日历是大纲/待发布，取消排期退回灵感/草稿，已发布不再挂在素材上', () => {
   const state = seed()
-  const [ideaR, doneR] = applyOps(state, [{ op: 'add_item', title: '只有灵感' }, { op: 'add_item', title: '已成稿' }]).receipts
+  const [ideaR, doneR] = applyOps(state, [{ op: 'add_item', title: '只有灵感' }, { op: 'add_item', title: '写成作品的' }]).receipts
   const done = state.items.find(row => row.id === doneR.target)
-  done.production = { status: 'done', title: '已成稿', article: '正文' }
+  // 作品承载正文(ADR 0013):素材本身没有成稿字段
+  const work = applyOps(state, [{ op: 'create_work', itemIds: [doneR.target] }]).receipts[0]
+  state.works[0].current = { title: '写成作品的', article: '正文', rev: 1 }
   applyOps(state, [{ op: 'schedule_item', id: ideaR.target, scheduledAt: '2026-12-01T12:00:00Z' }, { op: 'schedule_item', id: doneR.target, scheduledAt: '2026-12-01T12:00:00Z' }])
   assert.equal(state.items.find(row => row.id === ideaR.target).status, 'outline')
-  assert.equal(done.status, 'ready')
+  // 已排期的素材状态由用户与排期决定,不再由成稿产物推出来
+  assert.equal(done.status, 'outline')
+  applyOps(state, [{ op: 'set_status', id: doneR.target, status: 'draft' }])
+  assert.equal(done.status, 'ready', '已排期的草稿自愈成待发布')
   applyOps(state, [{ op: 'schedule_item', id: doneR.target, scheduledAt: null }])
   assert.equal(done.status, 'draft')
-  applyOps(state, [{ op: 'update_item', id: doneR.target, status: 'published' }, { op: 'schedule_item', id: doneR.target, scheduledAt: null }])
-  assert.equal(done.status, 'published')
+  // 「已发布」不是素材阶段:写进去自愈回草稿,发布只落在作品上
+  applyOps(state, [{ op: 'update_item', id: doneR.target, status: 'published' }])
+  assert.equal(done.status, 'draft')
+  assert.equal(done.publishedAt, undefined)
+  assert.equal(work.target, state.works[0].id)
   const [media] = applyOps(state, [{ op: 'add_item', kind: 'image', media: { src: 'writing-desk/files/x.png' } }]).receipts
   assert.match(state.items.find(row => row.id === media.target).title, /的图片$/)
 })
@@ -331,25 +344,25 @@ test('撤销只撤回那一步：之后生成的成稿和画好的图不受影�
     const id = state.items[0].id
     // 1. 切换风格（可撤销）
     await store.mutate('切换风格', (draft) => { draft.activeStyleId = 'preset_travel' })
-    // 2. 之后生成了成稿（不可撤销的后台写入）
-    await store.mutate('成稿', (draft) => { draft.items[0].production = { status: 'done', title: '原标题', shots: [{ no: 1, prompt: 'a', status: 'done', src: 'old.png' }] } }, { undoable: false })
+    // 2. 之后开始成稿（不可撤销的后台写入）
+    await store.mutate('成稿', (draft) => { draft.works = [{ id: 'w_1', sourceItemIds: [id], current: { title: '原标题', images: [{ no: 1, prompt: 'a', status: 'done', src: 'old.png' }], rev: 0 }, publication: { status: 'draft' } }] }, { undoable: false })
     // 3. 对话改了标题和第 1 镜的画面（可撤销）
-    await store.mutate('对话', (draft) => { const p = draft.items[0].production; p.title = '新标题'; p.shots[0].prompt = 'b'; p.shots[0].status = 'running' })
+    await store.mutate('对话', (draft) => { const p = draft.works[0].current; p.title = '新标题'; p.images[0].prompt = 'b'; p.images[0].status = 'running' })
     // 4. 第 1 镜重画完成（不可撤销）
-    await store.mutate('成稿', (draft) => { const shot = draft.items[0].production.shots[0]; shot.status = 'done'; shot.src = 'new.png' }, { undoable: false })
+    await store.mutate('成稿', (draft) => { const pic = draft.works[0].current.images[0]; pic.status = 'done'; pic.src = 'new.png' }, { undoable: false })
 
     assert.equal(await store.undoLast(), '对话')
-    let p = (await store.read()).items.find(row => row.id === id).production
+    let p = (await store.read()).works[0].current
     assert.equal(p.title, '原标题')
-    assert.equal(p.shots[0].prompt, 'a')
-    assert.equal(p.shots[0].src, 'new.png')
-    assert.equal(p.shots[0].status, 'done')
+    assert.equal(p.images[0].prompt, 'a')
+    assert.equal(p.images[0].src, 'new.png')
+    assert.equal(p.images[0].status, 'done')
 
     assert.equal(await store.undoLast(), '切换风格')
     const after = await store.read()
     assert.equal(after.activeStyleId, null)
-    p = after.items.find(row => row.id === id).production
-    assert.equal(p.status, 'done', '撤销切换风格不能抹掉成稿')
+    p = after.works[0].current
+    assert.equal(p.title, '原标题', '撤销切换风格不能抹掉作品')
 
     // 什么都没改的操作不进撤销栈
     await store.mutate('空操作', () => {})
@@ -371,7 +384,7 @@ test('撤销只撤回那一步：之后生成的成稿和画好的图不受影�
   }
 })
 
-test('状态规则：发布时间、排期与取消排期、清空示例不留悬空数据', () => {
+test('状态规则：发布时间只属于作品、排期与取消排期、清空示例不留悬空数据', () => {
   const state = seed()
   const [r] = applyOps(state, [{ op: 'add_item', title: '只有灵感' }]).receipts
   const item = state.items.find(row => row.id === r.target)
@@ -379,10 +392,17 @@ test('状态规则：发布时间、排期与取消排期、清空示例不留�
   assert.equal(item.status, 'outline')
   applyOps(state, [{ op: 'schedule_item', id: item.id, scheduledAt: null }])
   assert.equal(item.status, 'idea', '没成稿的灵感取消排期回到灵感')
+  // 素材不再承载发布状态:写 published 自愈回草稿,也不会记发布时间(见 ADR 0013)
   applyOps(state, [{ op: 'update_item', id: item.id, status: 'published' }])
-  assert.ok(item.publishedAt, '用 update_item 发布也要记发布时间')
-  applyOps(state, [{ op: 'set_status', id: item.id, status: 'draft' }])
-  assert.equal(item.publishedAt, undefined, '离开已发布要清掉发布时间')
+  assert.equal(item.status, 'draft')
+  assert.equal(item.publishedAt, undefined, '素材上没有发布时间')
+  // 发布时间落在作品的发布稿上
+  const [work] = applyOps(state, [{ op: 'create_work', itemIds: [item.id] }]).receipts
+  applyOps(state, [{ op: 'update_work', id: work.target, rev: 0, title: '标题', article: '正文' }])
+  applyOps(state, [{ op: 'publish_work', id: work.target }])
+  const row = state.works.find(workRow => workRow.id === work.target)
+  assert.equal(row.publication.status, 'published')
+  assert.ok(row.publication.publishedAt, '发布作品记发布时间')
   const sample = state.items.find(row => row.sample)
   const [child] = applyOps(state, [{ op: 'add_item', title: '挂在示例下面', parentId: sample.id }]).receipts
   applyOps(state, [{ op: 'clear_samples' }])

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
   ChevronRight,
@@ -39,7 +38,7 @@ interface BridgeStatus {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 px-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+      <h3 className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
         {title}
       </h3>
       <div className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border bg-card">
@@ -49,22 +48,24 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-function Switch({ checked, onChange }: { checked: boolean; onChange: () => void }) {
+function Switch({ checked, label, onChange }: { checked: boolean; label: string; onChange: () => void }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
+      aria-label={label}
       onClick={onChange}
+      // 18px 控件纪律(ADR 0010):全高黑药丸太重,收窄轨道与滑块的比例
       className={cn(
-        'relative h-6 w-11 flex-shrink-0 rounded-full transition-colors',
+        'relative h-5 w-9 flex-shrink-0 rounded-full transition-colors',
         checked ? 'bg-primary' : 'bg-muted-foreground/30'
       )}
     >
       <span
         className={cn(
-          'absolute top-1 h-4 w-4 rounded-full shadow-sm transition-transform',
-          checked ? 'translate-x-6 bg-primary-foreground' : 'translate-x-1 bg-white'
+          'absolute top-[3px] h-3.5 w-3.5 rounded-full shadow-sm transition-transform',
+          checked ? 'translate-x-[18px] bg-primary-foreground' : 'translate-x-[2px] bg-white'
         )}
       />
     </button>
@@ -76,7 +77,6 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: () => void 
  * read the same preferences.
  */
 export function SettingsPage() {
-  const navigate = useNavigate()
   const { t, preference, setPreference } = useI18n()
   const [view, setView] = useState<'main' | 'platforms'>('main')
   const [bridgeStatus, setBridgeStatus] = useState<BridgeStatus>({
@@ -85,7 +85,6 @@ export function SettingsPage() {
     dshActive: false,
     lastError: null,
   })
-  const [cmsAccountCount, setCmsAccountCount] = useState(0)
   const [floatingButtonEnabled, setFloatingButtonEnabled] = useState(false)
   const [deepCleanEnabled, setDeepCleanEnabled] = useState(false)
   const [allPlatforms, setAllPlatforms] = useState<PlatformInfo[]>([])
@@ -111,9 +110,8 @@ export function SettingsPage() {
     })
 
     chrome.storage.local.get(
-      ['cmsAccounts', 'floatingButtonEnabled', 'deepCleanEnabled', HIDDEN_PLATFORMS_KEY],
+      ['floatingButtonEnabled', 'deepCleanEnabled', HIDDEN_PLATFORMS_KEY],
       result => {
-        setCmsAccountCount((result.cmsAccounts || []).length)
         setFloatingButtonEnabled(result.floatingButtonEnabled ?? false)
         setDeepCleanEnabled(result.deepCleanEnabled ?? false)
         setHiddenPlatforms(new Set(result[HIDDEN_PLATFORMS_KEY] || []))
@@ -193,8 +191,8 @@ export function SettingsPage() {
   const connectionStatus = !bridgeStatus.paired
     ? t('未配对')
     : bridgeStatus.connected
-      ? t('已配对')
-      : t('已配对 · 连接待建立')
+      ? t('已连接')
+      : t('连接中')
 
   if (view === 'platforms') {
     return (
@@ -205,7 +203,7 @@ export function SettingsPage() {
             aria-label={t('返回设置')}
             className="-ml-1 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-4 w-4"  strokeWidth={1.6} />
           </button>
           <h2 className="text-sm font-semibold">{t('常用平台')}</h2>
           <span className="ml-auto text-xs text-muted-foreground">
@@ -221,7 +219,6 @@ export function SettingsPage() {
           <button onClick={hideAllPlatforms} className="text-xs font-medium underline-offset-2 hover:underline">
             {t('全不选')}
           </button>
-          <p className="ml-auto text-[11px] text-muted-foreground">{t('点击切换显示')}</p>
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -245,9 +242,9 @@ export function SettingsPage() {
                 />
                 <span className="flex-1 truncate text-sm">{platformDisplayName(platform.id, platform.name)}</span>
                 {isHidden ? (
-                  <EyeOff className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                  <EyeOff className="h-4 w-4 flex-shrink-0 text-muted-foreground"  strokeWidth={1.6} />
                 ) : (
-                  <Eye className="h-4 w-4 flex-shrink-0 text-foreground" />
+                  <Eye className="h-4 w-4 flex-shrink-0 text-foreground"  strokeWidth={1.6} />
                 )}
               </button>
             )
@@ -266,9 +263,9 @@ export function SettingsPage() {
           <Section title={t('连接')}>
             <div className="flex min-h-[56px] items-center gap-3 px-4 py-3">
               {bridgeStatus.paired ? (
-                <PlugZap className="h-5 w-5 flex-shrink-0 text-emerald-500" />
+                <PlugZap className="h-5 w-5 flex-shrink-0 text-status-published"  strokeWidth={1.6} />
               ) : (
-                <Plug className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+                <Plug className="h-5 w-5 flex-shrink-0 text-muted-foreground"  strokeWidth={1.6} />
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{t('DSwritesync 本地助手')}</p>
@@ -281,11 +278,11 @@ export function SettingsPage() {
 
             <div className="space-y-2 px-4 py-3">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                {t('扩展与图文创作台经浏览器 Native Messaging 直连:装好两边即自动配对,零 token、零粘贴、零端口。')}
+                {t('扩展与图文创作台经浏览器 Native Messaging 直连：装好两边即自动配对，无需 token 或端口配置。')}
               </p>
               {!bridgeStatus.paired && (
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t('未配对时:重启一次 DeepSeek Harness(启动即自动注册修复),确认本机装有 Node.js,然后回到本页查看状态。')}
+                  {t('未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。')}
                 </p>
               )}
               {bridgeStatus.paired && !bridgeStatus.dshActive && (
@@ -338,7 +335,7 @@ export function SettingsPage() {
                     : t('加载平台列表中…')}
                 </p>
               </div>
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground"  strokeWidth={1.6} />
             </button>
 
             <div className="flex min-h-[56px] items-center gap-3 px-4 py-3">
@@ -348,7 +345,7 @@ export function SettingsPage() {
                   {t('同步前通过 Markdown 清理格式，可能损失部分排版')}
                 </p>
               </div>
-              <Switch checked={deepCleanEnabled} onChange={toggleDeepClean} />
+              <Switch checked={deepCleanEnabled} label={t('深度格式清理')} onChange={toggleDeepClean} />
             </div>
           </Section>
 
@@ -360,26 +357,8 @@ export function SettingsPage() {
                   {t('在网页右下角显示快捷同步按钮')}
                 </p>
               </div>
-              <Switch checked={floatingButtonEnabled} onChange={toggleFloatingButton} />
+              <Switch checked={floatingButtonEnabled} label={t('悬浮同步按钮')} onChange={toggleFloatingButton} />
             </div>
-          </Section>
-
-          <Section title={t('自建站点')}>
-            <button
-              type="button"
-              onClick={() => navigate('/accounts')}
-              className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{t('CMS 账号')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {cmsAccountCount > 0
-                    ? t('{count} 个站点 · WordPress / Typecho / MetaWeblog', { count: cmsAccountCount })
-                    : t('添加 WordPress / Typecho / MetaWeblog')}
-                </p>
-              </div>
-              <ChevronRight className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-            </button>
           </Section>
 
           <Section title={t('关于')}>
@@ -392,11 +371,6 @@ export function SettingsPage() {
             <div className="flex min-h-[44px] items-center justify-between gap-3 px-4 py-2.5">
               <span className="text-sm">{t('许可')}</span>
               <span className="text-xs text-muted-foreground">GPL-3.0</span>
-            </div>
-            <div className="px-4 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {t('基于 Wechatsync 2.0.10（GPL-3.0）构建。视觉参考 StashDock（AGPL-3.0），未复制其代码。')}
-              </p>
             </div>
           </Section>
         </div>

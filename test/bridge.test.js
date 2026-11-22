@@ -2,11 +2,11 @@
 // 不可信输入的白名单校验。投递箱目录在临时 DSH_HOME 下,不碰真实用户数据。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { digestInbox, digestReceipts, bridgeStatus, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS, normalizeCaptureUrl } from '../src/bridge.js'
+import { digestInbox, digestReceipts, bridgeStatus, touchHeartbeat, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS, normalizeCaptureUrl } from '../src/bridge.js'
 import { applyOps } from '../src/ops.js'
 import { Store } from '../src/store.js'
 
@@ -211,17 +211,22 @@ test('发布任务写进 outbox,未知平台被过滤', async () => {
   assert.equal(raw.itemId, 'it_x')
 })
 
-test('发布回执落成 dispatches,status 不被触碰', async () => {
-  const created = await store.mutate('建稿', (draft) => {
-    draft.items.unshift({ id: 'it_dispatch', kind: 'note', title: '投递目标', body: '', tags: [], status: 'ready', personaIds: [], createdAt: new Date().toISOString(), scheduledAt: new Date().toISOString(), production: { title: '投递目标', article: '正文', rev: 1 } })
+test('发布回执落成作品 dispatches,投递不改发布状态', async () => {
+  // 作品才是投递目标(ADR 0013):素材开一篇作品,回执按作品 id 落 publication.dispatches
+  await store.mutate('建作品', (draft) => {
+    const { receipts } = applyOps(draft, [{ op: 'add_item', title: '投递目标', body: '素材正文' }])
+    const workId = applyOps(draft, [{ op: 'create_work', itemIds: [receipts[0].target] }]).receipts[0].target
+    applyOps(draft, [{ op: 'update_work', id: workId, rev: 0, title: '投递目标', article: '正文' }])
+    draft.items.find(row => row.id === receipts[0].target).scheduledAt = new Date().toISOString()
     return draft
   })
-  assert.ok(created)
   const paths = bridgePaths()
   await mkdir(paths.receipts, { recursive: true })
+  const state0 = await store.read()
+  const work0 = state0.works.find(row => row.current.title === '投递目标')
   await writeFile(join(paths.receipts, 'dispatch-r1.json'), JSON.stringify({
     operationId: 'r1',
-    itemId: 'it_dispatch',
+    itemId: work0.id,
     results: [
       { platform: 'zhihu', ok: true, url: 'https://zhuanlan.zhihu.com/p/1/edit' },
       { platform: 'juejin', ok: false, error: '未登录' },
@@ -229,28 +234,35 @@ test('发布回执落成 dispatches,status 不被触碰', async () => {
   }))
   await digestReceipts(store)
   const state = await store.read()
-  const item = state.items.find(row => row.id === 'it_dispatch')
-  assert.equal(item.dispatches.length, 2)
-  assert.equal(item.dispatches[0].platform, 'zhihu')
-  assert.equal(item.dispatches[0].ok, true)
-  assert.equal(item.dispatches[1].ok, false)
-  assert.equal(item.dispatches[1].error, '未登录')
-  assert.equal(item.status, 'ready', '回执不得改状态')
+  const work = state.works.find(row => row.id === work0.id)
+  assert.equal(work.publication.dispatches.length, 2)
+  assert.equal(work.publication.dispatches[0].platform, 'zhihu')
+  assert.equal(work.publication.dispatches[0].ok, true)
+  assert.equal(work.publication.dispatches[1].ok, false)
+  assert.equal(work.publication.dispatches[1].error, '未登录')
+  // 成功投递只推到「已投递」,发布仍等用户确认
+  assert.equal(work.publication.status, 'submitted')
+  assert.equal(work.published, undefined, '投递不得写发布稿')
+  const item = state.items.find(row => row.title === '投递目标')
+  assert.equal(item.dispatches, undefined, '回执不再挂到素材上')
   // 回执文件消化后消失
   assert.ok(!(await readdir(paths.receipts)).includes('dispatch-r1.json'))
 })
 
 test('回执里的非 http(s) 草稿链接被剥掉', async () => {
+  const state0 = await store.read()
+  const work0 = state0.works.find(row => row.current.title === '投递目标')
   const paths = bridgePaths()
+  await mkdir(paths.receipts, { recursive: true })
   await writeFile(join(paths.receipts, 'dispatch-r2.json'), JSON.stringify({
     operationId: 'r2',
-    itemId: 'it_dispatch',
+    itemId: work0.id,
     results: [{ platform: 'weixin', ok: true, url: 'javascript:alert(1)' }],
   }))
   await digestReceipts(store)
   const state = await store.read()
-  const item = state.items.find(row => row.id === 'it_dispatch')
-  const last = item.dispatches.at(-1)
+  const work = state.works.find(row => row.id === work0.id)
+  const last = work.publication.dispatches.at(-1)
   assert.equal(last.platform, 'weixin')
   assert.ok(!last.url, '危险链接必须剥掉')
 })
@@ -338,4 +350,15 @@ test('适配器清单覆盖 20 个内容平台(排除 zip-download)', () => {
   assert.equal(BRIDGE_ADAPTERS.woshipm, '人人都是产品经理')
   assert.equal(BRIDGE_ADAPTERS.aliyun, '阿里云开发者社区')
   assert.equal(BRIDGE_ADAPTERS.xiaohongshu, '小红书')
+})
+
+test('心跳文件:touchHeartbeat 建立并刷新 mtime,供 helper 判活', async () => {
+  const paths = await touchHeartbeat()
+  const first = await stat(paths.heartbeat)
+  // mtime 精度到秒级时立刻重 touch 可能同值,等 5ms 再刷
+  await new Promise(resolve => setTimeout(resolve, 5))
+  await touchHeartbeat()
+  const second = await stat(paths.heartbeat)
+  assert.ok(second.mtimeMs >= first.mtimeMs, '重 touch 不回退')
+  assert.equal(first.size, 0, '心跳是空文件,只承担活性')
 })

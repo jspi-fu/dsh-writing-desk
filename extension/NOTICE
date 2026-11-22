@@ -19,10 +19,11 @@ DSwritesync modifications (since the vendored baseline):
 - Browser side panel shell with Capture / Sync / Accounts / History tabs;
   the capture UI is an independent implementation inspired by StashDock's
   interaction and visuals (no StashDock code copied).
-- Desk protocol and CLI `serve`: an authenticated local bridge, workbench
-  mailbox adapter, capture catalog and conflict replacement; the CLI keeps
-  the upstream command surface and adds the `dswritesync` binary.
-- Chinese/English UI and CLI localization.
+- Desk protocol over Chrome Native Messaging: the extension pairs with the
+  local MIT helper (`native/` in the main repository) for capture, task
+  delivery and receipts. The earlier CLI/WS/token bridge was retired and
+  removed (ADR 0012).
+- Chinese/English UI localization.
 - Removed the in-extension editor; kept platform adapters, CMS, sync dialog,
   page-level FAB and the WeChat sync overlays.
 
@@ -47,10 +48,9 @@ as required by GPL-3.0 section 6.
 Third-party components:
 - The vendored packages declare their own third-party dependencies in their
   package.json files; those components retain their respective licenses.
-- packages/extension/public/lib/Readability.js:
+- packages/extension/src/lib/reader/Readability.js:
   Copyright (c) 2010 Arc90 Inc; licensed under Apache License 2.0.
-- packages/extension/public/lib/reader.js and
-  packages/extension/src/lib/reader/reader.js:
+- packages/extension/src/lib/reader/reader.js:
   Copyright (c) 2023 Apple Inc. All rights reserved; portions
   Copyright (c) 2009 Arc90 Inc.
 

@@ -85,7 +85,8 @@ export async function checkSyncFrequency(platforms: string[]): Promise<string | 
     const lastSync = recentSyncs[recentSyncs.length - 1]
     const minutesAgo = Math.floor((now - lastSync.timestamp) / 60000)
 
-    return t('您在 {minutes} 分钟前刚同步过，频繁发布可能导致平台限制。确定要继续吗？', {
+    // 陈述性提醒,不问「确定要继续吗」——同步会立即开始,问题没有着落点
+    return t('您在 {minutes} 分钟前刚同步过，频繁同步可能触发平台限制。', {
       minutes: minutesAgo || t('不到 1'),
     })
   }

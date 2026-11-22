@@ -24,7 +24,7 @@ const EN: Record<string, string> = {
   '检查中': 'Checking',
   '已连接': 'Connected',
   '连接中': 'Connecting',
-  '未连接': 'Offline',
+  '未配对': 'Not paired',
   'DSwritesync 本地助手连接状态': 'DSwritesync local helper status',
   '设置': 'Settings',
 
@@ -93,8 +93,8 @@ const EN: Record<string, string> = {
   '当前页不支持提取': 'This page cannot be extracted',
   '未能提取当前页正文': "Couldn't extract the page content",
   '本地助手没有回应(超时)': 'The local helper did not respond (timed out)',
-  '未配对:本地助手未注册或 Node.js 缺失,重启一次 DeepSeek Harness': 'Not paired: the local helper is not registered or Node.js is missing — restart DeepSeek Harness once',
-  '本地助手中途退出,请查看投递箱目录里的 helper.log': 'The local helper exited unexpectedly; check helper.log in the mailbox directory',
+  '未配对：本地助手未注册或 Node.js 缺失，重启一次 DeepSeek Harness': 'Not paired: the local helper is not registered or Node.js is missing — restart DeepSeek Harness once',
+  '本地助手中途退出，请查看投递箱目录里的 helper.log': 'The local helper exited unexpectedly; check helper.log in the mailbox directory',
   '分片拉取失败': 'Shard fetch failed',
   '任务没有可投递的平台': 'The task has no platforms to dispatch to',
   '工作台投递': 'Desk dispatch',
@@ -106,11 +106,8 @@ const EN: Record<string, string> = {
   '中文': 'Chinese',
   '连接': 'Connection',
   'DSwritesync 本地助手': 'DSwritesync local helper',
-  '已配对': 'Paired',
-  '已配对 · 连接待建立': 'Paired · connecting',
-  '未配对': 'Not paired',
-  '扩展与图文创作台经浏览器 Native Messaging 直连:装好两边即自动配对,零 token、零粘贴、零端口。': 'The extension connects to the desk over browser Native Messaging: once both sides are installed, pairing is automatic — no token, no pasting, no ports.',
-  '未配对时:重启一次 DeepSeek Harness(启动即自动注册修复),确认本机装有 Node.js,然后回到本页查看状态。': 'If not paired: restart DeepSeek Harness once (launching repairs the registration automatically), make sure Node.js is installed, then come back here to check the status.',
+  '扩展与图文创作台经浏览器 Native Messaging 直连：装好两边即自动配对，无需 token 或端口配置。': 'The extension connects to the desk over browser Native Messaging: once both sides are installed, pairing is automatic — no token or port setup.',
+  '未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。': 'If not paired: restart DeepSeek Harness once (launching repairs the registration automatically), make sure Node.js is installed, then come back here to check the status.',
   '图文创作台没在运行:现在收进的网页会在它下次启动后出现在灵感墙。': 'The desk is not running: pages captured now will appear on your wall after its next launch.',
   '同步设置': 'Sync',
   '常用平台': 'Common platforms',
@@ -122,17 +119,12 @@ const EN: Record<string, string> = {
   '悬浮同步按钮': 'Floating sync button',
   '在网页右下角显示快捷同步按钮': 'Show a quick sync button in the bottom-right corner of web pages',
   '自建站点': 'Self-hosted sites',
-  'CMS 账号': 'CMS accounts',
-  '{count} 个站点 · WordPress / Typecho / MetaWeblog': '{count} sites · WordPress / Typecho / MetaWeblog',
-  '添加 WordPress / Typecho / MetaWeblog': 'Add WordPress / Typecho / MetaWeblog',
   '关于': 'About',
   '版本': 'Version',
   '许可': 'License',
-  '基于 Wechatsync 2.0.10（GPL-3.0）构建。视觉参考 StashDock（AGPL-3.0），未复制其代码。': 'Built on Wechatsync 2.0.10 (GPL-3.0). Visual reference: StashDock (AGPL-3.0); no code was copied.',
   '返回设置': 'Back to settings',
   '全选': 'Show all',
   '全不选': 'Hide all',
-  '点击切换显示': 'Click a platform to toggle its visibility',
 
   // Accounts page
   '支持 XML-RPC 或 REST API': 'Supports XML-RPC or REST API',
@@ -157,6 +149,7 @@ const EN: Record<string, string> = {
   '重试': 'Retry',
   '未登录': 'Not signed in',
   '添加': 'Add',
+  '删除': 'Delete',
   '暂无自建站点': 'No self-hosted sites yet',
   '添加 WordPress / Typecho 等': 'Add WordPress / Typecho and others',
   '添加失败': 'Add failed',
@@ -180,7 +173,7 @@ const EN: Record<string, string> = {
   '来自工作台投递：{title}': 'From your desk: {title}',
   '未检测到文章内容': 'No article content detected',
   '请选择要同步的平台': 'Select at least one platform',
-  '您在 {minutes} 分钟前刚同步过，频繁发布可能导致平台限制。确定要继续吗？': 'You synced the same platform {minutes} min ago. Frequent publishing may trigger platform limits. Continue?',
+  '您在 {minutes} 分钟前刚同步过，频繁同步可能触发平台限制。': 'You synced this platform {minutes} min ago; frequent syncing may trigger platform limits.',
   '不到 1': 'less than 1',
 
   // Sync dialog
@@ -238,6 +231,7 @@ const EN: Record<string, string> = {
   '草稿创建失败，请稍后重试': 'Could not create the draft. Try again later.',
   '操作过于频繁，请稍后再试': 'Too many requests. Try again later.',
   '图片上传失败': 'Image upload failed.',
+  '无法连接页面的读取脚本，请刷新页面后重试': "Couldn't reach this page's reader script. Refresh the page and try again.",
 }
 
 let activeLang: Lang = resolveSystemLang()
@@ -304,6 +298,11 @@ export function t(text: string, vars?: TranslationVars): string {
  */
 const ADAPTER_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }> = [
   {
+    // Chrome 通道错误(收进页最常见):内容脚本没注入或通道断了,英文原文直出最伤观感
+    pattern: /receiving\s+end\s+does\s+not\s+exist|could\s+not\s+establish\s+connection|message\s+port\s+closed/i,
+    message: '无法连接页面的读取脚本，请刷新页面后重试',
+  },
+  {
     pattern: /登录(态|状态)?(已)?(失效|过期)|重新登录|session\s+(expired|invalid)|unauthorized|401/i,
     message: '登录已失效，请重新登录',
   },
@@ -312,7 +311,7 @@ const ADAPTER_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }> =
     message: '登录超时，请重试',
   },
   {
-    pattern: /未登录|未登陆|请先登录|not\s+(signed|logged)\s+in|login\s+required/i,
+    pattern: /未登录|未登陆|请先登录|not\s+(signed|logged)\s+in|login\s+required|must\s+login|please\s+log\s*in/i,
     message: '未登录',
   },
   {
@@ -339,7 +338,8 @@ const ADAPTER_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }> =
 
 export function translateAdapterError(error: string | null | undefined): string {
   if (!error) return ''
-  if (activeLang === 'zh') return error
+  // 规则对两种语言都生效:平台错误中英混杂,zh 模式同样需要映射到可读文案;
+  // 未命中的消息保持原文——真实的诊断细节永远不藏
   for (const rule of ADAPTER_ERROR_RULES) {
     if (rule.pattern.test(error)) return t(rule.message)
   }
@@ -392,8 +392,8 @@ export function initI18n(): void {
 
   if (typeof chrome === 'undefined' || !chrome.storage?.local) return
 
-  void readLanguagePreference().then(preference => {
-    setActiveLang(preferenceToLang(preference))
-  })
+  void (async () => {
+    setActiveLang(preferenceToLang(await readLanguagePreference()))
+  })()
   chrome.storage.onChanged.addListener(handleStorageChange)
 }

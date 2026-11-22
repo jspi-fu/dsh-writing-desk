@@ -48,17 +48,20 @@ export function SyncDialogPage() {
             setSelectedPlatforms(data.selectedPlatformIds)
           } else {
             // Load from storage — respect saved state, don't default to all
-            chrome.storage.local.get(SELECTED_PLATFORMS_KEY).then(r => {
-              const stored = r[SELECTED_PLATFORMS_KEY] as string[] | undefined
-              const authedIds = (data.platforms || [])
-                .filter((p: Platform) => p.isAuthenticated)
-                .map((p: Platform) => p.id)
-              const authedSet = new Set(authedIds)
-              const selected = stored?.filter(id => authedSet.has(id)) || []
-              setSelectedPlatforms(selected)
-            }).catch(() => {
-              setSelectedPlatforms([])
-            })
+            ;(async () => {
+              try {
+                const r = await chrome.storage.local.get(SELECTED_PLATFORMS_KEY)
+                const stored = r[SELECTED_PLATFORMS_KEY] as string[] | undefined
+                const authedIds = (data.platforms || [])
+                  .filter((p: Platform) => p.isAuthenticated)
+                  .map((p: Platform) => p.id)
+                const authedSet = new Set(authedIds)
+                const selected = stored?.filter(id => authedSet.has(id)) || []
+                setSelectedPlatforms(selected)
+              } catch {
+                setSelectedPlatforms([])
+              }
+            })()
           }
           setStatus('idle')
         } else if (data.type === 'SYNC_PROGRESS') {
@@ -185,7 +188,7 @@ export function SyncDialogPage() {
           aria-label={t('关闭')}
           className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <X className="h-4 w-4" />
+          <X className="h-4 w-4" strokeWidth={1.6} />
         </button>
       </div>
 

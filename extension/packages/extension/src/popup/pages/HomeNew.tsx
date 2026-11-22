@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Inbox, X } from 'lucide-react'
+import { AlertTriangle, Inbox, X } from 'lucide-react'
 import { useSyncStore } from '../stores/sync'
 import { SyncDialog } from '@/components/sync-dialog'
 import type { Platform as DialogPlatform } from '@/components/sync-dialog'
@@ -131,7 +131,7 @@ export function HomeNew() {
       {deskTask && (
         <div className="flex-none px-4 pt-3">
           <div className="flex items-center gap-1.5 rounded-lg bg-muted/50 px-3 py-1.5 text-[11px] text-muted-foreground">
-            <Inbox className="h-3 w-3 flex-shrink-0" />
+            <Inbox className="h-3 w-3 flex-shrink-0"  strokeWidth={1.6} />
             <span className="truncate">{t('来自工作台投递：{title}', { title: deskTask.title })}</span>
           </div>
         </div>
@@ -159,14 +159,15 @@ export function HomeNew() {
       {/* Rate limit warning (non-blocking toast) */}
       {rateLimitWarning && (
         <div className="absolute left-3 right-3 top-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="flex items-start gap-2 rounded-lg border border-yellow-200 bg-yellow-50 p-3 shadow-lg dark:border-yellow-800 dark:bg-yellow-950/50">
-            <span className="flex-shrink-0 text-lg">⚠️</span>
-            <p className="flex-1 text-sm text-yellow-800 dark:text-yellow-200">{rateLimitWarning}</p>
+          <div className="flex items-start gap-2 rounded-lg border border-status-outline/30 bg-status-outline/10 p-3 shadow-lg">
+            <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-status-outline" strokeWidth={1.6} />
+            <p className="flex-1 text-sm text-foreground">{rateLimitWarning}</p>
             <button
               onClick={() => setRateLimitWarning(null)}
-              className="flex-shrink-0 text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 dark:hover:text-yellow-200"
+              aria-label={t('关闭')}
+              className="flex-shrink-0 text-muted-foreground hover:text-foreground"
             >
-              <X className="h-4 w-4" />
+              <X className="h-4 w-4" strokeWidth={1.6} />
             </button>
           </div>
         </div>

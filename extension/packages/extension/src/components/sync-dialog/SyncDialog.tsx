@@ -53,6 +53,7 @@ export function SyncDialog({
         {/* Article card — compact during sync/complete */}
         <ArticleCard
           article={article}
+          loading={status === 'loading'}
           compact={isSyncing || isFinished}
         />
 
@@ -72,15 +73,8 @@ export function SyncDialog({
 
         {/* Error */}
         {error && (
-          <div className="rounded-lg p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30">
+          <div className="rounded-lg p-3 text-sm text-status-danger bg-status-danger/10">
             {translateAdapterError(error)}
-          </div>
-        )}
-
-        {/* No article hint */}
-        {!article && authenticatedPlatforms.length > 0 && (
-          <div className="text-xs text-muted-foreground text-center py-1">
-            {t('已登录 {count} 个平台', { count: authenticatedPlatforms.length })}
           </div>
         )}
       </div>
@@ -117,23 +111,26 @@ export function SyncDialog({
             {t('取消')}
           </button>
         ) : (
-          <button
-            onClick={onStartSync}
-            disabled={!article || selectedPlatforms.length === 0 || status === 'loading'}
-            className={cn(
-              'w-full py-2.5 rounded-lg font-medium transition-colors',
-              !article || selectedPlatforms.length === 0
-                ? 'bg-muted text-muted-foreground cursor-not-allowed'
-                : 'bg-primary text-primary-foreground hover:bg-primary/90'
+          <>
+            {/* 禁用原因放在 notice 位,按钮永远叫动作的名字 */}
+            {article && selectedPlatforms.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center">{t('请选择要同步的平台')}</p>
             )}
-          >
-            {!article
-              ? t('请先打开文章页面')
-              : selectedPlatforms.length === 0
-                ? t('请选择同步平台')
-                : t('同步到 {count} 个平台', { count: selectedPlatforms.length })
-            }
-          </button>
+            <button
+              onClick={onStartSync}
+              disabled={!article || selectedPlatforms.length === 0 || status === 'loading'}
+              className={cn(
+                'w-full py-2.5 rounded-lg font-medium transition-colors',
+                !article || selectedPlatforms.length === 0
+                  ? 'bg-muted text-muted-foreground cursor-not-allowed'
+                  : 'bg-primary text-primary-foreground hover:bg-primary/90'
+              )}
+            >
+              {selectedPlatforms.length > 0
+                ? t('同步到 {count} 个平台', { count: selectedPlatforms.length })
+                : t('同步')}
+            </button>
+          </>
         )}
       </div>
     </div>

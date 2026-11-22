@@ -24,8 +24,10 @@ export const CHUNK_B64 = 800_000
 const CAPTURE_BODY_LIMIT = 4_000_000
 // 已认领任务超过这个时长且没有回执,视为扩展中途死掉,写失败回执并放行清理。
 const STALE_CLAIM_MS = 30 * 60 * 1000
-// DSH 活跃判定:宿主每 3 秒刷 catalog.json,mtime 在这个窗口内即视为在运行。
+// DSH 活跃判定:宿主在 bridge/heartbeat 上低频 touch(10s 一拍),45s 窗口容忍 3 拍抖动;
+// 旧宿主不写心跳,退回 catalog.json 新鲜度兜底(它结构不变就跳写,只能当弱信号)。
 const DSH_FRESH_MS = 15_000
+const HEARTBEAT_FRESH_MS = 45_000
 const LOG_MAX = 256_000
 
 const MIME_TYPES = {
@@ -42,6 +44,7 @@ export function mailboxPaths(env = process.env) {
     outbox: path.join(root, 'outbox'),
     receipts: path.join(root, 'receipts'),
     catalog: path.join(root, 'catalog.json'),
+    heartbeat: path.join(root, 'heartbeat'),
     log: path.join(root, 'helper.log'),
   }
 }
@@ -115,8 +118,14 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
     }
   }
 
-  /** DSH 是否在跑:宿主活着就会周期刷 catalog.json。 */
+  /** DSH 是否在跑:优先看心跳(宿主 10s 一拍);没有心跳文件再退回 catalog 新鲜度。 */
   async function dshActive() {
+    try {
+      const info = await fsp.stat(paths.heartbeat)
+      return now() - info.mtimeMs < HEARTBEAT_FRESH_MS
+    } catch {
+      // 心跳文件不存在:旧宿主或从未启动,用 catalog mtime 兜底
+    }
     try {
       const info = await fsp.stat(paths.catalog)
       return now() - info.mtimeMs < DSH_FRESH_MS
@@ -443,8 +452,11 @@ export async function main({ argv = process.argv, env = process.env, input = pro
       watcher = fs.watch(paths.outbox, () => { void scan() })
     } catch { /* 目录不存在时靠轮询兜底 */ }
     const pollTimer = setInterval(() => { void scan() }, 1000)
-    // 心跳顺带保活 MV3 SW(端口消息重置 SW 空闲计时)
-    const heartbeatTimer = setInterval(() => send({ event: 'heartbeat' }), 20_000)
+    // 心跳顺带保活 MV3 SW(端口消息重置 SW 空闲计时),并携带 dshActive:
+    // 端口打开期间扩展的 getStatus 走短路,靠这帧把宿主活性喂给设置页
+    const heartbeatTimer = setInterval(() => {
+      void core.dshActive().then(active => send({ event: 'heartbeat', dshActive: active }))
+    }, 20_000)
     stopLongMode = () => {
       clearInterval(pollTimer)
       clearInterval(heartbeatTimer)

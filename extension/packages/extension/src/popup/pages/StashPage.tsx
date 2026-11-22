@@ -348,7 +348,9 @@ export function StashPage() {
     if (started.current) return
     started.current = true
     void loadEntry('initial')
-    void requestStashCatalog().then(setCatalog)
+    void (async () => {
+      setCatalog(await requestStashCatalog())
+    })()
     void checkBridge()
   }, [])
 
@@ -407,7 +409,8 @@ export function StashPage() {
               <div className="min-w-0 flex-1">
                 <h2 className="text-[17px] font-semibold tracking-tight">{t('收进当前页')}</h2>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground" title={hostLabel}>
-                  {hostLabel || (status === 'loading' ? t('正在读取当前标签页…') : t('尚未读取页面'))}
+                  {/* 错误态下方有完整错误卡,副题只在有信息时出现 */}
+                  {hostLabel || (status === 'loading' ? t('正在读取当前标签页…') : status === 'ready' ? t('尚未读取页面') : '')}
                 </p>
               </div>
               <button
@@ -418,14 +421,14 @@ export function StashPage() {
                 title={t('刷新')}
                 className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
               >
-                <RefreshCw className={cn('h-4 w-4', refreshBusy && 'animate-spin')} />
+                <RefreshCw className={cn('h-4 w-4', refreshBusy && 'animate-spin')}  strokeWidth={1.6} />
               </button>
             </div>
 
             {bridgeOffline && (
               <div className="mb-4 rounded-[18px] border border-border bg-muted/40 px-3.5 py-3">
                 <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground"  strokeWidth={1.6} />
                   <div className="min-w-0 flex-1">
                     <p className="text-[13px] font-medium">{t('本地助手未配对')}</p>
                     <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -436,7 +439,7 @@ export function StashPage() {
                         {t('重新检查')}
                       </button>
                       <button type="button" onClick={() => navigate('/settings')} className={SECONDARY_BUTTON_CLASS}>
-                        <Settings className="h-3.5 w-3.5" />
+                        <Settings className="h-3.5 w-3.5"  strokeWidth={1.6} />
                         {t('打开设置')}
                       </button>
                     </div>
@@ -456,7 +459,7 @@ export function StashPage() {
             ) : status === 'error' ? (
               <div className="rounded-[18px] border border-border bg-card p-4">
                 <div className="flex items-start gap-2.5">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground" />
+                  <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-muted-foreground"  strokeWidth={1.6} />
                   <div className="min-w-0">
                     <p className="text-sm font-medium">{t('无法读取当前页')}</p>
                     <p className="mt-1 break-words text-xs leading-relaxed text-muted-foreground">
@@ -469,7 +472,7 @@ export function StashPage() {
                   onClick={() => void loadEntry('initial')}
                   className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-[14px] border border-border px-3 text-xs font-medium transition-colors hover:bg-muted"
                 >
-                  <RefreshCw className="h-3.5 w-3.5" />
+                  <RefreshCw className="h-3.5 w-3.5"  strokeWidth={1.6} />
                   {t('重新读取')}
                 </button>
               </div>
@@ -477,14 +480,14 @@ export function StashPage() {
               <div className="space-y-4">
                 {captureMethod === 'selection' && (
                   <div className="inline-flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/50 px-2.5 py-1 text-[11px] text-muted-foreground">
-                    <Highlighter className="h-3.5 w-3.5" />
+                    <Highlighter className="h-3.5 w-3.5"  strokeWidth={1.6} />
                     {t('已采集当前选区')}
                   </div>
                 )}
 
                 <Field label={t('链接')} htmlFor="stash-url">
                   <div className="relative">
-                    <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"  strokeWidth={1.6} />
                     <input
                       id="stash-url"
                       type="url"
@@ -508,7 +511,7 @@ export function StashPage() {
                     maxLength={MAX_TITLE_LENGTH}
                     placeholder={t('文章标题')}
                     autoFocus
-                    className={INPUT_CLASS}
+                    className={cn(INPUT_CLASS, 'font-article-serif text-[15px]')}
                   />
                 </Field>
 
@@ -524,7 +527,7 @@ export function StashPage() {
                   />
                   {truncated && (
                     <p className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                      <Info className="mt-px h-3.5 w-3.5 flex-none" />
+                      <Info className="mt-px h-3.5 w-3.5 flex-none"  strokeWidth={1.6} />
                       {t('正文较长，已按可采集范围截断，可手动补全。')}
                     </p>
                   )}
@@ -539,7 +542,7 @@ export function StashPage() {
                       disabled={locked || capturing}
                       className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
                     >
-                      {capturing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Camera className="h-3.5 w-3.5" />}
+                      {capturing ? <Loader2 className="h-3.5 w-3.5 animate-spin"  strokeWidth={1.6} /> : <Camera className="h-3.5 w-3.5"  strokeWidth={1.6} />}
                       {capturing ? t('截取中…') : t('截取当前页')}
                     </button>
                   </div>
@@ -559,7 +562,7 @@ export function StashPage() {
                       </>
                     ) : (
                       <div className="flex h-full flex-col items-center justify-center gap-1 text-muted-foreground">
-                        <Camera className="h-5 w-5" />
+                        <Camera className="h-5 w-5"  strokeWidth={1.6} />
                         <span className="text-[11px]">{t('暂无封面')}</span>
                       </div>
                     )}
@@ -630,7 +633,7 @@ export function StashPage() {
                             disabled={locked || tags.length >= MAX_TAGS}
                             className="inline-flex h-7 items-center gap-1 rounded-full border border-border/70 px-2.5 text-[11px] text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground disabled:opacity-40"
                           >
-                            <Plus className="h-3 w-3" />
+                            <Plus className="h-3 w-3"  strokeWidth={1.6} />
                             <span className="max-w-[180px] truncate">{tag}</span>
                           </button>
                         ))}
@@ -642,7 +645,7 @@ export function StashPage() {
             )}
           </div>
 
-          <div className="sticky bottom-0 z-10 border-t border-border/70 bg-background/95 px-4 pb-3 pt-3 backdrop-blur">
+          <div className="sticky bottom-0 z-10 border-t border-border/70 bg-background px-4 pb-3 pt-3">
             <div className="mx-auto w-full max-w-[560px]">
               {saveError && (
                 <div className="mb-2.5 rounded-[14px] border border-destructive/25 bg-destructive/5 px-3 py-2.5">
@@ -651,12 +654,12 @@ export function StashPage() {
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button type="button" onClick={() => void copyMarkdown()} className={SECONDARY_BUTTON_CLASS}>
-                      <Copy className="h-3.5 w-3.5" />
+                      <Copy className="h-3.5 w-3.5"  strokeWidth={1.6} />
                       {copied ? t('已复制 Markdown') : t('复制 Markdown')}
                     </button>
                     {bridgeOffline && (
                       <button type="button" onClick={() => navigate('/settings')} className={SECONDARY_BUTTON_CLASS}>
-                        <Settings className="h-3.5 w-3.5" />
+                        <Settings className="h-3.5 w-3.5"  strokeWidth={1.6} />
                         {t('打开设置')}
                       </button>
                     )}
@@ -681,12 +684,12 @@ export function StashPage() {
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader2 className="h-4 w-4 animate-spin"  strokeWidth={1.6} />
                     {t('收进中…')}
                   </>
                 ) : saved ? (
                   <>
-                    <Check className="h-4 w-4" />
+                    <Check className="h-4 w-4"  strokeWidth={1.6} />
                     {t('已收进')}
                   </>
                 ) : (

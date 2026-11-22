@@ -304,7 +304,7 @@ export class JuejinAdapter extends CodeAdapter {
       if (src.startsWith('data:')) {
         // data URI 直接转 blob
         logger.debug('Detected data URI, converting to blob')
-        blob = await fetch(src).then(r => r.blob())
+        blob = await (await fetch(src)).blob()
       } else {
         // 远程 URL：先下载再上传
         logger.debug('Downloading remote image:', src.substring(0, 80))

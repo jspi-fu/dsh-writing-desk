@@ -124,29 +124,32 @@ window.addEventListener('message', (event) => {
     } else if (data.type === 'START_SYNC') {
       // Forward sync request to background
       const syncId = data.syncId
-      chrome.runtime.sendMessage({
-        type: 'SYNC_ARTICLE',
-        payload: {
-          article: data.article,
-          platforms: data.platforms,
-          source: 'weixin',
-          syncId,
-        },
-      }).then(response => {
-        // Forward completion to iframe
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'SYNC_COMPLETE',
-          results: response.results,
-          rateLimitWarning: response.rateLimitWarning,
-          syncId,
-        }), '*')
-      }).catch(error => {
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'SYNC_ERROR',
-          error: (error as Error).message,
-          syncId,
-        }), '*')
-      })
+      ;(async () => {
+        try {
+          const response = await chrome.runtime.sendMessage({
+            type: 'SYNC_ARTICLE',
+            payload: {
+              article: data.article,
+              platforms: data.platforms,
+              source: 'weixin',
+              syncId,
+            },
+          })
+          // Forward completion to iframe
+          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
+            type: 'SYNC_COMPLETE',
+            results: response.results,
+            rateLimitWarning: response.rateLimitWarning,
+            syncId,
+          }), '*')
+        } catch (error) {
+          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
+            type: 'SYNC_ERROR',
+            error: (error as Error).message,
+            syncId,
+          }), '*')
+        }
+      })()
     }
   } catch { /* ignore */ }
 })

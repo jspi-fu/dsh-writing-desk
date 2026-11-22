@@ -1125,10 +1125,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return false // 不处理，交给 weixin-editor.ts 或 weixin.ts
     }
     const loading = showLoading()
-    extractArticle().then(article => {
-      loading.remove()
-      sendResponse({ article })
-    }).catch(() => { loading.remove(); sendResponse({ article: null }) })
+    ;(async () => {
+      try {
+        const article = await extractArticle()
+        loading.remove()
+        sendResponse({ article })
+      } catch {
+        loading.remove()
+        sendResponse({ article: null })
+      }
+    })()
     return true
   }
 

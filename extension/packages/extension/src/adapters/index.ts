@@ -35,7 +35,7 @@ import {
   AliyunAdapter,
 } from '@wechatsync/core'
 
-// 私有适配器 - private/ 目录通过 git submodule 管理
+// 页面自动化适配器 - private/ 目录内是本仓库自研实现（ADR 0010 修订），随源码分发
 const privateModules = import.meta.glob<Record<string, unknown>>(
   '@wechatsync/core/adapters/platforms/private/*.ts',
   { eager: true }
@@ -177,22 +177,18 @@ const PUBLISH_TIMEOUT = 10 * 60 * 1000 // 单个平台发布超时：10 分钟�
 /**
  * 带超时的 Promise 包装
  */
-function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error(errorMessage))
-    }, ms)
-
-    promise
-      .then(result => {
-        clearTimeout(timer)
-        resolve(result)
-      })
-      .catch(error => {
-        clearTimeout(timer)
-        reject(error)
-      })
-  })
+async function withTimeout<T>(promise: Promise<T>, ms: number, errorMessage: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(errorMessage)), ms)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /**
