@@ -57,7 +57,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-/** Chrome 的 NM 通道错误统一翻成可读文案,设置页与收进降级都靠它。 */
+/** Chrome 的 NM 通道错误统一翻成可读文案,设置页与收录降级都靠它。 */
 function nativeErrorText(message: string): string {
   if (/Error when communicating with the native messaging host/i.test(message)) {
     return t('未配对：本地助手未注册或 Node.js 缺失，重启一次 DeepSeek Harness')
@@ -90,7 +90,7 @@ export class NativeTransport {
     this.taskAvailableHandler = handler
   }
 
-  /** capture-result:收进的最终消化结果,payload 原样交给订阅者转发给页面。 */
+  /** capture-result:收录的最终消化结果,payload 原样交给订阅者转发给页面。 */
   onCaptureResult(handler: (payload: Record<string, unknown>) => void): void {
     this.captureResultHandler = handler
   }

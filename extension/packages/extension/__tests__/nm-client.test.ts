@@ -221,7 +221,7 @@ describe('NM client:长端口', () => {
 })
 
 describe('NM client:未配对路径', () => {
-  it('sendNativeMessage 通道错误 → 状态未配对并带可读错误,收进抛错走降级', async () => {
+  it('sendNativeMessage 通道错误 → 状态未配对并带可读错误,收录抛错走降级', async () => {
     install((_request, callback) => {
       chromeMock.runtime.lastError = { message: 'Error when communicating with the native messaging host.' }
       callback(undefined)

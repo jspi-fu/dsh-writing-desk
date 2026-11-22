@@ -278,7 +278,7 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'BRIDGE_WATCH_START': {
-      // 面板/设置页打开期间开长端口,投递与收进回执近实时
+      // 面板/设置页打开期间开长端口,投递与收录回执近实时
       bridgeClient.setActivelyWatched(true)
       return { success: true }
     }
@@ -312,7 +312,7 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       try {
         const result = await bridgeClient.saveCapture(payload)
         if (!result.ok) {
-          return { ok: false, error: result.error || t('工作台未能收进该网页'), markdown }
+          return { ok: false, error: result.error || t('工作台未能收录该网页'), markdown }
         }
         return {
           ok: true,
@@ -322,7 +322,7 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
           replaced: result.replaced ?? false,
         }
       } catch (error) {
-        return { ok: false, error: errorMessage(error, t('收进失败')), markdown }
+        return { ok: false, error: errorMessage(error, t('收录失败')), markdown }
       }
     }
 
@@ -450,7 +450,7 @@ function getCmsIcon(type: string): string {
   }
 }
 
-// ============ 收进（Stash capture）============
+// ============ 收录（Stash capture）============
 
 const STASH_BODY_LIMIT = 20000
 
@@ -512,7 +512,7 @@ function buildCaptureMarkdown(payload: CapturePayload): string {
 }
 
 /**
- * 收进提取：选区优先；选区为空或内容脚本不支持时回退整页文章提取。
+ * 收录提取：选区优先；选区为空或内容脚本不支持时回退整页文章提取。
  */
 async function extractStashEntry(tabId?: number): Promise<{ ok: true; entry: StashEntry } | { ok: false; error: string }> {
   try {
@@ -564,7 +564,7 @@ async function extractStashEntry(tabId?: number): Promise<{ ok: true; entry: Sta
     if (!article) return { ok: false, error: t('未能提取当前页正文') }
 
     const body = firstString(article.markdown, article.content, article.text, article.html)
-    if (!body.trim()) return { ok: false, error: t('当前页没有可收进的正文') }
+    if (!body.trim()) return { ok: false, error: t('当前页没有可收录的正文') }
 
     return {
       ok: true,

@@ -10,7 +10,7 @@ import { SettingsPage } from './pages/SettingsPage'
 import { useI18n } from './LocaleProvider'
 
 const TABS = [
-  { path: '/', label: '收进' },
+  { path: '/', label: '收录' },
   { path: '/sync', label: '同步' },
   { path: '/accounts', label: '账号' },
   { path: '/history', label: '历史' },
@@ -22,7 +22,7 @@ function useConnectionState(): ConnectionState {
   const [state, setState] = useState<ConnectionState>('unknown')
 
   useEffect(() => {
-    // 面板打开期间开 NM 长端口(ADR 0012):投递与收进回执近实时,离开时归还
+    // 面板打开期间开 NM 长端口(ADR 0012):投递与收录回执近实时,离开时归还
     chrome.runtime.sendMessage({ type: 'BRIDGE_WATCH_START' }).catch(() => {})
     let mounted = true
     const poll = async () => {
@@ -120,7 +120,7 @@ export function AppShell() {
   return (
     <div className="flex h-full flex-col bg-background text-foreground">
       {/* 浏览器侧栏标题栏已有品牌,页内不再重复:一行放下切换栏 + 连接状态 + 设置 */}
-      <header className="flex flex-none items-center gap-2 border-b border-border/70 px-3 py-2.5">
+      <header className="flex flex-none items-center gap-1.5 border-b border-border/70 px-2.5 py-2.5">
         <nav className="flex min-w-0 flex-1 rounded-xl bg-muted p-0.5">
           {tabs.map(tab => (
             <NavLink
@@ -128,7 +128,7 @@ export function AppShell() {
               to={tab.path}
               end={tab.path === '/'}
               className={({ isActive }) => cn(
-                'flex h-8 min-w-0 flex-1 items-center justify-center rounded-[11px] px-1 text-[13px] font-medium transition-colors',
+                'flex h-8 min-w-0 flex-1 items-center justify-center rounded-[11px] px-0.5 text-[12.5px] font-medium transition-colors',
                 isActive
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'

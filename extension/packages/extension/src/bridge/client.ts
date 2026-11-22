@@ -2,7 +2,7 @@
  * 本地助手 NM Client(ADR 0012)——连接 app.dswritesync.plugin。
  *
  * BridgeClient 是薄装配:三个深模块在这里组合,本文件只保留调用方
- * (background/index.ts)依赖的接口面与收进/目录 API:
+ * (background/index.ts)依赖的接口面与收录/目录 API:
  * - transport.ts:NM 传输(短请求/长端口/事件订阅/状态)
  * - delivery.ts:任务投递管线(tasks → claim → 分片 → performSync → 回执)
  * - task-presentation.ts:任务呈现(pendingSyncTask 契约与同步窗口)
@@ -31,7 +31,7 @@ export interface DeskCatalog {
   urls: Record<string, string>
 }
 
-/** 收进请求（desk.capture 的 payload）。 */
+/** 收录请求（desk.capture 的 payload）。 */
 export interface CapturePayload {
   operationId?: string
   url: string
@@ -45,7 +45,7 @@ export interface CapturePayload {
   replaceItemId?: string
 }
 
-/** 收进结果:queued 表示已原子落 inbox;DSH 关闭时 dshActive=false,启动后出现在灵感墙。 */
+/** 收录结果:queued 表示已原子落 inbox;DSH 关闭时 dshActive=false,启动后出现在灵感墙。 */
 export interface CaptureResult {
   operationId: string
   ok: boolean
@@ -79,7 +79,7 @@ export class BridgeClient {
       generateSyncId: deps.generateSyncId ?? generateSyncId,
       presentation: new TaskPresenter(),
     })
-    // 长端口事件 → 业务:任务事件踢投递管线,收进结果转发给页面
+    // 长端口事件 → 业务:任务事件踢投递管线,收录结果转发给页面
     this.transport.onTaskAvailable(() => {
       void this.delivery.processPendingTasks()
     })
@@ -138,7 +138,7 @@ export class BridgeClient {
   }
 
   /**
-   * 提交收进:助手原子写 inbox 即刻持久化,ack(queued) 即成功。DSH 关闭时
+   * 提交收录:助手原子写 inbox 即刻持久化,ack(queued) 即成功。DSH 关闭时
    * dshActive=false,由页面提示「DSH 启动后出现在灵感墙」;最终消化结果经
    * capture-result 事件回推。NM 不可用时直接抛错,调用方降级为复制 Markdown。
    */

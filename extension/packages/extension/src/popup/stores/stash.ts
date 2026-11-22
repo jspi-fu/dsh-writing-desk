@@ -45,7 +45,7 @@ export interface StashSaveResponse {
   itemId?: string
   duplicate?: boolean
   replaced?: boolean
-  /** 助手判定 DSH 是否在运行:关着时收进已落盘,启动后出现在灵感墙。 */
+  /** 助手判定 DSH 是否在运行:关着时收录已落盘,启动后出现在灵感墙。 */
   dshActive?: boolean
   error?: string
   markdown?: string
@@ -69,7 +69,7 @@ export async function requestStashEntry(tabId?: number): Promise<{ entry: StashE
     }
 
     const raw = response.entry
-    if (!isRecord(raw)) return { entry: null, error: t('当前页没有可收进的内容') }
+    if (!isRecord(raw)) return { entry: null, error: t('当前页没有可收录的内容') }
 
     return {
       entry: {
@@ -135,7 +135,7 @@ export async function requestStashSave(payload: StashSavePayload): Promise<Stash
 
     return {
       ok: false,
-      error: typeof response.error === 'string' && response.error ? response.error : t('收进失败，请重试'),
+      error: typeof response.error === 'string' && response.error ? response.error : t('收录失败，请重试'),
       markdown: typeof response.markdown === 'string' ? response.markdown : undefined,
     }
   } catch (error) {

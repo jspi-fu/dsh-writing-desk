@@ -17,7 +17,7 @@ export interface TranslationVars {
 
 const EN: Record<string, string> = {
   // AppShell
-  '收进': 'Save',
+  '收录': 'Save',
   '同步': 'Sync',
   '账号': 'Accounts',
   '历史': 'History',
@@ -29,7 +29,7 @@ const EN: Record<string, string> = {
   '设置': 'Settings',
 
   // Stash page
-  '收进当前页': 'Save current page',
+  '收录当前页': 'Save current page',
   '正在读取当前标签页…': 'Reading the current tab…',
   '尚未读取页面': 'No page read yet',
   '刷新当前页': 'Refresh current page',
@@ -64,13 +64,13 @@ const EN: Record<string, string> = {
   '工作台已有标签': 'Tags already in your desk',
   '复制 Markdown': 'Copy Markdown',
   '已复制 Markdown': 'Markdown copied',
-  '收进中…': 'Saving…',
-  '已收进': 'Saved',
-  '已收进。图文创作台没在运行，它下次启动后会出现在灵感墙': 'Saved. The desk is not running; this page will appear on your wall after its next launch.',
-  '收进没有被工作台收下': 'The desk did not accept this capture',
-  '这条链接已经收进过，没有重复建卡': 'This link was already saved; no duplicate card was created',
-  '收进工作台': 'Save to desk',
-  '这个页面已经收进过': 'This page was already saved',
+  '收录中…': 'Saving…',
+  '已收录': 'Saved',
+  '已收录。图文创作台没在运行，它下次启动后会出现在灵感墙': 'Saved. The desk is not running; this page will appear on your wall after its next launch.',
+  '收录没有被工作台收下': 'The desk did not accept this capture',
+  '这条链接已经收录过，没有重复建卡': 'This link was already saved; no duplicate card was created',
+  '收录至工作台': 'Save to desk',
+  '这个页面已经收录过': 'This page was already saved',
   '「{title}」已存在工作台中。保留原条目，还是用当前内容替换？': '"{title}" is already in your desk. Keep the existing item or replace it with the current content?',
   '当前页面': 'current page',
   '保留原条目': 'Keep existing',
@@ -79,15 +79,15 @@ const EN: Record<string, string> = {
   '刷新失败，请重试': 'Refresh failed. Try again.',
   '最多添加 {max} 个标签': 'You can add up to {max} tags',
   '复制失败，请手动选择正文': 'Copy failed. Select the content manually.',
-  '收进失败，请重试': 'Save failed. Try again.',
-  '已保留原条目，本次未收进': 'Kept the existing item; nothing was saved.',
+  '收录失败，请重试': 'Save failed. Try again.',
+  '已保留原条目，本次未收录': 'Kept the existing item; nothing was saved.',
   '没有收到页面读取结果': 'No page read result was returned',
   '读取当前页失败': 'Failed to read the current page',
-  '当前页没有可收进的内容': 'Nothing on this page can be saved',
+  '当前页没有可收录的内容': 'Nothing on this page can be saved',
   '本地助手没有回应': 'The local helper did not respond',
-  '工作台未能收进该网页': 'The desk could not save this page',
-  '收进失败': 'Save failed',
-  '当前页没有可收进的正文': 'This page has no content to save',
+  '工作台未能收录该网页': 'The desk could not save this page',
+  '收录失败': 'Save failed',
+  '当前页没有可收录的正文': 'This page has no content to save',
   '未连接到工作台': 'Not connected to the desk',
   '没有活动标签页': 'No active tab',
   '当前页不支持提取': 'This page cannot be extracted',
@@ -108,7 +108,7 @@ const EN: Record<string, string> = {
   'DSwritesync 本地助手': 'DSwritesync local helper',
   '扩展与图文创作台经浏览器 Native Messaging 直连：装好两边即自动配对，无需 token 或端口配置。': 'The extension connects to the desk over browser Native Messaging: once both sides are installed, pairing is automatic — no token or port setup.',
   '未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。': 'If not paired: restart DeepSeek Harness once (launching repairs the registration automatically), make sure Node.js is installed, then come back here to check the status.',
-  '图文创作台没在运行:现在收进的网页会在它下次启动后出现在灵感墙。': 'The desk is not running: pages captured now will appear on your wall after its next launch.',
+  '图文创作台没在运行:现在收录的网页会在它下次启动后出现在灵感墙。': 'The desk is not running: pages captured now will appear on your wall after its next launch.',
   '同步设置': 'Sync',
   '常用平台': 'Common platforms',
   '隐藏不常用的平台 · {shown}/{total} 个显示': 'Hide less-used platforms · {shown}/{total} shown',
@@ -221,7 +221,7 @@ const EN: Record<string, string> = {
   '未知文章': 'Untitled article',
   'CMS 账户不存在': 'CMS account not found',
   '密码未找到': 'Password not found',
-  '工作台拒绝了收进请求': 'The desk rejected the capture request',
+  '工作台拒绝了收录请求': 'The desk rejected the capture request',
 
   // Adapter error mapping
   '登录已失效，请重新登录': 'Your session expired. Sign in again.',
@@ -298,7 +298,7 @@ export function t(text: string, vars?: TranslationVars): string {
  */
 const ADAPTER_ERROR_RULES: ReadonlyArray<{ pattern: RegExp; message: string }> = [
   {
-    // Chrome 通道错误(收进页最常见):内容脚本没注入或通道断了,英文原文直出最伤观感
+    // Chrome 通道错误(收录页最常见):内容脚本没注入或通道断了,英文原文直出最伤观感
     pattern: /receiving\s+end\s+does\s+not\s+exist|could\s+not\s+establish\s+connection|message\s+port\s+closed/i,
     message: '无法连接页面的读取脚本，请刷新页面后重试',
   },

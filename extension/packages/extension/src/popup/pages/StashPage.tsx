@@ -305,12 +305,12 @@ export function StashPage() {
           urls: { ...previous.urls, [url]: itemId },
         }))
       }
-      // DSH 没开着:收进已原子落盘,启动后上墙(ADR 0012,不再降级复制 Markdown)
-      if (response.dshActive === false) showNotice('已收进。图文创作台没在运行，它下次启动后会出现在灵感墙')
+      // DSH 没开着:收录已原子落盘,启动后上墙(ADR 0012,不再降级复制 Markdown)
+      if (response.dshActive === false) showNotice('已收录。图文创作台没在运行，它下次启动后会出现在灵感墙')
       return
     }
 
-    setSaveError(response.error || '收进失败，请重试')
+    setSaveError(response.error || '收录失败，请重试')
     setOfflineMarkdown(response.markdown || buildFallbackMarkdown({ title: cleanTitle, url, body }))
     void checkBridge()
   }
@@ -334,7 +334,7 @@ export function StashPage() {
 
   const keepExisting = () => {
     setConflictOpen(false)
-    showNotice('已保留原条目，本次未收进')
+    showNotice('已保留原条目，本次未收录')
   }
 
   const confirmReplace = () => {
@@ -363,8 +363,8 @@ export function StashPage() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [conflictOpen])
 
-  // 收进回执实时回推(长端口,ADR 0012):DSH 在跑时卡片几秒内上墙,这里把 itemId
-  // 记下来供冲突判断;消化失败或判重也如实告知,不让「已收进」冒充成功。
+  // 收录回执实时回推(长端口,ADR 0012):DSH 在跑时卡片几秒内上墙,这里把 itemId
+  // 记下来供冲突判断;消化失败或判重也如实告知,不让「已收录」冒充成功。
   useEffect(() => {
     const listener = (message: unknown) => {
       const msg = message as { type?: unknown; payload?: Record<string, unknown> }
@@ -373,8 +373,8 @@ export function StashPage() {
       if (typeof payload.operationId === 'string' && payload.operationId !== lastOperationId.current) return
       if (payload.ok !== true) {
         showNotice(typeof payload.error === 'string' && payload.error
-          ? `${t('收进没有被工作台收下')}：${payload.error}`
-          : t('收进没有被工作台收下'))
+          ? `${t('收录没有被工作台收下')}：${payload.error}`
+          : t('收录没有被工作台收下'))
         return
       }
       const itemId = typeof payload.itemId === 'string' ? payload.itemId : null
@@ -382,7 +382,7 @@ export function StashPage() {
         setSavedItemId(itemId)
         setCatalog(previous => ({ ...previous, urls: { ...previous.urls, [urlRef.current]: itemId } }))
       }
-      if (payload.duplicate === true) showNotice(t('这条链接已经收进过，没有重复建卡'))
+      if (payload.duplicate === true) showNotice(t('这条链接已经收录过，没有重复建卡'))
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
@@ -407,7 +407,7 @@ export function StashPage() {
           <div className="mx-auto w-full max-w-[560px] flex-1 px-4 pb-5 pt-4">
             <div className="mb-4 flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <h2 className="text-[17px] font-semibold tracking-tight">{t('收进当前页')}</h2>
+                <h2 className="text-[17px] font-semibold tracking-tight">{t('收录当前页')}</h2>
                 <p className="mt-0.5 truncate text-xs text-muted-foreground" title={hostLabel}>
                   {/* 错误态下方有完整错误卡,副题只在有信息时出现 */}
                   {hostLabel || (status === 'loading' ? t('正在读取当前标签页…') : status === 'ready' ? t('尚未读取页面') : '')}
@@ -685,15 +685,15 @@ export function StashPage() {
                 {saving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin"  strokeWidth={1.6} />
-                    {t('收进中…')}
+                    {t('收录中…')}
                   </>
                 ) : saved ? (
                   <>
                     <Check className="h-4 w-4"  strokeWidth={1.6} />
-                    {t('已收进')}
+                    {t('已收录')}
                   </>
                 ) : (
-                  t('收进工作台')
+                  t('收录至工作台')
                 )}
               </button>
             </div>
@@ -716,7 +716,7 @@ export function StashPage() {
             className="w-full max-w-[340px] rounded-[18px] border border-border bg-popover p-4 text-popover-foreground shadow-xl"
           >
             <h3 id="stash-conflict-title" className="text-[15px] font-semibold">
-              {t('这个页面已经收进过')}
+              {t('这个页面已经收录过')}
             </h3>
             <p className="mt-1.5 break-words text-xs leading-relaxed text-muted-foreground">
               {t('「{title}」已存在工作台中。保留原条目，还是用当前内容替换？', {

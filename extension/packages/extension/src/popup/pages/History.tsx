@@ -11,8 +11,9 @@ export function HistoryPage() {
   const { history, loadHistory } = useSyncStore()
   const { t, lang } = useI18n()
   const locale = lang === 'zh' ? 'zh-CN' : 'en-US'
-  // 清空全部历史不可恢复,两步确认防误触
+  // 清空全部/逐条删除都不可恢复,两步确认防误触
   const [confirmingClear, setConfirmingClear] = useState(false)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null)
 
   useEffect(() => {
     loadHistory()
@@ -21,6 +22,15 @@ export function HistoryPage() {
   const clearHistory = async () => {
     await chrome.storage.local.remove('syncHistory')
     setConfirmingClear(false)
+    loadHistory()
+  }
+
+  const deleteHistoryItem = async (id: string) => {
+    const storage = await chrome.storage.local.get('syncHistory')
+    await chrome.storage.local.set({
+      syncHistory: (storage.syncHistory || []).filter((row: { id: string }) => row.id !== id),
+    })
+    setConfirmingDeleteId(null)
     loadHistory()
   }
 
@@ -127,12 +137,38 @@ export function HistoryPage() {
                 )}
 
                 <div className="flex-1 min-w-0">
-                  {/* 标题和时间 */}
+                  {/* 标题、时间和逐条删除 */}
                   <div className="flex items-start justify-between gap-2 mb-1">
                     <h3 className="font-article-serif font-medium text-sm line-clamp-2">{item.title}</h3>
-                    <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      {formatTime(item.startTime ?? item.timestamp ?? Date.now())}
-                    </span>
+                    {confirmingDeleteId === item.id ? (
+                      <span className="flex flex-none items-center gap-1">
+                        <button
+                          onClick={() => void deleteHistoryItem(item.id)}
+                          className="rounded-md px-2 py-0.5 text-xs font-medium text-status-danger hover:bg-status-danger/10"
+                        >
+                          {t('删除')}
+                        </button>
+                        <button
+                          onClick={() => setConfirmingDeleteId(null)}
+                          className="rounded-md px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+                        >
+                          {t('取消')}
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="flex flex-none items-center gap-1">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatTime(item.startTime ?? item.timestamp ?? Date.now())}
+                        </span>
+                        <button
+                          onClick={() => setConfirmingDeleteId(item.id)}
+                          aria-label={t('删除')}
+                          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-destructive hover:bg-muted"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" strokeWidth={1.6} />
+                        </button>
+                      </span>
+                    )}
                   </div>
 
                   {/* 统计 */}

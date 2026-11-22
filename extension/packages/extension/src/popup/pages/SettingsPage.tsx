@@ -287,7 +287,7 @@ export function SettingsPage() {
               )}
               {bridgeStatus.paired && !bridgeStatus.dshActive && (
                 <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t('图文创作台没在运行:现在收进的网页会在它下次启动后出现在灵感墙。')}
+                  {t('图文创作台没在运行:现在收录的网页会在它下次启动后出现在灵感墙。')}
                 </p>
               )}
             </div>
