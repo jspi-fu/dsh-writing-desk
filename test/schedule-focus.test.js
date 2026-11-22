@@ -123,3 +123,22 @@ test('同心波纹只作装饰，离屏暂停且尊重 reduced-motion', () => {
   assert.match(css, /is-ripple-active[^}]*animation-play-state:\s*running/s)
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.md-schedule-focus-ripple > span\s*\{[^}]*animation:\s*none/)
 })
+
+test('波纹是流光溢彩的幻彩细环，颜色只在背景层不压低正文可读性', () => {
+  const css = readFileSync(new URL('../client/schedule-focus.css', import.meta.url), 'utf8')
+  const rippleBlock = css.match(/\.md-schedule-focus-ripple\s*\{[^}]*\}/)?.[0] ?? ''
+  const ringBlock = css.match(/\.md-schedule-focus-ripple > span\s*\{[^}]*\}/)?.[0] ?? ''
+  const bloomBlock = css.match(/\.md-schedule-focus-ripple::before\s*\{[^}]*\}/)?.[0] ?? ''
+  // 幻彩细环：色纸渐变 + 只保留环带的环形遮罩，色相按环错开。
+  assert.match(ringBlock, /conic-gradient\(from calc\(var\(--ripple-index\)/)
+  assert.match(ringBlock, /#c9b6f2[\s\S]*#a9cdf5[\s\S]*#f7b899/)
+  assert.match(ringBlock, /radial-gradient\(farthest-side, transparent calc\(100% - 1\.5px\)/)
+  // 柔光漂移：三色 radial-gradient + blur + 独立 keyframes。
+  assert.match(bloomBlock, /radial-gradient/)
+  assert.match(bloomBlock, /filter:\s*blur\(/)
+  assert.match(css, /@keyframes md-schedule-focus-bloom/)
+  // 波纹层压在文字之下，正文仍是纯白，不做渐变文字。
+  assert.match(rippleBlock, /z-index:\s*0/)
+  assert.match(css, /--focus-text:\s*#f7f7f5/)
+  assert.doesNotMatch(css, /\.md-schedule-focus-body[^{]*\{[^}]*background-image:\s*linear-gradient/)
+})
