@@ -1,134 +1,235 @@
-// 内容管理:收发室(ADR 0006)。看板和表格是同一份数据的两种看法;
-// 四列看板,相位(审读中/已写回/人工修改中)是同一列稿子的生命阶段,不加列。
+// 内容栏目:默认是「我的作品」画廊,可切「流程」看板(ADR 0015)。
+// 作品是唯一的内容实体(ADR 0013):素材只提供来源,正文与发布状态都在作品上。
+//
+// 这一页不是数据表,是作品集:刊名与最近更新的一篇构成卷首,
+// 再往下才是按最近更新排的作品目录。搜索与流程切换仍是高效工具。
 import React from 'react'
-import { isDrafted, isScheduled } from '../src/state.js'
-import { dispatchOps, openItem, openProof, seenRevOf, setDesk, useDesk } from './desk.js'
-import { Empty, Icon, Segmented } from './ui.jsx'
+import { PUBLICATION_LABEL, workHasText, workState, workTitle } from '../src/work.js'
+import { EMPTY_LIST, openWork, seenRevOf, setDesk, useDesk } from './desk.js'
+import { Icon, Segmented } from './ui.jsx'
 import { plural, t, useLang } from './i18n.js'
-import { CATEGORY_LABEL, STATUSES, STATUS_LABEL, categoryOf, displayItem, fmtWhen, hash, isIdea, posterOf, relativeDay } from './util.js'
+import { relativeDay } from './util.js'
 
-function useContentItems() {
-  const items = useDesk(s => s.state.items)
+const STATE_ORDER = ['draft', 'submitted', 'published']
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+function useWorks() {
+  const works = useDesk(s => s.state?.works ?? EMPTY_LIST)
   const query = useDesk(s => s.query).trim().toLowerCase()
-  return React.useMemo(() => items.filter((item) => {
-    if (!isIdea(item)) return false
-    if (!query) return true
-    return [item.title, item.body, item.source, item.platform, item.platform && t(item.platform), ...(item.tags ?? [])].some(v => String(v ?? '').toLowerCase().includes(query))
-  }), [items, query])
+  return React.useMemo(() => {
+    const all = [...works.filter(work => !work.archivedAt)]
+      .sort((a, b) => Date.parse(b.updatedAt ?? b.createdAt ?? 0) - Date.parse(a.updatedAt ?? a.createdAt ?? 0))
+    const rows = query
+      ? all.filter(work => [workTitle(work), ...(work.sourceSnapshot ?? []).map(s => s.title)]
+        .some(value => String(value ?? '').toLowerCase().includes(query)))
+      : all
+    return { all, rows }
+  }, [works, query])
 }
 
-// 相位(ADR 0006):同一列稿子的生命阶段。审读中 = 已交会话还没写回;
-// 已写回 = 有比上次签收更新的 rev;人工修改中 = 用户改过稿(pen 徽章)。
-function phaseOf(item, seenRev) {
-  const production = item.production
-  if (item.sentToSession && !production) return 'reviewing'
-  if (production && (production.rev ?? 0) > seenRev) return 'written'
-  if (production && (production.snapshots ?? []).some(snapshot => snapshot.by === 'user')) return 'editing'
+/** 封面:作品自己的封面优先,没有就落回第一份来源素材的图。 */
+function coverOfWork(work) {
+  const src = work.current?.cover?.src
+  if (src) return src
+  for (const source of work.sourceSnapshot ?? []) {
+    if (source.poster) return source.poster
+  }
   return null
 }
 
-const PHASE_LABEL = { reviewing: '审读中', written: '已写回', editing: '人工修改中' }
-
-function PhaseBadge({ item, seenRev }) {
-  const phase = phaseOf(item, seenRev)
-  if (!phase) return null
+function StateBadge({ work }) {
+  const state = workState(work)
   return (
-    <span className={`md-phase is-${phase}`}>
-      <Icon name={phase === 'editing' ? 'pen' : 'spark'} size={11} />
-      {t(PHASE_LABEL[phase])}
+    <span className={`md-work-state is-${state}`}>
+      <span className={`md-dot status-${state === 'draft' ? 'draft' : state === 'submitted' ? 'ready' : 'published'}`} />
+      {t(PUBLICATION_LABEL[state])}
     </span>
   )
 }
 
-/** 审读中占位卡:色纸 tone 轮转,静态,不可拖——写回之前它就是这个样子。 */
-function ReviewingCard({ item }) {
-  return (
-    <div className={`md-pending-card tone-${hash(item.id) % 6}`} data-card={item.id}>
-      <strong>{item.title || t('无标题')}</strong>
-      <span className="md-pending-meta">{t('已交会话 · 写回后落进这列')}</span>
-    </div>
-  )
-}
-
-function BoardCard({ item: raw, seenRev }) {
-  // 有成稿时显示成稿的标题和封面
-  const item = displayItem(raw)
-  const poster = posterOf(item)
-  const phase = phaseOf(raw, seenRev)
+function WorkCard({ work, index }) {
+  const poster = coverOfWork(work)
+  const title = workTitle(work) || t('（无标题）')
+  const coverText = (work.current?.coverText || '').trim()
+  const fresh = (work.current?.rev ?? 0) > seenRevOf(work.id)
+  const sources = work.sourceSnapshot ?? []
+  const firstSource = sources[0]?.title || t('（无标题）')
   return (
     <button
       type="button"
-      className={`md-board-card ${phase === 'written' ? 'is-written-back' : ''}`}
-      draggable
-      onDragStart={(event) => {
-        event.dataTransfer.setData('text/writing-desk-item', item.id)
-        event.dataTransfer.effectAllowed = 'move'
-      }}
-      onClick={() => {
-        // 成稿卡进校样浮层(签收),素材卡走统一编辑对话框(ADR 0007)
-        if (isDrafted(raw)) openProof(item.id)
-        else openItem(item.id)
-      }}
+      className={`md-work-card ${fresh ? 'is-fresh' : ''}`}
+      onClick={() => openWork(work.id)}
+      title={title}
+      aria-label={t('打开作品《{title}》', { title })}
+      style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
     >
-      {poster ? <img src={poster} alt="" loading="lazy" draggable={false} /> : null}
-      <strong>{item.title}</strong>
-      <span className="md-board-meta">
-        {item.platform ? <span>{t(item.platform)}</span> : null}
-        {isScheduled(item) ? <span className="is-time">{relativeDay(item.scheduledAt)}</span> : null}
-        {/* 已成稿走共享谓词:生成稿与手动改稿改的是同一份成稿产物,同一个口径 */}
-        {isDrafted(raw) ? <Icon name="pen" size={12} /> : null}
-        <PhaseBadge item={raw} seenRev={seenRev} />
+      <span className={`md-work-art ${poster ? '' : 'is-type'}`}>
+        {poster
+          ? <img src={poster} alt="" loading="lazy" draggable={false} />
+          : <strong>{coverText || title}</strong>}
+        <span className="md-work-no" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span>
+      </span>
+      <span className="md-work-body">
+        <strong className="md-work-title">{title}</strong>
+        <span className="md-work-meta">
+          <StateBadge work={work} />
+          {!workHasText(work) ? <span className="md-work-no-text">{t('还没有正文')}</span> : null}
+          <span className="md-work-date">{relativeDay(work.updatedAt ?? work.createdAt)}</span>
+        </span>
+        {sources.length ? (
+          <span className="md-work-source-line" title={sources.map(s => s.title || t('（无标题）')).join(' / ')}>
+            {t('来自《{title}》', { title: firstSource })}{sources.length > 1 ? ` +${sources.length - 1}` : ''}
+          </span>
+        ) : null}
       </span>
     </button>
   )
 }
 
-// 看板四列(ADR 0006):灵感/成稿/待发布/已发布。outline 数据宽容归入成稿列,
-// 已交会话未写回的也停在成稿列(审读中相位)。
-const BOARD_COLUMNS = ['idea', 'draft', 'ready', 'published']
-
-function boardColumnOf(item) {
-  if ((item.sentToSession && !item.production) || item.status === 'outline') return 'draft'
-  return item.status
+/** 最近更新的一篇占卷首主打位；状态、日期、来源与目录卡保持同一语义。 */
+function WorkFeature({ work }) {
+  const poster = coverOfWork(work)
+  const title = workTitle(work) || t('（无标题）')
+  const coverText = (work.current?.coverText || '').trim()
+  const fresh = (work.current?.rev ?? 0) > seenRevOf(work.id)
+  const sources = work.sourceSnapshot ?? []
+  const firstSource = sources[0]?.title || t('（无标题）')
+  return (
+    <button
+      type="button"
+      className={`md-work-feature ${fresh ? 'is-fresh' : ''}`}
+      onClick={() => openWork(work.id)}
+      title={title}
+      aria-label={t('打开作品《{title}》', { title })}
+    >
+      <span className="md-work-feature-copy">
+        <strong className="md-work-feature-title">{title}</strong>
+        {sources.length ? (
+          <span className="md-work-source-line" title={sources.map(s => s.title || t('（无标题）')).join(' / ')}>
+            {t('来自《{title}》', { title: firstSource })}{sources.length > 1 ? ` +${sources.length - 1}` : ''}
+          </span>
+        ) : null}
+        <span className="md-work-feature-foot">
+          <StateBadge work={work} />
+          <span className="md-work-date">{relativeDay(work.updatedAt ?? work.createdAt)}</span>
+          <span className="md-work-feature-open" aria-hidden="true"><Icon name="chevR" size={15} /></span>
+        </span>
+      </span>
+      <span className="md-work-feature-art">
+        <span className={`md-work-art is-feature ${poster ? '' : 'is-type'}`}>
+          {poster
+            ? <img src={poster} alt="" loading="eager" draggable={false} />
+            : <strong>{coverText || title}</strong>}
+        </span>
+      </span>
+    </button>
+  )
 }
 
-function Board({ items }) {
-  const [over, setOver] = React.useState(null)
+function Gallery({ works, offset = 0 }) {
   return (
-    <div className="md-board">
-      {BOARD_COLUMNS.map((status) => {
-        // 还停留在灵感状态的分支只是发散草图，不占看板的位置
-        const rows = items.filter(item => boardColumnOf(item) === status && !(item.parentId && item.status === 'idea'))
+    <div className="md-works">
+      {works.map((work, index) => <WorkCard key={work.id} work={work} index={index + offset} />)}
+    </div>
+  )
+}
+
+function CatalogueHead({ count, query }) {
+  return (
+    <div className="md-works-rubric">
+      <span className="md-works-rubric-label">{query ? t('搜索结果') : t('作品目录')}</span>
+      <i className="md-works-rubric-rule" aria-hidden="true" />
+      <span className="md-works-rubric-count" aria-live="polite">
+        {query
+          ? t(plural(count, '找到 1 篇', '找到 {n} 篇'), { n: count })
+          : t(plural(count, '共 1 篇', '共 {n} 篇'), { n: count })}
+      </span>
+    </div>
+  )
+}
+
+function WorksHero({ total, query, mode, onMode }) {
+  const now = new Date()
+  const date = `${now.getFullYear()} · ${t('{m} 月 {d} 日', { m: now.getMonth() + 1, d: now.getDate(), mon: now.toLocaleString('en-US', { month: 'short' }) })} · ${t(WEEKDAYS[now.getDay()])}`
+  return (
+    <header className={`md-works-hero ${total ? '' : 'is-empty'}`}>
+      <div className="md-works-masthead">
+        <h1 className="md-works-title">{t('我的作品')}</h1>
+        <p className="md-works-deck">{t('你写下的，会留在这里。')}</p>
+        <time className="md-hero-date" dateTime={now.toISOString()}>{date}</time>
+      </div>
+      {!total ? (
+        <div className="md-works-empty">
+          <span className="md-works-empty-mark" aria-hidden="true"><em>01</em><i /></span>
+          <div className="md-works-empty-copy">
+            <h2>{t('第一篇')}</h2>
+            <p className="md-works-lede">{t('从灵感墙点「成稿」，第一篇作品就会出现在这里。')}</p>
+            <button type="button" className="md-works-go" onClick={() => setDesk({ view: 'home' })}>
+              <Icon name="wall" size={14} />
+              {t('去灵感墙')}
+              <Icon name="chevR" size={12} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="md-works-tools">
+          <label className="md-search md-works-search">
+            <Icon name="search" size={16} />
+            <input
+              value={query}
+              onChange={e => setDesk({ query: e.target.value })}
+              placeholder={t('搜索作品标题、来源')}
+              aria-label={t('搜索作品')}
+            />
+            {query ? (
+              <button type="button" className="md-search-clear" aria-label={t('清空搜索')} onClick={() => setDesk({ query: '' })}>
+                <Icon name="close" size={12} />
+              </button>
+            ) : null}
+          </label>
+          <span className="md-works-tools-gap" />
+          <Segmented
+            label={t('显示方式')}
+            value={mode}
+            onChange={onMode}
+            options={[{ value: 'gallery', label: t('我的作品') }, { value: 'pipeline', label: t('流程') }]}
+          />
+        </div>
+      )}
+    </header>
+  )
+}
+
+function NoResults() {
+  return (
+    <div className="md-works-nomatch">
+      <p>{t('没有找到匹配的作品。')}</p>
+      <button type="button" className="md-link-btn" onClick={() => setDesk({ query: '' })}>{t('清空搜索')}</button>
+    </div>
+  )
+}
+
+// 流程看板只按状态列展示,不允许拖拽改状态(ADR 0015):状态是发布结果,不是手动摆位。
+function Pipeline({ works }) {
+  return (
+    <div className="md-pipeline">
+      {STATE_ORDER.map((state) => {
+        const rows = works.filter(work => workState(work) === state)
         return (
-          <section
-            key={status}
-            className={`md-board-col ${over === status ? 'is-over' : ''}`}
-            aria-label={t(STATUS_LABEL[status])}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setOver(status)
-            }}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) setOver(null)
-            }}
-            onDrop={(event) => {
-              event.preventDefault()
-              setOver(null)
-              const id = event.dataTransfer.getData('text/writing-desk-item')
-              if (id) dispatchOps([{ op: 'set_status', id, status }], { label: t('修改状态') })
-            }}
-          >
-            <header>
-              <span className={`md-dot status-${status}`} />
-              <h3>{t(STATUS_LABEL[status])}</h3>
-              <span className="md-muted">{rows.length}</span>
+          <section key={state} className="md-pipeline-col" aria-label={t(PUBLICATION_LABEL[state])}>
+            <header className="md-pipeline-head">
+              <span className={`md-dot status-${state === 'draft' ? 'draft' : state === 'submitted' ? 'ready' : 'published'}`} />
+              <h3>{t(PUBLICATION_LABEL[state])}</h3>
+              <b>{rows.length}</b>
             </header>
-            <div className="md-board-list">
-              {rows.map((item) => {
-                const seenRev = seenRevOf(item.id)
-                if (item.sentToSession && !item.production) return <ReviewingCard key={item.id} item={item} />
-                return <BoardCard key={item.id} item={item} seenRev={seenRev} />
-              })}
+            <div className="md-pipeline-list">
+              {rows.map(work => (
+                <button type="button" key={work.id} className="md-pipeline-item" onClick={() => openWork(work.id)}>
+                  <span>{workTitle(work) || t('（无标题）')}</span>
+                  <time>{relativeDay(work.updatedAt ?? work.createdAt)}</time>
+                </button>
+              ))}
+              {!rows.length ? <p className="md-pipeline-empty">{t('这里还是空的。')}</p> : null}
             </div>
           </section>
         )
@@ -137,80 +238,17 @@ function Board({ items }) {
   )
 }
 
-// label 是中文原文，显示时再翻译
-const COLUMNS = [
-  { key: 'title', label: '内容', get: i => i.title },
-  { key: 'status', label: '状态', get: i => STATUSES.indexOf(i.status) },
-  { key: 'platform', label: '平台', get: i => i.platform ?? '' },
-  { key: 'scheduledAt', label: '排期', get: i => i.scheduledAt ?? '' },
-  { key: 'createdAt', label: '记录于', get: i => i.createdAt },
-]
-
-function Table({ items }) {
-  const [sort, setSort] = React.useState({ key: 'createdAt', dir: -1 })
-  const sorted = React.useMemo(() => {
-    const column = COLUMNS.find(c => c.key === sort.key)
-    return [...items].sort((a, b) => {
-      const x = column.get(a)
-      const y = column.get(b)
-      return (x > y ? 1 : x < y ? -1 : 0) * sort.dir
-    })
-  }, [items, sort])
-  return (
-    <div className="md-table-wrap">
-      <table className="md-table">
-        <thead>
-          <tr>
-            {COLUMNS.map(column => (
-              <th key={column.key} aria-sort={sort.key === column.key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
-                <button type="button" onClick={() => setSort(s => ({ key: column.key, dir: s.key === column.key ? -s.dir : 1 }))}>
-                  {t(column.label)}
-                  {sort.key === column.key ? <Icon name={sort.dir > 0 ? 'send' : 'chevD'} size={11} /> : null}
-                </button>
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map((item) => {
-            const poster = posterOf(item)
-            const seenRev = seenRevOf(item.id)
-            return (
-              <tr key={item.id} onClick={() => (isDrafted(item) ? openProof(item.id) : openItem(item.id))} tabIndex={0} onKeyDown={(event) => { if (event.key === 'Enter') (isDrafted(item) ? openProof(item.id) : openItem(item.id)) }}>
-                <td className="md-table-title">
-                  <span className="md-thumb">{poster ? <img src={poster} alt="" loading="lazy" /> : <span>{item.title.slice(0, 1)}</span>}</span>
-                  <span><strong>{item.title}</strong><small>{item.parentId ? `${t('分支')} · ` : ''}{t(CATEGORY_LABEL[categoryOf(item)])}{item.source ? ` · ${item.source}` : ''}</small></span>
-                </td>
-                <td>
-                  <span className={`md-status status-${item.status}`}>{t(STATUS_LABEL[item.status])}</span>
-                  <PhaseBadge item={item} seenRev={seenRev} />
-                </td>
-                <td>{item.platform ? t(item.platform) : '—'}</td>
-                <td className="md-nowrap">{item.scheduledAt ? fmtWhen(item.scheduledAt) : '—'}</td>
-                <td className="md-nowrap">{relativeDay(item.createdAt)}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-/** 写回签收栏(ADR 0006):rev 比上次签收新的成稿以题名签宣布,点开校样即签收;无未签收时高度归零。 */
-function IntakeBar({ items }) {
-  const pending = items.filter((item) => {
-    const production = item.production
-    return production && (production.rev ?? 0) > seenRevOf(item.id)
-  })
+/** 会话写回签收:rev 比上次签收新的作品以题名签宣布,点开作品即签收。 */
+function IntakeBar({ works }) {
+  const pending = works.filter(work => (work.current?.rev ?? 0) > seenRevOf(work.id))
   if (!pending.length) return null
   return (
     <div className="md-intake" role="region" aria-label={t('写回签收')}>
       <span className="md-intake-label"><Icon name="spark" size={13} />{t('写回签收')}</span>
       <div className="md-intake-chips">
-        {pending.map(item => (
-          <button key={item.id} type="button" className="md-intake-chip" title={t('会话写回')} onClick={() => openProof(item.id)}>
-            {displayItem(item).title}
+        {pending.map(work => (
+          <button key={work.id} type="button" className="md-intake-chip" title={t('会话写回')} onClick={() => openWork(work.id)}>
+            {workTitle(work) || t('（无标题）')}
           </button>
         ))}
       </div>
@@ -220,37 +258,29 @@ function IntakeBar({ items }) {
 
 export function ContentView() {
   useLang()
-  const [mode, setMode] = React.useState('board')
-  const items = useContentItems()
+  const [mode, setMode] = React.useState('gallery')
+  const { all, rows } = useWorks()
   const query = useDesk(s => s.query)
-  // 看板四列计数:审读中的稿子算进成稿列
-  const counts = BOARD_COLUMNS.map(s => items.filter(i => boardColumnOf(i) === s && !(i.parentId && s === 'idea')).length)
-  const drafted = items.filter(isDrafted).length
+  const total = all.length
   return (
-    <div className="md-page">
-      <header className="md-page-head">
-        <div>
-          <h1>{t('内容')}</h1>
-          <p className="md-page-sub">{[
-            t(plural(items.length, '共 1 条', '共 {n} 条'), { n: items.length }),
-            t(plural(counts[0], '1 个灵感待推进', '{n} 个灵感待推进'), { n: counts[0] }),
-            t('{n} 篇已成稿', { n: drafted }),
-            t('{n} 篇已发布', { n: counts[3] }),
-          ].join(' · ')}</p>
-        </div>
-        <span style={{ flex: 1 }} />
-        <label className="md-search">
-          <Icon name="search" size={15} />
-          <input value={query} onChange={e => setDesk({ query: e.target.value })} placeholder={t('搜索标题、标签、平台')} aria-label={t('搜索内容')} />
-        </label>
-        <Segmented label={t('显示方式')} value={mode} onChange={setMode} options={[{ value: 'board', label: t('看板') }, { value: 'table', label: t('表格') }]} />
-      </header>
-      {items.length === 0 ? <Empty title={query ? t('没有匹配的内容') : t('还没有内容')} hint={query ? t('换个关键词试试。') : t('到灵感页记下第一条。')} /> : (
+    <div className="md-page md-works-page">
+      <WorksHero total={total} query={query} mode={mode} onMode={setMode} />
+      {total ? (
         <>
-          <IntakeBar items={items} />
-          {mode === 'board' ? <Board items={items} /> : <Table items={items} />}
+          {rows.length ? <IntakeBar works={rows} /> : null}
+          {mode === 'gallery' ? (
+            <>
+              <CatalogueHead count={rows.length} query={Boolean(query.trim())} />
+              {rows.length ? (
+                <>
+                  <WorkFeature work={rows[0]} />
+                  {rows.length > 1 ? <Gallery works={rows.slice(1)} offset={1} /> : null}
+                </>
+              ) : <NoResults />}
+            </>
+          ) : rows.length ? <Pipeline works={rows} /> : <NoResults />}
         </>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -68,16 +68,16 @@ export function articleWithFigures(production, figures) {
 
 /**
  * @param {object} production - 成稿。
- * @param {{filesDir: string, exportDir: string}} options - 素材目录与保存位置。
+ * @param {{filesDir: string, exportDir: string, target?: string}} options - 素材目录、默认保存位置,以及用户这次明确选定的文件夹。
  * @returns {Promise<{path: string, files: string[], hashes: Record<string, string>, backups: string[]}>} 文件夹路径、写入的文件名、稿子的指纹，以及这次留下的备份。
  */
-export async function saveProduction(production, { filesDir, exportDir }) {
+export async function saveProduction(production, { filesDir, exportDir, target: explicitTarget }) {
   // 英文界面用纯 ASCII 文件名，方便在别的系统和工具里打开
   const en = currentLang() === 'en'
   const names = en
     ? { cover: 'cover-original', figure: i => `figure-${i}`, script: 'script.md' }
     : { cover: '封面原图', figure: i => `配图${i}`, script: '文章.md' }
-  const target = production.savedPath || freeFolder(exportDir, production.title)
+  const target = explicitTarget || production.savedPath || freeFolder(exportDir, production.title)
   await mkdir(target, { recursive: true })
   const files = []
   const hashes = {}

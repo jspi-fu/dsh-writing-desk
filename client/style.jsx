@@ -2,6 +2,7 @@
 import React from 'react'
 import { dispatchOps, EMPTY_LIST, exportSkills, harvestText, setDesk, useDesk } from './desk.js'
 import { openStyleSession } from './session-link.js'
+import { LearnFromWorksDialog } from './learn-from-works.jsx'
 import { lang, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { STYLE_CATEGORIES, hash, styleIcon } from './util.js'
@@ -119,6 +120,7 @@ export function StyleView() {
   const activeId = useDesk(s => s.state.activeStyleId)
   const skills = useDesk(s => s.state.skills)
   const [adding, setAdding] = React.useState(null)
+  const [learning, setLearning] = React.useState(false)
   const [category, setCategory] = React.useState('全部')
   const active = styles.find(row => row.id === activeId)
   const mine = styles.filter(row => !row.preset)
@@ -152,6 +154,7 @@ export function StyleView() {
             <div className="md-hero-actions">
               <button type="button" className="md-pill is-primary" onClick={() => setAdding('text')}><Icon name="pen" size={14} />{t('贴内容')}</button>
               <button type="button" className="md-pill" onClick={() => setAdding('url')}><Icon name="link" size={14} />{t('贴链接')}</button>
+              <button type="button" className="md-pill" onClick={() => setLearning(true)}><Icon name="branch" size={14} />{t('从作品学习')}</button>
             </div>
           </div>
         </section>
@@ -189,6 +192,7 @@ export function StyleView() {
         </section>
       </div>
       {adding ? <AddStyleDialog initialTab={adding} onClose={() => setAdding(null)} /> : null}
+      {learning ? <LearnFromWorksDialog onClose={() => setLearning(false)} /> : null}
     </div>
   )
 }

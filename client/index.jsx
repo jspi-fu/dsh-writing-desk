@@ -6,10 +6,12 @@ import { CapsuleAdd, CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureUrl, dispatchOps, EMPTY_LIST, loadDesk, previewUrl, report, setDesk, toast, undo, uploadFile, useDesk } from './desk.js'
 import { DockRail } from './dock.jsx'
-import { ProofOverlay } from './proof.jsx'
+import { WorkEditor } from './work-editor.jsx'
 import { RetagDialog } from './retag.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
+import { ScheduleBox } from './schedule-form.jsx'
+import { mountScheduleReminder } from './reminder.jsx'
 import { SettingsDialog } from './settings.jsx'
 import { setSessionWorkspace } from './session-link.js'
 import { attachTakeIn } from './take-in.js'
@@ -137,10 +139,20 @@ function CaptureDialog() {
     return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
   }, [items])
 
-  // 打开时把现有内容铺进字段:编辑页签不再切换,新增总是落在笔记
+  // 打开时把现有内容铺进字段:编辑页签不再切换,新增总是落在笔记。
+  // 只在「打开另一条 / 新开一次」时播种:items 每次写操作都会换新数组,
+  // 无条件跟着 items 重跑会把用户正在输入的标题冲掉(先在排期面板里点保存就会出现)。
+  const seeded = React.useRef(null)
   React.useEffect(() => {
-    if (!capture) return
+    if (!capture) {
+      seeded.current = null
+      return
+    }
+    const key = `${capture.mode}:${capture.id ?? ''}`
+    if (seeded.current === key) return
     const row = capture.mode === 'edit' ? items.find(item => item.id === capture.id) : null
+    if (capture.mode === 'edit' && !row) return
+    seeded.current = key
     setTab(capture.tab ?? 'note')
     setTitle(row?.title ?? '')
     setText(row?.body ?? '')
@@ -370,10 +382,13 @@ function CaptureDialog() {
                 </div>
               </div>
             ) : null}
-            <label className="md-field">
-              <span>{t('标题')}</span>
-              <input value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
-            </label>
+            <div className="md-field md-title-field">
+              <label htmlFor="md-item-title">{t('标题')}</label>
+              <div className="md-title-line">
+                <input id="md-item-title" value={title} onChange={e => setTitle(e.target.value)} placeholder={t('留空就自动取名')} />
+                {editing ? <ScheduleBox item={editing} /> : null}
+              </div>
+            </div>
             {editingCategory === 'link' ? (
               <label className="md-field">
                 <span>{t('简介')}</span>
@@ -418,17 +433,18 @@ function UpdateBadge() {
 }
 
 function SampleBadge() {
-  const hasSample = useDesk(s => s.state.items.some(i => i.sample))
+  const hasSample = useDesk(s => ['items', 'capsules', 'works', 'people', 'angles', 'skills', 'styles']
+    .some(key => s.state[key]?.some(row => row.sample)))
   if (!hasSample) return null
   return (
-    <button type="button" className="md-sample" title={t('现在看到的内容都是示例，可以一键清空')} onClick={() => setDesk({
+    <button type="button" className="md-sample" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} aria-label={t('清空示例数据')} title={t('清空全部示例数据，保留你的内容')} onClick={() => setDesk({
       dialog: {
         title: t('清空示例数据'),
         submitLabel: t('清空'),
-        fields: [],
+        fields: [{ name: 'confirmation', type: 'hidden', label: t('将删除全部示例灵感、胶囊和作品；你的内容会保留。') }],
         onSubmit: () => dispatchOps([{ op: 'clear_samples' }], { label: t('清空示例数据') }),
       },
-    })}>{t('示例数据 · 清空')}</button>
+    })}><Icon name="trash" size={14} /><span>{t('清空示例数据')}</span></button>
   )
 }
 
@@ -477,15 +493,15 @@ function Desk() {
         <header className="md-topbar" data-window-drag="">
           <nav className="md-nav" aria-label={t('工作台导航')}>
             {NAV.map(entry => (
-              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, proofId: null, selection: null })}>
+              <button type="button" key={entry.id} className={view === entry.id ? 'is-on' : ''} aria-current={view === entry.id ? 'page' : undefined} onClick={() => setDesk({ view: entry.id, workId: null, selection: null })}>
                 {entry.navKey && lang() === 'en' ? t(entry.navKey) : t(entry.label)}
               </button>
             ))}
           </nav>
           <span style={{ flex: 1 }} />
-          {ready ? <SampleBadge /> : null}
           {canUndo ? <IconButton icon="undo" label={t('撤销上一步')} onClick={undo} /> : null}
           {ready ? <UpdateBadge /> : null}
+          {ready ? <SampleBadge /> : null}
           <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
         </header>
         <main className="md-content" key={view}>
@@ -500,8 +516,8 @@ function Desk() {
       {ready ? <CapsuleAdd /> : null}
       {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
-      {/* 校样浮层由 desk store 的 proofId 门控,常挂载——内容页成稿卡与签收栏都点开它 */}
-      <ProofOverlay />
+      {/* 作品编辑器由 desk store 的 workId 门控,常挂载——内容页作品卡与签收栏都点开它 */}
+      <WorkEditor />
       <Menu />
       <Toast />
     </div>
@@ -512,13 +528,14 @@ function PanelIcon({ size }) {
   return <Icon name="scatter" size={size} />
 }
 
-export const inject = ['slots']
+export const inject = ['slots', 'layout']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
   mountComposerDock(ctx)
   mountWorkspace(ctx)
   mountBetterSidebar(ctx)
+  mountScheduleReminder(ctx, PANEL_ID)
 }
 
 /**

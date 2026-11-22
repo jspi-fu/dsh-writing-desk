@@ -1,7 +1,8 @@
 // 首次打开时的示例数据。全部带 sample 标记，界面上有一键清空入口。
 import { currentLang, normalizeLang } from './i18n.js'
+import { buildDemo } from './demo.js'
 import { PRESET_VERSION, migratePresets, presetText, seedPresets } from './style-presets.js'
-import { isDrafted } from './state.js'
+import { isUsed } from './work.js'
 
 const A = name => `writing-desk/assets/${name}`
 
@@ -110,6 +111,56 @@ const SKILLS_EN = [
   ['Use readers\' words in the title', 'Lift exact phrases from the comments into the title. They get more clicks than your own summary.', 'Example: needs more data to confirm'],
 ]
 
+/** 旧成稿产物(挂在素材上的 production)迁成独立作品:ADR 0013 的一次性整批迁移。 */
+function migrateWorks(state) {
+  const hasText = value => typeof value === 'string' && value.trim().length > 0
+  const works = []
+  for (const item of state.items ?? []) {
+    const production = item.production
+    if (!production || typeof production !== 'object' || !hasText(production.article)) continue
+    const current = {
+      title: production.title ?? '',
+      coverText: production.coverText ?? '',
+      article: production.article ?? '',
+      ...(production.cover?.src ? { cover: production.cover } : {}),
+      ...(Array.isArray(production.images) && production.images.length ? { images: production.images } : {}),
+      ...(production.intent ? { intent: production.intent } : {}),
+      ...(production.review ? { review: production.review } : {}),
+      rev: production.rev ?? 1,
+    }
+    // 旧版本把发布回执与状态挂在素材上,迁进作品的发布记录(ADR 0013)
+    const dispatches = Array.isArray(item.dispatches) ? item.dispatches.slice(-20) : []
+    const okDispatch = dispatches.find(row => row?.ok === true)
+    const published = item.status === 'published' || Boolean(item.publishedAt)
+    const capsuleIds = (state.capsules ?? []).filter(capsule => (capsule.itemIds ?? []).includes(item.id)).map(capsule => capsule.id)
+    works.push({
+      id: `w_migrated_${item.id}`,
+      sourceItemIds: [item.id],
+      sourceCapsuleIds: capsuleIds,
+      sourceSnapshot: [{ itemId: item.id, title: item.title ?? '', kind: item.kind ?? 'note' }],
+      current,
+      publication: {
+        status: published ? 'published' : okDispatch ? 'submitted' : 'draft',
+        ...(okDispatch?.at ? { submittedAt: okDispatch.at } : {}),
+        ...(published && item.publishedAt ? { publishedAt: item.publishedAt } : {}),
+        ...(dispatches.length ? { dispatches } : {}),
+      },
+      sessionIds: [],
+      createdAt: production.startedAt ?? item.createdAt ?? new Date().toISOString(),
+      updatedAt: production.finishedAt ?? item.createdAt ?? new Date().toISOString(),
+      ...(published ? { published: { ...current, publishedAt: item.publishedAt ?? null } } : {}),
+    })
+  }
+  // 素材上不再留成稿字段:内容只在作品里(ADR 0013),旧快照与 AI 原稿丢弃(ADR 0014)
+  for (const item of state.items ?? []) {
+    delete item.production
+    delete item.dispatches
+    delete item.publishedAt
+    delete item.sentToSession
+  }
+  return works
+}
+
 /** 胶囊旧数据迁移:去重归属、少于两个成员的胶囊解散;旧版遗留的坐标字段顺手清掉。 */
 function migrateCapsules(state) {
   const seen = new Set()
@@ -132,21 +183,35 @@ export function migrateState(state) {
   // 无效结构，用完整的新版初始状态整体替换（buildSeed 产出全部字段），一步到位。
   if (!Array.isArray(state.items)) return buildSeed(new Date())
   // 旧手写稿字段已整体下线（工单 #7）：写方（旧的手写稿 op）与读方（面板谓词）都移除了，
-  // 存量数据里读到就无害删掉，不让废弃字段跟着状态一起活下来。
-  for (const item of state.items) delete item.drafts
+  // 存量数据里读到就无害删掉，不让废弃字段跟着状态一起活下来。自动成稿/自动投递同样
+  // 已删除（ADR 0013 修订），旧状态里残留的两个开关一并清掉。
+  for (const item of state.items) {
+    delete item.drafts
+    delete item.autoProduce
+    delete item.autoDispatch
+  }
   if (state.activeStyleId === undefined) state.activeStyleId = null
   // 胶囊是后来才有的实体:旧状态文件补一个空集合,避免读取方对着 undefined
   if (!Array.isArray(state.capsules)) state.capsules = []
   migrateCapsules(state)
+  // 作品是第一位实体(ADR 0013):旧成稿产物整批迁成 Work,素材只留原始输入。
+  // 迁移一次性:works 已经在数组里就不再迁,避免重复搬家把用户新写的作品冲掉。
+  if (!Array.isArray(state.works)) state.works = []
+  // 旧数据的素材上还挂着 production:迁成作品(已迁过的不重复建,按作品 id 去重)
+  if (state.items.some(row => row.production)) {
+    const existing = new Set(state.works.map(row => row.id))
+    state.works = [...migrateWorks(state).filter(row => !existing.has(row.id)), ...state.works]
+  }
   // 示例数据早先自带排期与已发布,用户以为胶囊天生就该被整体排期、成稿、发布。
-  // 一次性把还没被用户动过的示例条目退回「灵感 / 待排期」;已经写成稿的不动(那是真实产物),
+  // 一次性把还没被用户动过的示例条目退回「灵感 / 待排期」;已经写成作品的素材不动(那是真实产物),
   // 自建条目一概不动。标记落库,所以用户之后自己的排期不会被重新清掉。
   if (state.sampleScheduleReset !== true) {
     for (const item of state.items) {
-      if (item.sample !== true || isDrafted(item)) continue
+      if (item.sample !== true || isUsed(state, item.id)) continue
       item.status = 'idea'
       item.scheduledAt = null
-      item.publishedAt = null
+      // 素材不再承载发布状态(ADR 0013),示例上残留的发布时间一并清掉
+      delete item.publishedAt
     }
     state.sampleScheduleReset = true
   }
@@ -190,8 +255,7 @@ export function buildSeed(now, lang = currentLang()) {
       title: row.t,
       body: row.b,
       tags: row.tags,
-      // 示例数据一律从「灵感 / 待排期」开始:它们只是示范长什么样,不该带着
-      // 排期与已发布进来——那会让用户以为排期、成稿、发布是示例自带的既成事实。
+      // 原始灵感示例从「灵感 / 待排期」开始；完整 demo 另行展示排期与作品状态。
       status: 'idea',
       angleId: row.a,
       personaIds: row.p,
@@ -200,18 +264,22 @@ export function buildSeed(now, lang = currentLang()) {
       source: row.src,
       createdAt: shift(now, row.day, 9 + (index % 11), (index * 7) % 60),
       scheduledAt: null,
-      publishedAt: null,
       platform: row.pf ?? null,
       sample: true,
     }
   })
 
+  // 保留原始 seed_* 的顺序，完整 demo 追加在后；两种示例共用清空入口。
+  const demo = buildDemo(now, lang)
   const state = {
     version: 1,
     sampleCleared: false,
     sampleLang: 'zh',
-    items,
-    capsules: [],
+    // 新库本来就要展示 demo 排期，不能再跑旧示例的一次性排期清理迁移。
+    sampleScheduleReset: true,
+    items: [...items, ...demo.items],
+    capsules: demo.capsules,
+    works: demo.works,
     people: PEOPLE.map(([id, name, role, note, traits, tone]) => ({ id, name, role, note, traits, tone, sample: true })),
     angles: ANGLES.map(([id, name, hook, prompt]) => ({ id, name, hook, prompt, sample: true })),
     skills: SKILLS.map(([name, rule, evidence, status, confidence], index) => ({ id: `seed_s_${index + 1}`, name, rule, source: '示例', evidence, status, confidence, sample: true })),
@@ -261,8 +329,8 @@ function swapFields(row, original, target) {
   return changed
 }
 
-// 示例卡片在每种语言下各有一份：标题、正文和生成过的成稿。切走时把当前这份收起来，切回来原样放回。
-const ITEM_FIELDS = ['title', 'body', 'tags', 'source', 'media', 'production']
+// 示例卡片在每种语言下各有一份：标题、正文和封面。成稿正文已迁到作品(ADR 0013),这里不再收。
+const ITEM_FIELDS = ['title', 'body', 'tags', 'source', 'media']
 
 const CJK = /[\u4e00-\u9fff]/
 
@@ -294,7 +362,6 @@ function swapItem(row, from, target, text) {
     }
   } else {
     Object.assign(row, structuredClone(text))
-    delete row.production
   }
   row.otherLang = stash
 }

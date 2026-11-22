@@ -1,0 +1,489 @@
+/* 常驻排期焦点：固定黑底杂志卡片；图片与文字等高，所有宽度都保持左图右字。 */
+.md-schedule {
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 480px) 248px;
+}
+
+.md-schedule > .md-schedule-focus {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.md-schedule-focus {
+  /* 用户指定的影院式深色是独立表面，不随宿主明暗主题反白。 */
+  --focus-surface: #111112;
+  --focus-text: #f7f7f5;
+  --focus-muted: rgb(247 247 245 / .68);
+  --focus-faint: rgb(247 247 245 / .55);
+  --focus-line: rgb(247 247 245 / .14);
+  --focus-fill: rgb(247 247 245 / .09);
+  min-width: 0;
+  align-self: start;
+  color-scheme: dark;
+}
+
+.md-root .md-schedule-focus-card,
+.md-schedule-focus-empty {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 0.5px solid var(--focus-line);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--focus-text) 5%, transparent), transparent 46%),
+    var(--focus-surface);
+  color: var(--focus-text);
+  box-shadow: var(--dsw-elevation-soft);
+}
+
+.md-root .md-schedule-focus-card {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(128px, 40%) minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: stretch;
+  column-gap: 14px;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 180ms var(--ease), box-shadow 180ms var(--ease), border-color 180ms var(--ease);
+}
+
+/* 低对比刊线、纸面光与真实日期构成背景，不增加新的信息层级。 */
+.md-schedule-focus-card::before {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 27px, rgb(247 247 245 / .025) 27px 28px),
+    radial-gradient(ellipse at 82% 4%, rgb(247 247 245 / .08), transparent 56%);
+}
+
+.md-schedule-focus-day {
+  position: absolute;
+  z-index: 0;
+  right: 12px;
+  bottom: -26px;
+  color: rgb(247 247 245 / .035);
+  font-family: var(--latin-serif);
+  font-size: 132px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  pointer-events: none;
+  user-select: none;
+  -webkit-text-stroke: 0.5px rgb(247 247 245 / .1);
+}
+
+/* Magic UI 式同心波纹：仅 transform 错相呼吸，默认暂停，进入视口后启动。 */
+.md-schedule-focus-ripple {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, #000 34%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, #000 34%, #000 100%);
+}
+
+.md-schedule-focus-ripple > span {
+  position: absolute;
+  top: 56%;
+  left: 72%;
+  width: calc(84px + var(--ripple-index) * 42px);
+  height: calc(84px + var(--ripple-index) * 42px);
+  border: 1px solid rgb(247 247 245 / .16);
+  border-radius: 50%;
+  opacity: calc(.95 - var(--ripple-index) * .12);
+  transform: translate(-50%, -50%) scale(1);
+  animation: md-schedule-focus-ripple 3.8s ease-in-out calc(var(--ripple-index) * .18s) infinite;
+  animation-play-state: paused;
+}
+
+.md-schedule-focus-card.is-ripple-active .md-schedule-focus-ripple > span {
+  animation-play-state: running;
+}
+
+@keyframes md-schedule-focus-ripple {
+  0%, 100% { transform: translate(-50%, -50%) scale(1); }
+  50% { transform: translate(-50%, -50%) scale(.9); }
+}
+
+.md-root .md-schedule-focus-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--focus-text) 28%, transparent);
+  box-shadow: var(--dsw-elevation-prominent);
+}
+
+.md-root .md-schedule-focus-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-color: var(--focus-text);
+}
+
+.md-schedule-focus-head {
+  position: relative;
+  z-index: 1;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  min-height: 24px;
+  margin: 0 2px 12px;
+  padding-bottom: 9px;
+  border-bottom: 0.5px solid var(--focus-line);
+  color: var(--focus-muted);
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.md-schedule-focus-head > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 500;
+  letter-spacing: .08em;
+  color: var(--focus-text);
+}
+
+.md-schedule-focus-edition {
+  margin-left: 4px;
+  color: var(--focus-faint);
+  font-family: var(--latin-serif);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .16em;
+}
+
+.md-schedule-focus-relative {
+  flex: none;
+  padding: 2px 8px;
+  border: 0.5px solid var(--focus-line);
+  border-radius: 999px;
+  background: var(--focus-fill);
+  color: var(--focus-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.md-schedule-focus-relative.is-due {
+  border-color: var(--focus-text);
+  background: var(--focus-text);
+  color: var(--focus-surface);
+}
+
+.md-schedule-focus-media {
+  position: relative;
+  z-index: 1;
+  grid-column: 1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* 绝对填充让图片不参与网格行高计算，右侧文字自然高度就是图片高度。 */
+.md-schedule-focus-art {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: var(--r-md);
+  background: var(--focus-fill);
+  box-shadow: inset 0 0 0 0.5px var(--focus-line);
+}
+
+.md-schedule-focus-art.is-capsule {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.md-schedule-focus-sheet {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--focus-text) 8%, var(--focus-surface));
+  color: var(--focus-faint);
+}
+
+.md-schedule-focus-sheet.is-empty {
+  background: color-mix(in srgb, var(--focus-text) 4%, var(--focus-surface));
+}
+
+.md-schedule-focus-sheet img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 240ms var(--ease);
+}
+
+.md-root .md-schedule-focus-card:hover .md-schedule-focus-art.is-single img {
+  transform: scale(1.025);
+}
+
+.md-schedule-focus-count {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  min-width: 25px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--focus-text);
+  color: var(--focus-surface);
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  box-shadow: var(--dsw-elevation-soft);
+}
+
+.md-schedule-focus-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  grid-column: 2;
+  grid-row: 2;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px 2px 4px 0;
+}
+
+.md-schedule-focus-body > strong {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--focus-text);
+  font-family: var(--serif);
+  font-size: 21px;
+  line-height: 29px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.md-schedule-focus-time {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 10px;
+  color: var(--focus-text);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.md-schedule-focus-time svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--focus-faint);
+}
+
+.md-schedule-focus-time time {
+  min-width: 0;
+}
+
+.md-schedule-focus-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 7px;
+  min-width: 0;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 0.5px solid var(--focus-line);
+  color: var(--focus-muted);
+  font-size: 11.5px;
+  line-height: 17px;
+}
+
+.md-schedule-focus-meta > span:first-child:not(:last-child) {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--focus-fill);
+  color: var(--focus-text);
+}
+
+.md-schedule-focus-meta > span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.md-schedule-focus-empty-content {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-height: 124px;
+  padding: 14px 10px 10px;
+  color: var(--focus-faint);
+}
+
+.md-schedule-focus-empty-content p {
+  margin: 0 0 4px;
+  color: var(--focus-text);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.md-schedule-focus-empty-content > div > span {
+  display: block;
+  max-width: 320px;
+  color: var(--focus-muted);
+  font-size: 11.5px;
+  line-height: 18px;
+}
+
+@container (max-width: 1280px) {
+  .md-schedule {
+    grid-template-columns: minmax(0, 1fr) 248px;
+    grid-template-rows: minmax(420px, 1fr) auto;
+  }
+
+  .md-schedule > .md-cal-tile {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .md-schedule > .md-rail-col {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .md-schedule > .md-schedule-focus {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .md-root .md-schedule-focus-card {
+    grid-template-columns: minmax(220px, 32%) minmax(0, 1fr);
+    column-gap: 18px;
+  }
+
+  .md-schedule-focus-day {
+    font-size: 118px;
+  }
+
+  .md-schedule-focus-body {
+    padding-right: 10px;
+  }
+
+  .md-schedule-focus-body > strong {
+    font-size: 22px;
+    line-height: 29px;
+  }
+}
+
+@container (max-width: 760px) {
+  .md-schedule {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+  }
+
+  .md-schedule > .md-cal-tile,
+  .md-schedule > .md-schedule-focus,
+  .md-schedule > .md-rail-col {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .md-root .md-schedule-focus-card {
+    grid-template-columns: minmax(150px, 34%) minmax(0, 1fr);
+  }
+}
+
+@container (max-width: 480px) {
+  .md-root .md-schedule-focus-card {
+    grid-template-columns: minmax(112px, 40%) minmax(0, 1fr);
+    column-gap: 10px;
+    padding: 10px;
+  }
+
+  .md-schedule-focus-head {
+    margin-bottom: 9px;
+  }
+
+  .md-schedule-focus-art {
+    border-radius: var(--r-sm);
+  }
+
+  .md-schedule-focus-edition {
+    display: none;
+  }
+
+  .md-schedule-focus-day {
+    right: 8px;
+    bottom: -18px;
+    font-size: 96px;
+  }
+
+  .md-schedule-focus-body {
+    padding-right: 0;
+  }
+
+  .md-schedule-focus-body > strong {
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  .md-schedule-focus-time {
+    gap: 4px;
+    margin-top: 9px;
+    font-size: 11.5px;
+    line-height: 17px;
+  }
+
+  .md-schedule-focus-meta {
+    gap: 4px 6px;
+    margin-top: 8px;
+  }
+}
+
+@container (max-width: 380px) {
+  .md-root .md-schedule-focus-card {
+    grid-template-columns: minmax(104px, 38%) minmax(0, 1fr);
+    column-gap: 9px;
+  }
+
+  .md-schedule-focus-body > strong {
+    font-size: 15px;
+    line-height: 23px;
+  }
+
+  .md-schedule-focus-meta > span:first-child:not(:last-child) {
+    padding-inline: 5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .md-root .md-schedule-focus-card,
+  .md-schedule-focus-sheet img {
+    transition: none;
+  }
+
+  .md-schedule-focus-ripple > span {
+    animation: none;
+    transform: translate(-50%, -50%);
+  }
+
+  .md-root .md-schedule-focus-card:hover,
+  .md-root .md-schedule-focus-card:hover .md-schedule-focus-art.is-single img {
+    transform: none;
+  }
+}

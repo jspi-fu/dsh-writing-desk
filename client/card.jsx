@@ -3,17 +3,13 @@
 // 与参考的三处刻意不同:点卡是编辑入口(不打开原网页)、卡片没有星标、
 // 黑胶囊打开的是创作模式而不是聊天。JSX 走 classic 运行时,React import 必须留。
 import React from 'react'
-import { dispatchOps, setDesk, toggleSelect } from './desk.js'
+import { createWork, dispatchOps, openWork, setDesk, toggleSelect } from './desk.js'
 import { t } from './i18n.js'
 import { Icon, openMenuAt } from './ui.jsx'
-import { absoluteUrl, categoryOf, coverOf, displayItem, fileExtOf, fileOf, fileNameOf } from './util.js'
-import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, openWritingSession, startRefDrag } from './session-link.js'
+import { absoluteUrl, categoryOf, coverOf, fileExtOf, fileOf, fileNameOf, itemIcon } from './util.js'
+import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, startRefDrag } from './session-link.js'
 
-const CATEGORY_ICON = { note: 'pen', link: 'link', file: 'folder' }
 const CATEGORY_WORD = { note: '笔记', link: '链接', file: '文件' }
-// 文件类默认封面按扩展名挑图标:图片/视频用媒体图标,其余一律文件图标
-const IMAGE_EXT = /^(PNG|JPG|JPEG|WEBP|GIF|AVIF)$/
-const VIDEO_EXT = /^(MP4|WEBM|MOV|MKV|M4V)$/
 
 /** 新建灵感:对话框默认落在笔记页签。 */
 export function openCapture(tab = 'note') {
@@ -36,13 +32,10 @@ function hostOf(url) {
 /** 默认封面的图标与类型字:参考项目没有封面时就是「类型 glyph + 类型名」。 */
 function defaultFace(item) {
   const category = categoryOf(item)
-  if (category === 'file') {
-    const ext = fileExtOf(item)
-    if (IMAGE_EXT.test(ext)) return { icon: 'image', caption: ext }
-    if (VIDEO_EXT.test(ext)) return { icon: 'film', caption: ext }
-    return { icon: 'folder', caption: ext || t('文件') }
+  return {
+    icon: itemIcon(item),
+    caption: category === 'file' ? fileExtOf(item) || t('文件') : t(CATEGORY_WORD[category]),
   }
-  return { icon: CATEGORY_ICON[category], caption: t(CATEGORY_WORD[category]) }
 }
 
 /** 没有封面时的类型底图:图标在上、类型名在下,参考项目的默认封面同一套信息。 */
@@ -73,16 +66,13 @@ function SiteRow({ item, category }) {
     const target = url || (file ? absoluteUrl(file) : null)
     if (target) window.open(target, '_blank', 'noopener,noreferrer')
   }
-  return (
-    <span className="md-tile-site" title={label}>
-      <Icon name={category === 'link' ? 'link' : category === 'file' ? 'folder' : 'pen'} size={12} />
-      <span>{label}</span>
-      {url || file ? (
-        <button type="button" className="md-tile-open" aria-label={t('打开原件')} title={t('打开原件')} onClick={open}>
-          <Icon name="upRight" size={12} />
-        </button>
-      ) : null}
-    </span>
+  const source = <><Icon name={itemIcon(item)} size={12} /><span>{label}</span></>
+  return url || file ? (
+    <button type="button" className="md-tile-site md-tile-source" aria-label={`${t('打开原件')}：${label}`} title={`${t('打开原件')}：${label}`} onPointerDown={event => event.stopPropagation()} onClick={open}>
+      {source}<Icon name="upRight" size={12} />
+    </button>
+  ) : (
+    <span className="md-tile-site" title={label}>{source}</span>
   )
 }
 
@@ -91,9 +81,8 @@ function SiteRow({ item, category }) {
  * 底部黑胶囊点击直接进创作会话,右侧小箭头展开「复制给 AI / 添加到当前会话」。
  */
 export function Card({ item: raw, selected = false, compact = false, bare = false, onOpen = openEditItem, dragIds }) {
-  const item = displayItem(raw)
   const category = categoryOf(raw)
-  const cover = coverOf(item)
+  const cover = coverOf(raw)
   const pick = (event) => {
     event.preventDefault()
     event.stopPropagation()
@@ -104,10 +93,12 @@ export function Card({ item: raw, selected = false, compact = false, bare = fals
     event.stopPropagation()
     dispatchOps([{ op: 'delete_item', id: raw.id }], { label: t('删除灵感') })
   }
-  const compose = (event) => {
+  const compose = async (event) => {
     event.preventDefault()
     event.stopPropagation()
-    openWritingSession({ itemIds: [raw.id] })
+    // 成稿=建一篇空作品再打开作品编辑器(ADR 0013):素材因此变「已用」,同一批还能再成稿
+    const workId = await createWork({ itemIds: [raw.id] })
+    if (workId) openWork(workId)
   }
   const more = (event) => {
     event.preventDefault()
@@ -144,7 +135,7 @@ export function Card({ item: raw, selected = false, compact = false, bare = fals
       draggable={!!dragIds}
       onDragStart={dragStart}
       onDragEnd={dragEnd}
-      aria-label={t('{kind}：{title}', { kind: t(CATEGORY_WORD[category]), title: item.title || String(raw.body || '').trim().slice(0, 24) || t('（无标题）') })}
+      aria-label={t('{kind}：{title}', { kind: t(CATEGORY_WORD[category]), title: raw.title || String(raw.body || '').trim().slice(0, 24) || t('（无标题）') })}
       onClick={open}
       onKeyDown={(event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return
@@ -167,7 +158,7 @@ export function Card({ item: raw, selected = false, compact = false, bare = fals
         )}
       </div>
       <div className="md-tile-body">
-        <h3 className="md-tile-title" title={item.title}>{item.title || t('（无标题）')}</h3>
+        <h3 className="md-tile-title" title={raw.title}>{raw.title || t('（无标题）')}</h3>
         <div className="md-tile-foot">
           <SiteRow item={raw} category={category} />
           {bare ? null : (

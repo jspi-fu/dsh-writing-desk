@@ -6,9 +6,9 @@
 // 参数与输出是 JSON Schema(dsh-tools ToolSchema/ToolOutputDefinition 的登记形态),
 // 不经 defineTool(本包不依赖 dsh-tools,运行时全靠 ctx 服务鸭子类型)。
 
-import { tr } from './i18n.js'
 import { applyOps } from './ops.js'
 import { resolveProduceInput } from './produce-input.js'
+import { workOfId, workState, workTitle, worksOfItem } from './work.js'
 
 export const name = 'writing-desk-tools'
 
@@ -30,25 +30,31 @@ function stringList(value, field) {
 
 const clip = (text, limit) => (typeof text === 'string' && text.length > limit ? { text: text.slice(0, limit), truncated: true } : { text: text ?? '', truncated: false })
 
-/** 已有产物概要:write 能写的字段都给回当前值(正文只给预览),会话拿它拿 rev、续跑意图单(ADR 0006)。 */
-function summarizeProduction(production) {
-  const cover = production.cover
+/** 作品概要:write 能写的字段都给回当前值(正文只给预览),会话拿它取 rev、续跑意图单(ADR 0013/0014)。 */
+function summarizeWork(work) {
+  const current = work.current ?? {}
+  const cover = current.cover
   return {
-    rev: production.rev ?? 0,
-    ...(production.title ? { title: production.title } : {}),
-    ...(production.coverText ? { coverText: production.coverText } : {}),
-    ...(production.article ? { existingDraft: clip(production.article, ARTICLE_PREVIEW) } : {}),
+    id: work.id,
+    state: workState(work),
+    rev: current.rev ?? 0,
+    sourceItemIds: work.sourceItemIds ?? [],
+    ...(current.title ? { title: current.title } : {}),
+    ...(current.coverText ? { coverText: current.coverText } : {}),
+    ...(current.article ? { existingDraft: clip(current.article, ARTICLE_PREVIEW) } : {}),
     ...(cover?.src ? { cover: { src: cover.src, ...(cover.caption ? { caption: cover.caption } : {}) } } : {}),
-    ...(Array.isArray(production.images) && production.images.length
-      ? { images: production.images.filter(row => row?.src).map(row => ({ src: row.src, ...(row.caption ? { caption: row.caption } : {}), ...(row.anchor ? { anchor: row.anchor } : {}) })) }
+    ...(Array.isArray(current.images) && current.images.length
+      ? { images: current.images.filter(row => row?.src).map(row => ({ src: row.src, ...(row.caption ? { caption: row.caption } : {}), ...(row.anchor ? { anchor: row.anchor } : {}) })) }
       : {}),
-    ...(production.intent ? { intent: production.intent } : {}),
-    ...(production.review ? { review: production.review } : {}),
+    ...(current.intent ? { intent: current.intent } : {}),
+    ...(current.review ? { review: current.review } : {}),
   }
 }
 
-function summarizeItem(item) {
+function summarizeItem(state, item) {
   const body = clip(item.body, BODY_LIMIT)
+  // 素材已用后正文在作品上(ADR 0013):这里只给指针,会话要写回就按 works[].id + rev 调 write
+  const works = worksOfItem(state, item.id).map(work => ({ id: work.id, title: workTitle(work), state: workState(work), rev: work.current?.rev ?? 0 }))
   return {
     id: item.id,
     kind: item.kind,
@@ -59,8 +65,8 @@ function summarizeItem(item) {
     ...(item.url ? { url: item.url } : {}),
     ...(item.source ? { source: item.source } : {}),
     ...(item.media ? { media: item.media } : {}),
-    ...(item.production ? { production: summarizeProduction(item.production) } : {}),
-    ...(item.sentToSession ? { sentToSession: item.sentToSession } : {}),
+    ...(works.length ? { works } : {}),
+    ...(item.scheduledAt ? { scheduledAt: item.scheduledAt } : {}),
   }
 }
 
@@ -68,14 +74,15 @@ function summarizeItem(item) {
 function readTool(desk) {
   return {
     name: 'writing_desk_read',
-    description: '读图文创作台里的灵感与胶囊:成稿前用它取素材全文;写回前再用一次确认当前版本(rev)。'
-      + '给 itemIds 或 capsuleIds 按顺序取全文;给 query 按标题、正文与标签找相关灵感(返回摘要)。',
+    description: '读图文创作台里的灵感、胶囊与作品:成稿前用它取素材全文;写回前再用一次确认当前版本(rev)。'
+      + '给 itemIds / capsuleIds 取素材全文;给 workIds 取作品当前稿概要;给 query 按标题、正文与标签找相关灵感(返回摘要)。',
     parameters: {
       type: 'object',
       properties: {
         itemIds: { type: 'array', items: { type: 'string' }, description: '要读全文的灵感 ID,一或多个。' },
         capsuleIds: { type: 'array', items: { type: 'string' }, description: '要展开的胶囊 ID,按给定顺序展开成员灵感,可与 itemIds 混用。' },
-        query: { type: 'string', description: '按标题、正文与标签找相关灵感;与 itemIds/capsuleIds 二选一。' },
+        workIds: { type: 'array', items: { type: 'string' }, description: '要读当前稿的作品 ID,一或多个;写回前用它拿 rev。' },
+        query: { type: 'string', description: '按标题、正文与标签找相关灵感;与其他 ID 参数二选一。' },
       },
       required: [],
     },
@@ -83,16 +90,17 @@ function readTool(desk) {
       schema: {
         type: 'object',
         properties: {
-          items: { type: 'array', description: '灵感列表:ID、标题、正文(超长截断)、标签;已成稿的带 production 概要——rev 与写回工具可写的各字段当前值,正文只给预览。' },
+          items: { type: 'array', description: '灵感列表:ID、标题、正文(超长截断)、标签;已用于成稿的带 works 指针(id、状态、rev、标题)。' },
           capsules: { type: 'array', description: '胶囊列表与成员数。' },
+          works: { type: 'array', description: '作品当前稿概要:ID、状态、rev、标题、封面文案、正文预览、意图单、审读报告;写回工具可写的字段当前值。' },
           total: { type: 'number', description: '命中的灵感总数。' },
         },
-        required: ['items', 'capsules', 'total'],
+        required: ['items', 'capsules', 'works', 'total'],
         additionalProperties: false,
       },
       render(_args, value) {
         const names = value.items.map(row => `《${row.title}》`).join('、') || '无'
-        return [{ type: 'text', text: `读到 ${value.total} 条灵感:${names}` }]
+        return [{ type: 'text', text: `读到 ${value.total} 条灵感、${value.works.length} 篇作品:${names}` }]
       },
     },
     async execute(args) {
@@ -100,8 +108,9 @@ function readTool(desk) {
       const state = await desk.store.read()
       const itemIds = args.itemIds === undefined ? undefined : stringList(args.itemIds, 'itemIds')
       const capsuleIds = args.capsuleIds === undefined ? undefined : stringList(args.capsuleIds, 'capsuleIds')
+      const workIds = args.workIds === undefined ? undefined : stringList(args.workIds, 'workIds')
       const query = typeof args.query === 'string' ? args.query.trim() : ''
-      if (!itemIds?.length && !capsuleIds?.length && !query) throw invalid('给 itemIds、capsuleIds 或 query 之一')
+      if (!itemIds?.length && !capsuleIds?.length && !workIds?.length && !query) throw invalid('给 itemIds、capsuleIds、workIds 或 query 之一')
       const byId = new Map(state.items.map(row => [row.id, row]))
       let rows = []
       const capsules = []
@@ -112,14 +121,15 @@ function readTool(desk) {
           const capsule = (state.capsules ?? []).find(row => row.id === id)
           if (capsule) capsules.push({ id: capsule.id, name: capsule.name, memberCount: capsule.itemIds.length })
         }
-      } else {
+      } else if (query) {
         const needle = query.toLowerCase()
         rows = state.items
           .filter(row => [row.title, row.body, ...(row.tags ?? [])].some(v => String(v ?? '').toLowerCase().includes(needle)))
           .slice(0, 12)
       }
-      const items = rows.map(summarizeItem)
-      return { items, capsules, total: items.length }
+      const items = rows.map(row => summarizeItem(state, row))
+      const works = (workIds ?? []).map(id => workOfId(state, id)).filter(Boolean).map(summarizeWork)
+      return { items, capsules, works, total: items.length }
     },
   }
 }
@@ -128,13 +138,13 @@ function readTool(desk) {
 function writeTool(desk) {
   return {
     name: 'writing_desk_write',
-    description: '把成稿产物写回图文创作台:标题、正文、封面文案、封面图、配图、意图单、审读报告,按字段一次写回一个阶段。'
-      + '写正文前先 writing_desk_read 拿当前 rev;用户的修改优先于会话——基线不符会被拦下,交由用户在校样浮层裁决。',
+    description: '把成稿写回图文创作台的作品:标题、正文、封面文案、封面图、配图、意图单、审读报告,按字段一次写回一个阶段。'
+      + '写正文前先 writing_desk_read({ workIds }) 拿当前 rev;用户的修改优先于会话——基线不符会被拦下,交用户在作品编辑器裁决。',
     parameters: {
       type: 'object',
       properties: {
-        targetId: { type: 'string', description: '产物落点的灵感 ID(成稿输入的第一条来源)。' },
-        rev: { type: 'number', description: '写回前读到的 production.rev;不符且未说明理由会被拦下。' },
+        workId: { type: 'string', description: '作品 ID(writing_desk_read 的 works[].id)。' },
+        rev: { type: 'number', description: '写回前读到的作品 rev;不符且未要求覆盖会被拦下。' },
         force: { type: 'boolean', description: '只在用户明确说覆盖他的修改时才置 true。' },
         title: { type: 'string', description: '成稿大标题。' },
         coverText: { type: 'string', description: '封面大字,建议不超过 12 字。' },
@@ -143,43 +153,42 @@ function writeTool(desk) {
         images: { type: 'array', items: { type: 'object', properties: { src: { type: 'string' }, caption: { type: 'string' }, anchor: { type: 'string' } }, required: ['src'] }, description: '配图清单,anchor 填对应的小标题文字。' },
         intent: { type: 'object', description: '意图单:purpose/audience/judgment/mustKeep/boundary/evidence/platform/notDo 与 status(confirmed 表示用户已确认)。' },
         review: { type: 'object', description: '审读报告:findings 数组,每条含 axis(standards|intent)、severity(P0|P1|P2)、location、quote、suggestion;只报告不改稿。' },
-        note: { type: 'string', description: '这一阶段的一句话说明,显示在快照里(如“初稿”“按反馈润色”)。' },
       },
-      required: ['targetId'],
+      required: ['workId'],
     },
     output: {
       schema: {
         type: 'object',
         properties: {
           written: { type: 'boolean' },
-          targetId: { type: 'string' },
+          workId: { type: 'string' },
           rev: { type: 'number', description: '写回后的版本号;下次写回带上它。' },
         },
-        required: ['written', 'targetId', 'rev'],
+        required: ['written', 'workId', 'rev'],
         additionalProperties: false,
       },
       render(_args, value) {
-        return [{ type: 'text', text: value.written ? `已写回,当前版本 rev ${value.rev};内容页与校样浮层可见。` : '没有写回任何字段。' }]
+        return [{ type: 'text', text: value.written ? `已写回作品,当前 rev ${value.rev};在作品编辑器里可见。` : '没有写回任何字段。' }]
       },
     },
     async execute(args) {
       if (args === null || typeof args !== 'object' || Array.isArray(args)) throw invalid('参数必须是对象')
-      if (typeof args.targetId !== 'string' || !args.targetId) throw invalid('targetId 必须是灵感 ID')
+      if (typeof args.workId !== 'string' || !args.workId) throw invalid('workId 必须是作品 ID')
       const hasField = ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review'].some(key => args[key] !== undefined)
       if (!hasField) throw invalid('至少给一个要写回的字段')
-      const op = { op: 'write_production', targetId: args.targetId }
-      for (const key of ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review', 'note']) {
+      const op = { op: 'write_work', id: args.workId }
+      for (const key of ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review']) {
         if (args[key] !== undefined) op[key] = args[key]
       }
       if (typeof args.rev === 'number') op.rev = args.rev
       if (args.force === true) op.force = true
-      const { receipts } = await desk.store.mutate(args.note ? tr('会话写回:{note}', { note: args.note.slice(0, 40) }) : '会话写回', (draft) => {
+      const { receipts } = await desk.store.mutate('会话写回', (draft) => {
         const applied = applyOps(draft, [op])
         if (applied.errors.length) throw new Error(applied.errors[0])
         return applied
       })
-      const item = await desk.store.read().then(state => state.items.find(row => row.id === args.targetId))
-      return { written: true, targetId: args.targetId, rev: item?.production?.rev ?? 0, receipt: receipts[0]?.text }
+      const work = await desk.store.read().then(state => workOfId(state, args.workId))
+      return { written: true, workId: args.workId, rev: work?.current?.rev ?? 0, receipt: receipts[0]?.text }
     },
   }
 }
@@ -226,7 +235,7 @@ function addRuleTool(desk) {
 function addStyleTool(desk) {
   return {
     name: 'writing_desk_add_style',
-    description: '把提炼出的个人风格卡写进图文创作台并设为当前风格。字段都从原文观察得来,不泛泛而谈。',
+    description: '把提炼出的个人风格卡写进图文创作台。默认设为当前风格；从作品学习候选时把 activate 设为 false,只写入候选卡。字段都从原文观察得来,不泛泛而谈。',
     parameters: {
       type: 'object',
       properties: {
@@ -242,6 +251,7 @@ function addStyleTool(desk) {
         words: { type: 'array', items: { type: 'string' }, description: '常用词、口头禅,最多 8 个。' },
         avoid: { type: 'array', items: { type: 'string' }, description: '这位作者绝不会写的东西,最多 5 个。' },
         samples: { type: 'array', items: { type: 'string' }, description: '原样摘录的代表句,最多 6 句。' },
+        activate: { type: 'boolean', description: '默认 true,写完设为当前风格；从作品学习候选时传 false,只放候选卡,不替用户切换。' },
       },
       required: ['name'],
     },
@@ -252,13 +262,14 @@ function addStyleTool(desk) {
         required: ['styleId'],
         additionalProperties: false,
       },
-      render(_args, value) {
-        return [{ type: 'text', text: '风格卡已存好并设为当前风格,之后每次成稿都会带上。' }]
+      render(args, value) {
+        return [{ type: 'text', text: args.activate === false ? '候选风格卡已写入,没有切换当前风格;等用户确认后再自己启用。' : '风格卡已存好并设为当前风格,之后每次成稿都会带上。' }]
       },
     },
     async execute(args) {
       if (args === null || typeof args !== 'object') throw invalid('参数必须是对象')
       if (typeof args.name !== 'string' || !args.name.trim()) throw invalid('风格需要名字')
+      const activate = args.activate !== false
       const fields = { op: 'add_style', name: args.name.slice(0, 20), source: '创作会话' }
       for (const key of ['summary', 'tone', 'sentences', 'opening', 'structure', 'logic', 'story', 'flow']) {
         if (typeof args[key] === 'string') fields[key] = args[key].slice(0, 200)
@@ -271,7 +282,7 @@ function addStyleTool(desk) {
         const { receipts, errors } = applyOps(draft, [fields])
         if (errors.length) throw new Error(errors[0])
         styleId = receipts[0]?.target ?? null
-        if (styleId) {
+        if (styleId && activate) {
           const { errors: more } = applyOps(draft, [{ op: 'set_style', id: styleId }])
           if (more.length) throw new Error(more[0])
         }

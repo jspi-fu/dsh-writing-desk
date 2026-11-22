@@ -66,6 +66,27 @@ test('迁移条目:保留时间/状态/标签并重映射角度与读者;重复�
   assert.equal(state.migrations['dsh-media-desk'], '2026-11-19T00:00:00.000Z')
 })
 
+test('迁移可以只搬选中的分组,没勾的分组保持原样', () => {
+  const state = buildSeed(NOW)
+  const before = { angles: state.angles.length, people: state.people.length, styles: state.styles.length, active: state.activeStyleId }
+  const media = new Map([['media-desk/assets/hills.jpg', { src: 'writing-desk/files/md-hills.jpg' }]])
+  const result = migrateMediaDesk(state, source(), {
+    media,
+    now: NOW.toISOString(),
+    selection: { items: true, schedule: false, angles: false, people: false, styles: false },
+  })
+  assert.deepEqual(result, { added: 2, skipped: 0, missingMedia: 0 })
+  const image = state.items.find(item => item.id === 'md-seed_1')
+  assert.equal(image.status, 'idea', '不勾排期时,旧状态不复活')
+  assert.equal(image.scheduledAt, null)
+  assert.equal(image.angleId, null, '不勾角度时不接线')
+  assert.deepEqual(image.personaIds, [], '不勾读者时不接线')
+  assert.equal(state.angles.length, before.angles)
+  assert.equal(state.people.length, before.people)
+  assert.equal(state.styles.length, before.styles)
+  assert.equal(state.activeStyleId, before.active)
+})
+
 test('同名角度、读者、风格按名字合并,不重复建实体', () => {
   const state = buildSeed(NOW)
   const beforeAngles = state.angles.length

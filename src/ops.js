@@ -4,6 +4,8 @@ import { currentLang, platformName, tr } from './i18n.js'
 // 状态枚举以 state.js 为唯一来源;这里 re-export 保持既有引用不破
 import { reduce, STATUSES } from './state.js'
 import { resolveProduceInput } from './produce-input.js'
+// 作品是第一位实体(ADR 0013):正文与发布状态都落在 state.works 上
+import { CURRENT_FIELDS, workHasText, workOfId, workTitle } from './work.js'
 
 export { STATUSES }
 export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
@@ -19,6 +21,10 @@ const ITEM_FIELDS = {
   title: 'text', body: 'text', kind: 'kind', url: 'url', source: 'text', tags: 'list', status: 'status', angleId: 'id',
   personaIds: 'list', parentId: 'id', rel: 'text', scheduledAt: 'date', platform: 'platform', pinned: 'bool', media: 'media', cover: 'media', score: 'num',
   contentOrigin: 'origin',
+  // 排期设置与 scheduledAt 同处一条灵感(阶段一过渡形态,见 ADR 0013)。
+  // reminder 默认 true,只有用户手动关掉才是 false;remindedAt 是「知道了」的回执,到点判断靠它。
+  // 排期只负责到点提醒,不再有自动成稿/自动投递(ADR 0013 修订)。
+  reminder: 'bool', remindedAt: 'date',
   // 收进来源标记:离线去重只对浏览器收进(via=capture)的卡片判重,手动建的卡不受影响
   via: 'text',
 }
@@ -171,6 +177,76 @@ function detachFromOtherCapsules(state, itemIds, keepId) {
   }
 }
 
+/** 作品按 id 取;找不到就是固定中文错误,调用方不用各写一套。 */
+function findWork(state, id) {
+  const work = workOfId(state, id)
+  if (!work) throw new Error(tr('找不到这篇作品：{id}', { id }))
+  return work
+}
+
+/** 当前稿可写字段的清洗:长度上限与旧校样浮层一致,模型输出同样不可信。 */
+function workCurrentFields(op) {
+  const fields = {}
+  if (typeof op.title === 'string') fields.title = op.title.slice(0, 200)
+  if (typeof op.coverText === 'string') fields.coverText = op.coverText.slice(0, 40)
+  if (typeof op.article === 'string') fields.article = op.article.slice(0, 200000)
+  if (op.cover !== undefined) {
+    const cover = coerce('media', op.cover)
+    if (cover !== undefined) fields.cover = cover
+  }
+  if (op.images !== undefined) {
+    fields.images = (Array.isArray(op.images) ? op.images : []).map(row => {
+      const media = coerce('media', row)
+      if (!media) return null
+      return {
+        ...media,
+        ...(typeof row?.caption === 'string' ? { caption: row.caption.slice(0, 60) } : {}),
+        ...(typeof row?.anchor === 'string' ? { anchor: row.anchor.slice(0, 60) } : {}),
+        status: 'done',
+      }
+    }).filter(Boolean)
+  }
+  if (op.intent && typeof op.intent === 'object') fields.intent = { ...op.intent }
+  if (op.review && typeof op.review === 'object') fields.review = { ...op.review }
+  for (const key of Object.keys(fields)) if (!CURRENT_FIELDS.includes(key)) delete fields[key]
+  return fields
+}
+
+/** 自动保存的乐观锁:带 baseRev 且对不上就 409,由界面选「用最新的」还是「覆盖」。 */
+function assertWorkRev(work, op) {
+  const rev = work.current?.rev ?? 0
+  const base = typeof op.rev === 'number' ? op.rev : rev
+  if (base !== rev && op.force !== true) {
+    throw Object.assign(new Error(tr('这篇作品在别处更新过（你手上是第 {base} 版，现在是第 {rev} 版）', { base, rev })), { status: 409, rev })
+  }
+}
+
+/** 写当前稿并前进 rev;更新 updatedAt 供作品页排序。 */
+function stampCurrent(work, fields, now) {
+  work.current = { ...(work.current ?? {}), ...fields, rev: (work.current?.rev ?? 0) + 1 }
+  work.updatedAt = now
+}
+
+/**
+ * 成稿即消费排期(ADR 0013):素材的一次排期只用来触发一次成稿,
+ * 无论手动点成稿还是别处写回,落库后就把主体(含整张胶囊)的排期清掉,免得反复提醒。
+ */
+function consumeSchedule(state, sourceIds, capsuleIds, now) {
+  const ids = new Set(sourceIds)
+  for (const capsuleId of capsuleIds ?? []) {
+    const capsule = (state.capsules ?? []).find(row => row.id === capsuleId)
+    for (const id of capsule?.itemIds ?? []) ids.add(id)
+  }
+  for (const id of ids) {
+    const row = state.items.find(item => item.id === id)
+    if (row?.scheduledAt) reduce(state, { type: 'unschedule', id, at: now })
+  }
+}
+
+function clone(value) {
+  return value === undefined ? undefined : JSON.parse(JSON.stringify(value))
+}
+
 const handlers = {
   add_capsule(state, op, now) {
     const itemIds = capsuleIds(state, op.itemIds)
@@ -231,19 +307,23 @@ const handlers = {
   },
   update_item(state, op, now) {
     const item = findById(state.items, op.id)
-    const { status, scheduledAt, ...fields } = pick(ITEM_FIELDS, op)
+    const { status, scheduledAt, reminder, ...fields } = pick(ITEM_FIELDS, op)
     Object.assign(item, fields)
     // 标签是手动分类:每写一次就前进一版,批量改标签的乐观锁靠它发现"预览之后又手动改过"
     if (fields.tags !== undefined) item.revision = (item.revision ?? 0) + 1
     // 胶囊成员的状态与排期跟着整体走,单独改一张会把一张卡拆成两种状态
     const { capsule, rows } = capsuleRows(state, item)
+    // 提醒开关同理:一张胶囊只有一个排期设置,改哪一行都整张一起改
+    const prefs = { reminder }
+    const prefKeys = Object.keys(prefs).filter(key => prefs[key] !== undefined)
+    for (const row of rows) for (const key of prefKeys) row[key] = prefs[key]
     if (scheduledAt !== undefined) {
       for (const row of rows) reduce(state, scheduledAt ? { type: 'schedule', id: row.id, scheduledAt, at: now } : { type: 'unschedule', id: row.id, at: now })
     }
     if (status !== undefined) {
       for (const row of rows) reduce(state, { type: 'setStatus', id: row.id, status, at: now })
     }
-    const names = [...Object.keys(fields), ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])]
+    const names = [...Object.keys(fields), ...prefKeys, ...(status !== undefined ? ['status'] : []), ...(scheduledAt !== undefined ? ['scheduledAt'] : [])]
     if (!names.length) return null
     return capsule
       ? { text: tr('更新胶囊《{name}》', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
@@ -271,10 +351,14 @@ const handlers = {
     const when = coerce('date', op.scheduledAt)
     if (when === undefined) throw new Error(tr('排期时间无效'))
     const platform = coerce('platform', op.platform)
+    const reminder = coerce('bool', op.reminder)
     // 胶囊排期 = 整张卡一起排;已经排过的成员也挪到这一天,否则一张胶囊摊在两处
     const { capsule, rows } = capsuleRows(state, item)
     for (const row of rows) {
       if (platform !== undefined) row.platform = platform
+      if (reminder !== undefined) row.reminder = reminder
+      // 排期即默认绑定系统提示;用户手动关过(reminder === false)就保持关着
+      if (when && row.reminder === undefined) row.reminder = true
       reduce(state, when ? { type: 'schedule', id: row.id, scheduledAt: when, at: now } : { type: 'unschedule', id: row.id, at: now })
     }
     if (capsule) {
@@ -284,6 +368,14 @@ const handlers = {
       return { text, target: capsule.id, kind: 'capsule' }
     }
     return { text: when ? tr('把《{title}》排到 {when}', { title: short(item.title), when: fmtWhen(when) }) + (item.platform ? ` · ${platformName(item.platform)}` : '') : tr('取消《{title}》的排期', { title: short(item.title) }), target: item.id, kind: 'item' }
+  },
+  // 排期提醒的「知道了」:只写回执时间,不弹回执、不进撤销栈——它记录的是一次已读事实。
+  // 胶囊按整张去重,所以一次确认写齐所有成员,横幅才不会为同一张卡再响一遍。
+  ack_reminder(state, op, now) {
+    const item = findById(state.items, op.id)
+    const { rows } = capsuleRows(state, item)
+    for (const row of rows) row.remindedAt = now
+    return null
   },
   set_status(state, op, now) {
     const item = findById(state.items, op.id)
@@ -295,22 +387,22 @@ const handlers = {
       ? { text: tr('胶囊《{name}》状态改为「{status}」', { name: capsule.name, status: statusLabel(status) }), target: capsule.id, kind: 'capsule' }
       : { text: tr('《{title}》状态改为「{status}」', { title: short(item.title), status: statusLabel(status) }), target: item.id, kind: 'item' }
   },
-  // 发布由用户确认(发布交接:CLI 只到草稿箱、无可靠成功信号,系统不瞎猜)。
-  // 这是唯一经 reducer publish 事件写已发布状态的入口,导出与同步绝不自动调用它。
-  publish_item(state, op, now) {
-    const item = findById(state.items, op.id)
-    // 胶囊是一张卡,发布也一次落齐所有成员
-    const { capsule, rows } = capsuleRows(state, item)
-    for (const row of rows) reduce(state, { type: 'publish', id: row.id, at: now })
-    return capsule
-      ? { text: tr('胶囊《{name}》已发布', { name: capsule.name }), target: capsule.id, kind: 'capsule' }
-      : { text: tr('《{title}》已发布', { title: short(item.title) }), target: item.id, kind: 'item' }
+// 发布由用户确认(ADR 0009/0013 的红线:投递只到草稿箱,发布必须人工确认)。
+  // 发布动作把当前稿深拷贝冻结成只读的 published;之后改 current 就只算「有未发布改动」。
+  publish_work(state, op, now) {
+    const work = findWork(state, op.id ?? op.workId)
+    if (!workHasText(work)) throw new Error(tr('这份作品还没有正文，先写点内容再发布'))
+    const frozen = {}
+    for (const field of CURRENT_FIELDS) if (work.current?.[field] !== undefined) frozen[field] = clone(work.current[field])
+    work.published = { ...frozen, publishedAt: now }
+    work.publication = { ...(work.publication ?? { status: 'draft' }), status: 'published', publishedAt: now }
+    work.updatedAt = now
+    return { text: tr('《{title}》已发布', { title: short(workTitle(work)) }), target: work.id, kind: 'work' }
   },
-  // 发布投递回执(ADR 0009):浏览器扩展把成稿送进了平台草稿箱,这里只记录
-  // 「投递到哪、草稿链接是什么」,绝不碰 status——是否已发布仍只由 publish_item 确认。
-  // 与 retag_items 同类:不动状态元组,直接挂 item 字段,只追加、上限 20 条。
-  record_dispatch(state, op, now) {
-    const item = findById(state.items, op.id)
+  // 投递回执(ADR 0009):扩展把作品送进了平台草稿箱,这里只记「投到哪、草稿在哪」,
+  // 成功回执最多把状态推到「已投递」,绝不写 published——是否已发布仍只由用户确认。
+  record_work_dispatch(state, op, now) {
+    const work = findWork(state, op.id ?? op.workId)
     const dispatch = op.dispatch ?? {}
     const platform = typeof dispatch.platform === 'string' ? dispatch.platform : ''
     if (!platform) throw new Error(tr('投递缺少平台'))
@@ -321,75 +413,74 @@ const handlers = {
       ...(typeof dispatch.url === 'string' && dispatch.url ? { url: dispatch.url } : {}),
       ...(dispatch.ok !== true && typeof dispatch.error === 'string' ? { error: dispatch.error.slice(0, 200) } : {}),
     }
-    item.dispatches = [...(item.dispatches ?? []).slice(-19), entry]
+    const publication = { ...(work.publication ?? { status: 'draft' }) }
+    publication.dispatches = [...(publication.dispatches ?? []).slice(-19), entry]
+    if (entry.ok) {
+      if (publication.status !== 'published') publication.status = 'submitted'
+      publication.submittedAt = publication.submittedAt ?? now
+    }
+    work.publication = publication
+    work.updatedAt = now
     return null
   },
-  // 手写稿的唯一通道:成稿产物里改正文,不再有第二套草稿字段(工单 #7 清掉遗留口径)。
-  // 字段白名单与截断留在这里,落库经 reducer 的 editProduction 事件——清空正文等改动
-  // 照常自愈,状态元组始终只有 state.js 一个裁决者;AI 原稿快照留给 harness 对比修改方向。
-  update_production(state, op, now) {
-    const item = findById(state.items, op.id)
-    if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
-    const fields = {}
-    if (typeof op.title === 'string') fields.title = op.title.slice(0, 200)
-    if (typeof op.coverText === 'string') fields.coverText = op.coverText.slice(0, 40)
-    if (typeof op.article === 'string') fields.article = op.article.slice(0, 200000)
-    reduce(state, { type: 'editProduction', id: item.id, at: now, ...fields })
-    return { text: tr('修改《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
+  // 作品编辑器的保存:只改当前稿。带 rev 时是乐观锁,冲突由界面选「用最新的 / 覆盖」。
+  update_work(state, op, now) {
+    const work = findWork(state, op.id ?? op.workId)
+    const fields = workCurrentFields(op)
+    if (!Object.keys(fields).length) return null
+    assertWorkRev(work, op)
+    stampCurrent(work, fields, now)
+    return { text: tr('修改《{title}》', { title: short(workTitle(work)) }), target: work.id, kind: 'work' }
   },
-  // 素材交会话(ADR 0006 相位):登记 sentToSession,内容页呈现「审读中」;
-  // 会话写回(submit)时自动清掉。输入与成稿同一套归一(produce-input)。
-  send_to_session(state, op, now) {
+  // 创作会话写回(ADR 0006 的写回入口):与自动保存同一套字段与乐观锁,只是回执措辞不同。
+  write_work(state, op, now) {
+    const work = findWork(state, op.id ?? op.workId ?? op.targetId)
+    const fields = workCurrentFields(op)
+    if (!Object.keys(fields).length) throw new Error(tr('这次写回没有可写的内容'))
+    assertWorkRev(work, op)
+    stampCurrent(work, fields, now)
+    return { text: tr('会话写回了《{title}》', { title: short(workTitle(work)) }), target: work.id, kind: 'work' }
+  },
+  // 作品记录自己的创作会话指针(ADR 0014:只存 ID,风格学习时按它读转录)。
+  link_work_session(state, op) {
+    const work = findWork(state, op.id ?? op.workId)
+    const sessionId = typeof op.sessionId === 'string' ? op.sessionId : ''
+    if (!sessionId) return null
+    work.sessionIds = [...new Set([...(work.sessionIds ?? []), sessionId])]
+    return null
+  },
+  // 删除作品只删作品:来源素材不动,删完自然回到未用(ADR 0013)。
+  delete_work(state, op) {
+    const work = findWork(state, op.id ?? op.workId)
+    state.works = (state.works ?? []).filter(row => row.id !== work.id)
+    return { text: tr('删除作品《{title}》', { title: short(workTitle(work)) }) }
+  },
+  // 点成稿立即建一篇空作品(ADR 0013):标题取第一个来源的标题,正文留白等写;
+  // 同一素材再点一次就再建一篇,旧作品保留。胶囊一次成稿只建一篇,成员不各建。
+  create_work(state, op, now) {
     const { sourceIds } = resolveProduceInput(state, op)
-    for (const id of sourceIds) findById(state.items, id).sentToSession = { at: now }
-    return { text: tr('把 {n} 条灵感交给了创作会话', { n: sourceIds.length }), target: sourceIds[0], kind: 'item' }
-  },
-  // 会话写回入口:rev 基线不符且未带 force 时,写回被拦下、暂存为 pendingWrite,
-  // 由校样浮层的冲突横幅裁决(apply_write / discard_write),绝不静默覆盖人工修改。
-  write_production(state, op, now) {
-    const item = findById(state.items, op.targetId)
-    const rev = item.production?.rev ?? 0
-    const base = typeof op.rev === 'number' ? op.rev : rev
-    if (base !== rev && op.force !== true) {
-      if (!item.production) throw new Error(tr('这条灵感还没有成稿'))
-      const fields = {}
-      for (const key of ['title', 'coverText', 'article', 'cover', 'images', 'intent', 'review', 'note']) {
-        if (op[key] !== undefined) fields[key] = op[key]
-      }
-      item.production.pendingWrite = { ...fields, baseRev: base, at: now }
-      throw Object.assign(new Error(tr('会话写回与你的修改冲突,已暂存到校样浮层等你裁决')), { status: 409 })
+    if (!sourceIds.length) throw new Error(tr('成稿需要至少一条灵感'))
+    const capsuleIds = [...new Set(Array.isArray(op.capsuleIds) ? op.capsuleIds.filter(id => typeof id === 'string') : [])]
+      .filter(id => (state.capsules ?? []).some(row => row.id === id))
+    const first = state.items.find(row => row.id === sourceIds[0])
+    const work = {
+      id: newId('w'),
+      sourceItemIds: sourceIds,
+      sourceCapsuleIds: capsuleIds,
+      sourceSnapshot: sourceIds.map(id => {
+        const item = state.items.find(row => row.id === id)
+        return { itemId: id, title: item?.title ?? '', kind: item?.kind ?? 'note' }
+      }),
+      current: { title: first?.title ?? '', coverText: '', article: '', rev: 0 },
+      publication: { status: 'draft' },
+      sessionIds: [],
+      createdAt: now,
+      updatedAt: now,
     }
-    const event = { type: 'submit', id: item.id, at: now }
-    if (typeof op.title === 'string') event.title = op.title.slice(0, 200)
-    if (typeof op.coverText === 'string') event.coverText = op.coverText.slice(0, 40)
-    if (typeof op.article === 'string') event.article = op.article.slice(0, 200000)
-    if (op.cover && typeof op.cover.src === 'string') event.cover = { src: op.cover.src, ...(typeof op.cover.caption === 'string' ? { caption: op.cover.caption.slice(0, 60) } : {}) }
-    if (Array.isArray(op.images)) event.images = op.images
-    if (op.intent && typeof op.intent === 'object') event.intent = op.intent
-    if (op.review && typeof op.review === 'object') event.review = op.review
-    if (typeof op.note === 'string') event.note = op.note.slice(0, 200)
-    reduce(state, event)
-    // 成稿产物落在胶囊的第一个成员上,其余成员的状态跟着对齐
-    syncCapsuleStatus(state, item)
-    return { text: tr('会话写回了《{title}》', { title: short(item.production.title) }), target: item.id, kind: 'item' }
-  },
-  // 冲突裁决:接受暂存的写回(force 语义),或丢弃它保留人工版本。都清 pendingWrite。
-  apply_write(state, op, now) {
-    const item = findById(state.items, op.targetId)
-    const pending = item.production?.pendingWrite
-    if (!pending) throw new Error(tr('没有待裁决的写回'))
-    const { baseRev, at, ...fields } = pending
-    item.production.pendingWrite = undefined
-    reduce(state, { type: 'submit', id: item.id, at: now, ...fields, forceHint: true })
-    // 成稿产物落在胶囊的第一个成员上,其余成员的状态跟着对齐
-    syncCapsuleStatus(state, item)
-    return { text: tr('已接受会话的写回'), target: item.id, kind: 'item' }
-  },
-  discard_write(state, op) {
-    const item = findById(state.items, op.targetId)
-    if (!item.production?.pendingWrite) throw new Error(tr('没有待裁决的写回'))
-    item.production.pendingWrite = undefined
-    return { text: tr('已保留你的修改,会话那版没有写入'), target: item.id, kind: 'item' }
+    state.works = [work, ...(state.works ?? [])]
+    // 成稿即消费排期,免得同一张卡反复提醒
+    consumeSchedule(state, sourceIds, capsuleIds, now)
+    return { text: tr('开始成稿《{title}》', { title: short(workTitle(work) || tr('新作品')) }), target: work.id, kind: 'work' }
   },
   // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——
   // Agent 的自动整理不许冲掉用户预览之后又手动改过的分类。
@@ -514,25 +605,33 @@ const handlers = {
     return { text: tr('删除规则「{name}」', { name: skill.name }) }
   },
   clear_samples(state) {
+    const removedItemIds = new Set(state.items.filter(row => row.sample).map(row => row.id))
+    // 用户胶囊不能因清空示例被自动解散；无法保留时整批拒绝，给用户先调整的机会。
+    const blockedCapsule = (state.capsules ?? []).find(capsule => !capsule.sample
+      && capsule.itemIds.some(id => removedItemIds.has(id))
+      && capsule.itemIds.filter(id => !removedItemIds.has(id)).length < 2)
+    if (blockedCapsule) {
+      throw new Error(tr('移除示例成员后，你的胶囊「{name}」将不足两名成员。请先调整或解散该胶囊；本次未改动任何数据。', { name: blockedCapsule.name }))
+    }
+    // 原始灵感示例和完整 demo 都按 sample 标记统一清理，用户实体原样保留。
     state.items = state.items.filter(row => !row.sample)
     state.people = state.people.filter(row => !row.sample)
     state.angles = state.angles.filter(row => !row.sample)
     state.skills = state.skills.filter(row => !row.sample)
     state.styles = (state.styles ?? []).filter(row => !row.sample)
+    state.works = (state.works ?? []).filter(row => !row.sample)
     if (!state.styles.some(row => row.id === state.activeStyleId)) state.activeStyleId = null
-    // 自己的数据可能挂在示例内容下面：父条目没了就断开
+    // 自己的数据可能挂在示例内容下面：父条目没了就断开。
     const ids = new Set(state.items.map(row => row.id))
     for (const row of state.items) if (row.parentId && !ids.has(row.parentId)) row.parentId = null
-    // 胶囊里挂着的示例成员摘掉;不足两个成员的胶囊按自动解散处理
-    for (const capsule of [...(state.capsules ?? [])]) {
-      const remaining = capsule.itemIds.filter(id => ids.has(id))
-      if (remaining.length < 2) {
-        capsule.itemIds = remaining
-        releaseCapsule(state, capsule)
-      } else {
-        capsule.itemIds = remaining
-      }
+    const capsules = []
+    for (const capsule of state.capsules ?? []) {
+      if (capsule.sample) continue
+      const itemIds = capsule.itemIds.filter(id => !removedItemIds.has(id))
+      if (itemIds.length !== capsule.itemIds.length) capsule.itemIds = itemIds
+      capsules.push(capsule)
     }
+    state.capsules = capsules
     state.sampleCleared = true
     return { text: tr('已清空全部示例数据') }
   },
@@ -547,6 +646,8 @@ const handlers = {
 export function applyOps(state, ops) {
   const receipts = []
   const errors = []
+  // 版本冲突(409)单独留一份,别的错误只有一句话:自动保存要凭 rev 弹「用最新的/覆盖」
+  const conflicts = []
   const now = new Date().toISOString()
   for (const op of Array.isArray(ops) ? ops : []) {
     const handler = Object.hasOwn(handlers, op?.op) ? handlers[op.op] : undefined
@@ -559,7 +660,8 @@ export function applyOps(state, ops) {
       if (receipt) receipts.push(receipt)
     } catch (err) {
       errors.push(err.message)
+      if (err.status === 409) conflicts.push({ rev: err.rev ?? null, message: err.message })
     }
   }
-  return { receipts, errors }
+  return { receipts, errors, conflicts }
 }

@@ -20,7 +20,7 @@
 
 ## What it is
 
-A page that lives in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sidebar. Open it and you get an idea wall — one sentence, one idea; related cards bundle into capsules, and dragging a capsule into the chat hands the material to a writing session that drafts the piece in your voice. What comes back lands on your desk: proof it against the layout of each platform, edit in place, put it on the calendar, then copy it out or save it as a folder.
+A page that lives in the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) sidebar. Open it and you get an idea wall — one sentence, one idea; related cards bundle into capsules, and dragging a capsule into the chat hands the material to a writing session that drafts the piece in your voice. What comes back lands on your desk as a work: edit on the left, see a live platform preview on the right, autosave as you type; put it on the calendar, then copy it out or save it as a folder.
 
 Four pages: **Ideas · Content · Schedule · Styles**. The interface comes in Chinese and English; it follows DeepSeek Harness's language by default and can be pinned in settings. Switch to English and pieces are written in English too. The web version opens in a mobile browser.
 
@@ -36,9 +36,9 @@ The writing itself happens in a DSH writing session: generation uses the model y
 
 **Intent first.** The session condenses your material into an intent sheet — purpose, audience, the one judgment the piece serves, lines you must keep, what it will not do — and waits for your confirmation before writing. Then it reads the draft and reports findings without touching a word; you choose what gets fixed, and only then it polishes.
 
-**Written back in stages.** First draft, review findings and the polished final each land on the desk as they finish, and every landing leaves a snapshot. Fields you edited by hand are never silently overwritten — a conflict waits for you in the proof view.
+**One current draft, one published copy.** The session writes the title, body, figures and review findings back into the work; the desk keeps only the current draft and the published copy, no version snapshots. If you edited by hand, a stale write-back is blocked — settle it in the work editor with "use latest" or "use mine".
 
-**The proof view.** Open a piece from the Content page and it lays out like the platform: RedNote's narrow column, a WeChat article, a Zhihu answer (approximate previews). Edit the title, cover text and body in place; roll back from the version list; copy, save a folder, export a publish bundle, or schedule from the footer.
+**The work editor.** Open a work from the Content page: outline and body on the left, live Markdown preview on the right, with RedNote's narrow column, a WeChat article or a Zhihu answer as the frame (approximate previews). Title, cover text and body save as you type; copy the body, save a folder, export a publish bundle, or send to a platform draft box from the footer.
 
 **Rules grow with you.** The session proposes rules from how you edit its drafts; you turn them on in Styles, and from then on every piece follows them.
 
@@ -58,7 +58,7 @@ The writing itself happens in a DSH writing session: generation uses the model y
 
 ## Schedule
 
-**One calendar, two things.** A stamp for every day you captured something, and finished pieces dragged onto a day to schedule them. The next post is always in the corner.
+**One calendar, two things.** A stamp for every day you captured something, and ideas or whole capsules dragged onto a day for an in-app reminder when it comes due; drag a scheduled card back to the tray to unschedule. The next scheduled item is always in the corner.
 
 <br>
 
@@ -68,9 +68,11 @@ The writing itself happens in a DSH writing session: generation uses the model y
 
 **Or your own.** Paste a few pieces you wrote (or their links) and the writing session distills them into a personal style card you can edit anytime.
 
+**Or learn from your works.** Pick 1–6 pieces in Styles or the work editor; the desk reads the writing sessions registered on those works, adds their published copies (and any unpublished edits), and hands the material to a fresh style session. It only writes candidate rules and a candidate style card — nothing takes effect until you confirm each one. If a session can't be read, the material says so and falls back to the published copy.
+
 Writing rules live in Styles: the session proposes, you confirm. Confirmed rules flow into every writing session in real time, and can be exported as a DeepSeek Harness Skill.
 
-The Content page sorts everything into Ideas, Written, Ready and Published; pieces written back by the session announce themselves on the intake bar.
+The Content page opens on the My Works gallery: every work grouped as draft, submitted or published, one click into the work editor. The Pipeline board shows how each work moves from draft to publication. Ideas consumed by a work are grouped under Used on the idea wall and leave the scheduling queue.
 
 <br>
 
@@ -127,7 +129,7 @@ The plugin is free and open source, with no keys bundled. Where a model is invol
 <summary><b>Can it publish directly?</b></summary>
 <br>
 
-It can reach <b>draft boxes</b>. Just install the <a href="extension/">DSwritesync browser extension</a>: the extension pairs with the desk automatically over Native Messaging (the plugin registers a local helper when DSH starts — no token, no pasting, no ports), and the proof view sends a finished piece to 20 platforms' draft boxes in one click (WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault, Yuque, Xueqiu, Woshipm, 51CTO, Imooc, OSChina, Cnblogs, Eastmoney, Aliyun Developer Community, Xiaohongshu; most platforms use your own login state via their official Web APIs, Xiaohongshu uses page automation, and the extension re-uploads images). Platforms have no unified publish API, so a piece counts as published only when you confirm it; Xiaohongshu is saved to the browser-local draft box and the extension never clicks Publish.
+It can reach <b>draft boxes</b>. Just install the <a href="extension/">DSwritesync browser extension</a>: the extension pairs with the desk automatically over Native Messaging (the plugin registers a local helper when DSH starts — no token, no pasting, no ports), and the work editor sends a finished piece to 20 platforms' draft boxes in one click (WeChat, Zhihu, Juejin, Weibo, Bilibili, Douban, Baijiahao, Sohu, CSDN, SegmentFault, Yuque, Xueqiu, Woshipm, 51CTO, Imooc, OSChina, Cnblogs, Eastmoney, Aliyun Developer Community, Xiaohongshu; most platforms use your own login state via their official Web APIs, Xiaohongshu uses page automation, and the extension re-uploads images). Platforms have no unified publish API, so a piece counts as published only when you confirm it; Xiaohongshu is saved to the browser-local draft box and the extension never clicks Publish.
 
 DSwritesync's side panel also has Capture (whole page or selection into the idea wall) and Sync (the current page to platform drafts); both share one settings page.
 
@@ -184,7 +186,7 @@ npm pack                       # Build an installable tgz
 
 | Directory | Contents |
 | --- | --- |
-| `client/` | UI: idea wall, content, schedule, styles, proof view, dock rail |
+| `client/` | UI: idea wall, works page, schedule, styles, work editor, dock rail |
 | `src/` | Host API, state machine, harness tools & skills, local storage, bridge mailboxes |
 | `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel (in `extension/packages/extension`) |
 | `native/` | Local helper (helper.bat/helper.mjs) and the NM registrar: the browser extension reaches the bridge mailbox over Native Messaging; MIT in this repo |

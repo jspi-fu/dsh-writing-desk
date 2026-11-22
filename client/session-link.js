@@ -4,7 +4,8 @@
 // - index.jsx 经 ctx.inject(['uiWorkspace']) 软依赖注入 startSession。
 // 其余模块(canvas/capsule/editor/style)只调这里的函数,不直接碰宿主对象。
 import { resolveProduceInput } from '../src/produce-input.js'
-import { getDesk, setDesk, toast } from './desk.js'
+import { workTitle } from '../src/work.js'
+import { fetchStyleMaterial, getDesk, linkWorkSession, setDesk, toast } from './desk.js'
 import { t } from './i18n.js'
 
 const PRESET_WRITING = 'writing'
@@ -88,10 +89,20 @@ export function referenceEntries(input) {
   return { items, capsules: capsules.map(c => ({ kind: 'capsule', id: c.id, name: c.name, count: c.itemIds.length })), sourceIds }
 }
 
+/** 作品引用行:会话据此知道该把正文写回哪篇(ADR 0013),不能只靠素材反查。 */
+export function workRefLine(workId) {
+  if (!workId) return ''
+  const work = (getDesk().state?.works ?? []).find(row => row.id === workId)
+  if (!work) return ''
+  return `[${t('作品')}] 《${workTitle(work)}》(${workId})`
+}
+
 /** 引用块文本:每行一条,引用是指针——只放标题与 ID,正文由会话经 read 工具取。 */
 export function referenceText(ids) {
   const { items, capsules } = referenceEntries(ids)
+  const workId = Array.isArray(ids) || typeof ids === 'string' ? null : ids?.workId ?? null
   const lines = [
+    ...(workRefLine(workId) ? [workRefLine(workId)] : []),
     ...items.map(item => `[${t('灵感')}] 《${item.title}》(${item.id})`),
     ...capsules.map(capsule => `[${t('胶囊')}] 《${capsule.name}》(${capsule.count} ${t('条')})`),
   ]
@@ -178,6 +189,16 @@ function quotePayload(ids) {
   const state = getDesk().state ?? { items: [], capsules: [] }
   const byId = new Map(state.items.map(row => [row.id, row]))
   const payload = []
+  const workId = Array.isArray(ids) || typeof ids === 'string' ? null : ids?.workId ?? null
+  if (workId) {
+    const work = (state.works ?? []).find(row => row.id === workId)
+    if (work) {
+      payload.push({
+        text: `${t('作品')}:《${workTitle(work)}》(${workId})`,
+        summary: { label: t('作品'), title: workTitle(work), detail: t('正文写回这一篇') },
+      })
+    }
+  }
   for (const entry of items) {
     const item = byId.get(entry.id)
     if (!item) continue
@@ -254,15 +275,28 @@ export function hasPendingReference() {
   return Boolean(pendingCreate) && Date.now() - pendingCreate.at <= PENDING_MS
 }
 
+/**
+ * startSession 返回的会话句柄形状随宿主而异,只要能捞出 id 就登记到作品的 sessionIds;
+ * 捞不到也不影响创作——作品 id 已经写在 prompt 里,写回仍落到同一篇。
+ */
+function bindWorkSession(workId, started) {
+  if (!workId) return
+  Promise.resolve(started).then(result => {
+    const sessionId = result?.sessionId ?? result?.id ?? result?.session?.id
+    if (sessionId) linkWorkSession(workId, sessionId)
+  }).catch(() => { /* 会话登记只是风格学习的线索,失败不打断创作 */ })
+}
+
 export function openWritingSession(ids) {
-  if (!referenceEntries(ids).sourceIds.length) return toast(t('没有可引用的灵感'), { error: true })
+  const workId = Array.isArray(ids) || typeof ids === 'string' ? null : ids?.workId ?? null
+  if (!referenceEntries(ids).sourceIds.length && !workId) return toast(t('没有可引用的灵感'), { error: true })
   if (!workspace) return toast(t('请先在 DSH 里打开创作模式'))
   // 当前输入面支持引用签 → 空草稿开新会话,由新会话的 dock 把签补进去;
   // 旧宿主只能传纯文本 prompt,保持原样。
   if (composer && typeof composer.insertQuote === 'function') {
     pendingCreate = { payload: quotePayload(ids), at: Date.now() }
     try {
-      workspace.startSession(undefined, { agentPreset: PRESET_WRITING })
+      bindWorkSession(workId, workspace.startSession(undefined, { agentPreset: PRESET_WRITING }))
     } catch (err) {
       pendingCreate = null
       toast(err?.message || String(err), { error: true })
@@ -280,11 +314,25 @@ export function openWritingSession(ids) {
   const block = referenceText(ids)
   if (!block) return toast(t('没有可引用的灵感'), { error: true })
   try {
-    workspace.startSession(undefined, { agentPreset: PRESET_WRITING, prompt: block, whenDraftExists: 'append' })
+    bindWorkSession(workId, workspace.startSession(undefined, { agentPreset: PRESET_WRITING, prompt: block, whenDraftExists: 'append' }))
     toast(t('已打开创作会话,引用放在了输入框'))
   } catch (err) {
     toast(err?.message || String(err), { error: true })
   }
+}
+
+/**
+ * 从作品学习写法(ADR 0014):Host 读作品登记过的创作会话 + 发布稿,
+ * 拼成材料预填到新开的风格会话;只写候选规则/候选风格卡,不自动启用。
+ * 返回 { missing } 给对话框提示「哪几篇只读到发布稿」。
+ */
+export async function openStyleSessionFromWorks(workIds, name = '') {
+  if (!workspace) return toast(t('请先在 DSH 里打开创作模式'))
+  const data = await fetchStyleMaterial(workIds, name)
+  workspace.startSession(undefined, { agentPreset: PRESET_WRITING, prompt: data.prompt, whenDraftExists: 'append' })
+  if (data.missing?.length) toast(t('已打开风格会话；{n} 篇只读到发布稿,材料里已标注', { n: data.missing.length }))
+  else toast(t('已打开风格会话,材料贴在了输入框'))
+  return data
 }
 
 /** 风格提炼变体(风格页):材料文字直接放进 prompt,会话经 add_style 工具写回风格卡。 */

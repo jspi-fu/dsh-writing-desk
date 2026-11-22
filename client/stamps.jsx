@@ -64,7 +64,7 @@ export function MiniStamps() {
           return <Stamp key={key} list={list} today={key === dayKey(now)} label={t('{m}月{d}日', { m: d.getMonth() + 1, d: d.getDate(), mon: d.toLocaleString('en-US', { month: 'short' }) })} onOpen={() => openItem(coverOf(list).id)} />
         })}
       </div>
-      <button type="button" className="md-ministamps-more" onClick={() => setDesk({ view: 'schedule' })} title={t('打开灵感日历')} aria-label={t('打开灵感日历，已连续记录 {n} 天', { n: streak })}><Icon name="upRight" size={14} /></button>
+      <button type="button" className="md-ministamps-more" onClick={() => setDesk({ view: 'schedule' })} title={t('打开灵感日历')} aria-label={t('打开灵感日历，已连续记录 {n} 天', { n: streak })}><Icon name="calendar" size={14} /></button>
     </div>
   )
 }

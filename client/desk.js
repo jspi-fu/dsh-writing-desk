@@ -7,7 +7,7 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', proofId: null, query: '', kindFilter: 'all', related: null,
+  view: 'home', workId: null, query: '', kindFilter: 'all', related: null,
   // 灵感墙自己的一行筛选:搜索、排序、标签抽屉,和内容页的 query 不共用
   wallQuery: '', wallSort: 'new', wallTagsOpen: false, capsuleAdd: null,
   capsuleId: null, retag: null, tagFilter: null, selection: null, menu: null,
@@ -42,7 +42,13 @@ async function request(path, body) {
     method: 'POST', headers: { 'content-type': 'application/json', 'x-writing-desk-lang': lang() }, body: JSON.stringify(body),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data.error || t('请求失败（{status}）', { status: res.status }))
+  if (!res.ok) {
+    // 冲突(409)要靠 status 与 data.rev 区分「在别处更新过」,不能只留一句话
+    const error = new Error(data.error || t('请求失败（{status}）', { status: res.status }))
+    error.status = res.status
+    error.data = data
+    throw error
+  }
   return data
 }
 
@@ -69,15 +75,30 @@ export async function loadDesk() {
   }
 }
 
-export async function dispatchOps(ops, { label = t('操作'), undoable = true, silent = false } = {}) {
+/**
+ * 只要最新状态、不动设置与界面状态。提醒横幅每 30 秒用它把别处的改动同步过来
+ * (跨窗口 + 会话写回都靠这个 3 秒轮询之外的补拉),失败静默——提醒丢一次不致命,
+ * 下一次 tick 会重来,不要用 toast 打断用户。
+ */
+export async function refreshState() {
+  try {
+    const data = await request('state')
+    setDesk({ state: data.state, canUndo: data.canUndo, error: null })
+    return data.state
+  } catch {
+    return null
+  }
+}
+
+export async function dispatchOps(ops, { label = t('操作'), undoable = true, silent = false, quiet = false } = {}) {
   try {
     const data = await request('ops', { ops, label, undoable })
     setDesk({ state: data.state, canUndo: undoable || snapshot.canUndo })
-    if (data.errors?.length) toast(data.errors[0], { error: true })
+    if (!quiet && data.errors?.length) toast(data.errors[0], { error: true })
     else if (!silent && data.receipts?.[0]) toast(data.receipts[0].text, { undo: undoable })
     return data
   } catch (err) {
-    report(err)
+    if (!quiet) report(err)
     return null
   }
 }
@@ -97,19 +118,23 @@ export function openItem(id) {
   setDesk({ capture: { mode: 'edit', id } })
 }
 
-// 校样浮层(ADR 0006):内容页成稿卡与签收栏的人工介入载体;素材本身一律走统一编辑对话框(ADR 0007)。
-export function openProof(id) {
+// 作品编辑器(ADR 0014/0015):作品的唯一人工入口。素材本身仍走统一编辑对话框(ADR 0007)。
+export function openWork(id) {
   setDesk(s => {
-    markIntake(id, s.state?.items.find(row => row.id === id)?.production?.rev ?? 0)
-    return { proofId: id }
+    markIntake(id, readWorkRev(s.state, id))
+    return { workId: id }
   })
 }
 
-export function closeProof() {
-  setDesk({ proofId: null })
+export function closeWork() {
+  setDesk({ workId: null })
 }
 
-// 已读签收记录:itemId → 已看过的 rev,内容页据此宣布「已写回」
+function readWorkRev(state, workId) {
+  return (state?.works ?? []).find(work => work.id === workId)?.current?.rev ?? 0
+}
+
+// 已读签收记录:作品 id → 已看过的 rev,内容页据此宣布「已写回」
 function readIntake() {
   try {
     const raw = JSON.parse(localStorage.getItem('writing-desk-intake') ?? '{}')
@@ -176,8 +201,8 @@ export async function previewMediaDesk() {
   return request('migrate/preview')
 }
 
-export async function migrateMediaDesk() {
-  const data = await request('migrate', {})
+export async function migrateMediaDesk(selection) {
+  const data = await request('migrate', selection ? { selection } : {})
   if (data.state) setDesk({ state: data.state })
   return data
 }
@@ -195,23 +220,35 @@ export async function saveSettings(payload) {
   }
 }
 
-// 交接三件套:保存文件夹 / 打开文件夹 / 导出发布包,都落在 Host 的 production/* 路由上
-export async function saveProduced(id) {
+// 交接三件套:保存文件夹 / 打开文件夹 / 导出发布包,都落在 Host 的 work/* 路由上(ADR 0013)
+export async function pickFolder(initial = '') {
   try {
-    const data = await request('production/save', { id })
+    return await request('pick-folder', { initial })
+  } catch (err) {
+    report(err)
+    return { canceled: true }
+  }
+}
+
+export async function saveWorkFiles(id, { pick = false } = {}) {
+  try {
+    const data = await request('work/save', pick ? { id, pick: true } : { id })
+    if (data.canceled) return false
     setDesk({ state: data.state })
     const where = data.backups?.length
       ? t('已保存到 {path}。你在文件夹里改过的稿子另存成了 {names}', { path: data.path, names: data.backups.join(lang() === 'en' ? ', ' : '、') })
       : t('已保存到 {path}', { path: data.path })
     toast(where)
+    return true
   } catch (err) {
     report(err)
+    return false
   }
 }
 
-export async function revealSaved(id) {
+export async function revealWorkFiles(id) {
   try {
-    await request('production/reveal', { id })
+    await request('work/reveal', { id })
   } catch (err) {
     report(err)
   }
@@ -220,7 +257,7 @@ export async function revealSaved(id) {
 // 发布交接(工单 #9):导出发布包(article.md + images/)。只出文件,是否已发布由用户在确认框里决定。
 export async function exportForPublish(id) {
   try {
-    const data = await request('production/export', { id })
+    const data = await request('work/export', { id })
     setDesk({ state: data.state })
     return data
   } catch (err) {
@@ -233,13 +270,90 @@ export async function exportForPublish(id) {
 // 扩展只到草稿箱;回执由 host 消化成 item.dispatches,状态仍由用户确认。
 export async function dispatchPublish(id, platforms) {
   try {
-    const data = await request('production/dispatch', { id, platforms })
+    const data = await request('work/dispatch', { id, platforms })
     setDesk({ state: data.state })
     return data
   } catch (err) {
     report(err)
     return null
   }
+}
+
+// 成稿(ADR 0013):点「成稿」当场建一篇空作品;同一批素材可反复成稿,旧作品都留着。
+export async function createWork(input) {
+  try {
+    const data = await request('ops', { ops: [{ op: 'create_work', ...input }], label: t('成稿') })
+    setDesk({ state: data.state, canUndo: true })
+    if (data.errors?.length) {
+      report(new Error(data.errors[0]))
+      return null
+    }
+    if (data.receipts?.[0]) toast(data.receipts[0].text, { undo: true })
+    return data.receipts?.[0]?.target ?? null
+  } catch (err) {
+    report(err)
+    return null
+  }
+}
+
+// 自动保存(ADR 0014):只写当前稿、静默;409 原样交给编辑器弹冲突横幅,绝不擅自覆盖。
+export async function saveWorkFields(workId, fields, { silent = true } = {}) {
+  try {
+    const data = await request('ops', { ops: [{ op: 'update_work', id: workId, ...fields }], label: t('保存作品'), undoable: false })
+    setDesk({ state: data.state })
+    if (data.conflicts?.length) return { ok: false, conflict: true, rev: data.conflicts[0].rev, message: data.conflicts[0].message }
+    if (data.errors?.length) {
+      if (!silent) report(new Error(data.errors[0]))
+      return { ok: false, message: data.errors[0] }
+    }
+    return { ok: true, rev: (data.state?.works ?? []).find(row => row.id === workId)?.current?.rev ?? null }
+  } catch (err) {
+    if (!silent) report(err)
+    return { ok: false, message: err.message }
+  }
+}
+
+// 发布(ADR 0013):发布即冻结,current 深拷贝成 published。发布与否由用户点确认,机器不代劳。
+export async function publishWork(workId) {
+  try {
+    const data = await request('ops', { ops: [{ op: 'publish_work', id: workId }], label: t('标记已发布') })
+    setDesk({ state: data.state })
+    if (data.errors?.length) {
+      report(new Error(data.errors[0]))
+      return false
+    }
+    if (data.receipts?.[0]) toast(data.receipts[0].text)
+    return true
+  } catch (err) {
+    report(err)
+    return false
+  }
+}
+
+export async function deleteWork(workId) {
+  try {
+    const data = await request('ops', { ops: [{ op: 'delete_work', id: workId }], label: t('删除作品') })
+    setDesk({ state: data.state, canUndo: true })
+    if (data.receipts?.[0]) toast(data.receipts[0].text, { undo: true })
+    return true
+  } catch (err) {
+    report(err)
+    return false
+  }
+}
+
+// 创作会话指针(ADR 0014):只存 ID;风格学习靠它回读转录。丢一次不致命,静默。
+export async function linkWorkSession(workId, sessionId) {
+  if (!workId || !sessionId) return
+  try {
+    await request('ops', { ops: [{ op: 'link_work_session', id: workId, sessionId }], label: t('记录创作会话'), undoable: false })
+  } catch { /* 指针只是风格学习的线索,失败不打断创作 */ }
+}
+
+// 风格学习(ADR 0014):Host 读作品会话转录 + 发布稿,返回可直接预填的 prompt。
+// 读会话可能慢,调用方自己显示 busy;失败原样抛出,由对话框提示。
+export async function fetchStyleMaterial(workIds, name = '') {
+  return request('style/learn', { workIds, name })
 }
 
 // 设置页桥接区块:读 NM 配对状态与队列计数。

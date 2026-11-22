@@ -57,16 +57,22 @@ test('produce 操作页已删除,写回链路没有内置流水线痕迹', () =>
 // 的共享谓词,不许再内联等价判断——四套字段各说各话正是历史不一致的根源。
 // 灵感墙改造后,墙面只放灵感、不画成稿状态(卡上不再有四色状态),所以状态谓词只剩
 // 收发室(内容页)与排期页两处;墙与卡仍受「不许内联」约束,防止旧口径偷偷回流。
-const PANELS = ['content.jsx', 'schedule.jsx']
+const WORK_SURFACES = ['content.jsx']
+const PANELS = ['schedule.jsx']
 const IDEA_SURFACES = ['wall.jsx', 'card.jsx', 'capsule.jsx']
-const SHARED_PREDICATE = /import\s*\{[^}]*\b(?:panelState|isDrafted|isScheduled)\b[^}]*\}\s*from\s*'\.\.\/src\/state\.js'/
+const SHARED_PREDICATE = /import\s*\{[^}]*\b(?:awaitingSchedule|isScheduled|reminderDue)\b[^}]*\}\s*from\s*'\.\.\/src\/state\.js'/
+const SHARED_WORK = /import\s*\{[^}]*\b(?:workState|workHasText|workTitle|PUBLICATION_LABEL)\b[^}]*\}\s*from\s*'\.\.\/src\/work\.js'/
 
-test('面板的状态口径统一走 src/state.js 共享谓词', () => {
+test('面板的状态口径统一走 src/state.js 与 src/work.js 共享谓词', () => {
+  for (const file of WORK_SURFACES) {
+    const source = readFileSync(new URL(file, DIR), 'utf8')
+    assert.match(source, SHARED_WORK, `${file} 要从 src/work.js 引作品状态谓词`)
+  }
   for (const file of PANELS) {
     const source = readFileSync(new URL(file, DIR), 'utf8')
     assert.match(source, SHARED_PREDICATE, `${file} 要从 src/state.js 引共享谓词`)
   }
-  for (const file of [...PANELS, ...IDEA_SURFACES]) {
+  for (const file of [...PANELS, ...WORK_SURFACES, ...IDEA_SURFACES]) {
     const source = readFileSync(new URL(file, DIR), 'utf8')
     for (const [pattern, what] of [
       [/production\??\.status\s*===\s*'(running|done)'/, 'production.status 判断'],
@@ -78,13 +84,14 @@ test('面板的状态口径统一走 src/state.js 共享谓词', () => {
   }
 })
 
-// 校样浮层的相位是写回相位(快照与 pendingWrite 派生),不是状态元组:
-// 它不得内联状态元组判断,面板口径仍只有共享谓词一个来源
-test('校样浮层不内联状态元组判断', () => {
-  const source = readFileSync(new URL('proof.jsx', DIR), 'utf8')
-  assert.doesNotMatch(source, /production\??\.status\s*===\s*'(running|done)'/, 'proof.jsx 内联了 production.status 判断')
-  assert.doesNotMatch(source, /\bdrafts\??\.article/, 'proof.jsx 内联了遗留草稿口径')
-  assert.match(source, /snapshots/, '写回相位从快照派生')
+// 校样浮层已换成作品编辑器(ADR 0015):旧 proof.jsx 与快照相位不许回来
+test('校样浮层已换成作品编辑器,不再有旧快照口径', () => {
+  assert.throws(() => readFileSync(new URL('proof.jsx', DIR), 'utf8'), { code: 'ENOENT' }, 'proof.jsx 应已删除')
+  const source = readFileSync(new URL('work-editor.jsx', DIR), 'utf8')
+  assert.doesNotMatch(source, /production\??\.status\s*===\s*'(running|done)'/, 'work-editor.jsx 内联了 production.status 判断')
+  assert.doesNotMatch(source, /\bdrafts\??\.article/, 'work-editor.jsx 内联了遗留草稿口径')
+  assert.doesNotMatch(source, /snapshots/, '作品编辑器不再有快照相位(ADR 0014)')
+  assert.match(source, /saveWorkFiles/, '保存走作品落盘接口')
 })
 
 // 复盘与 Monid 已整体裁剪(ADR 0005):导航、数据采集入口与相关路由都不再出现
@@ -159,7 +166,28 @@ test('胶囊改名：标题可点开编辑,提交落 update_capsule 的 name', (
 // 胶囊是一张卡(ADR 0011):排期与成稿都按整体算,托盘里不拆成员
 test('排期页把胶囊当一张卡：拖到日历全体一起排、成稿按整张走', () => {
   const schedule = readFileSync(new URL('./schedule.jsx', DIR), 'utf8')
-  assert.match(schedule, /capsuleDrafted/, '托盘分组要用共享的胶囊成稿口径')
+  assert.match(schedule, /awaitingSchedule\(state, item\)/, '待排期托盘要用共享谓词')
+  assert.doesNotMatch(schedule, /capsuleDrafted/, '胶囊已用口径改由作品引用派生,不再看素材状态')
   assert.match(schedule, /const members = capsule\.itemIds\.map\(itemId => byId\.get\(itemId\)\)/, '拖到日历要取全部成员')
   assert.doesNotMatch(schedule, /filter(row => row && awaitingSchedule(row))/, '不能只排还没排期的成员,否则一张胶囊摊在两处')
+})
+
+// 来源打开是整组按钮：箭头只是语义提示，不能成为唯一可点目标；胶囊里还要隔离排序与整卡打开。
+test('灵感来源文字与箭头共用打开入口，胶囊内不冒泡成编辑或拖拽', () => {
+  const card = readFileSync(new URL('./card.jsx', DIR), 'utf8')
+  assert.match(card, /className="md-tile-site md-tile-source"[\s\S]*?onClick=\{open\}/)
+  assert.match(card, /onPointerDown=\{event => event\.stopPropagation\(\)\}/)
+  assert.doesNotMatch(card, /className="md-tile-open"/, '外链箭头不再单独充当按钮')
+
+  const capsule = readFileSync(new URL('./capsule.jsx', DIR), 'utf8')
+  assert.match(capsule, /if \(event\.target !== event\.currentTarget\) return/, '成员卡键盘事件只处理当前包装格，不抢来源按钮的事件')
+})
+
+// 胶囊成员是等宽等高的两列网格，不用瀑布流或取消两行标题最低高度来制造参差。
+test('胶囊成员两列等尺寸，头部图标在窄栏保持清晰', () => {
+  const styles = readFileSync(new URL('./styles.css', DIR), 'utf8')
+  assert.match(styles, /\.md-pile-grid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 12px; align-items: stretch; \}/)
+  assert.match(styles, /\.md-pile-card > \.md-tile\.is-bare \{ display: flex; flex-direction: column; height: 100%; \}/)
+  assert.match(styles, /\.md-pile-card \.md-tile\.is-bare \.md-tile-title \{ min-height: calc\(1\.42em \* 2\); \}/)
+  assert.match(styles, /\.md-root \.md-capsule-action svg \{ flex: none; width: 22px; height: 22px; \}/)
 })

@@ -6,6 +6,14 @@ import { STATUSES } from './state.js'
 const KIND = { image: 'image', video: 'video', web: 'web', note: 'note', quote: 'note' }
 const PLATFORMS = new Set(['公众号', '小红书', '知乎'])
 const LIMIT_TAGS = 24
+const SELECTION = ['items', 'schedule', 'angles', 'people', 'styles']
+
+/** 迁移前的勾选:缺省全选;只有明确 false 才跳过,别让旧客户端的一次空对象搬空数据。 */
+function normalizeSelection(selection) {
+  const picked = {}
+  for (const key of SELECTION) picked[key] = selection?.[key] !== false
+  return picked
+}
 
 const text = value => typeof value === 'string' ? value : ''
 const iso = value => typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : null
@@ -61,18 +69,26 @@ function mergeByName(existing, incoming, fields) {
 
 /**
  * 把媒体工作台的条目并入写作台状态。同一条源数据重复迁移时按 `md-<id>` 跳过,不重复添加。
+ * 迁移是复制:源数据与媒体文件都不动;用户可以不勾某些分组,只搬自己要的部分。
  * @param {object} state - 写作台状态,会被就地修改。
  * @param {object} raw - 媒体工作台 state.json。
- * @param {{media?: Map<string, object>, now?: string}} [options]
+ * @param {{media?: Map<string, object>, now?: string, selection?: object}} [options]
  * @returns {{added:number, skipped:number, missingMedia:number}}
  */
-export function migrateMediaDesk(state, raw, { media = new Map(), now = new Date().toISOString() } = {}) {
-  const items = Array.isArray(raw?.items) ? raw.items : []
-  const people = mergeByName(Array.isArray(state.people) ? state.people : (state.people = []), Array.isArray(raw?.people) ? raw.people : [], ['role', 'note', 'traits', 'tone'])
-  const angles = mergeByName(Array.isArray(state.angles) ? state.angles : (state.angles = []), Array.isArray(raw?.angles) ? raw.angles : [], ['hook', 'prompt'])
-  const styles = mergeByName(Array.isArray(state.styles) ? state.styles : (state.styles = []), Array.isArray(raw?.styles) ? raw.styles : [], ['icon', 'summary', 'tone', 'sentences', 'opening', 'structure', 'words', 'avoid', 'samples'])
+export function migrateMediaDesk(state, raw, { media = new Map(), now = new Date().toISOString(), selection } = {}) {
+  const picked = normalizeSelection(selection)
+  const items = picked.items && Array.isArray(raw?.items) ? raw.items : []
+  const people = picked.people
+    ? mergeByName(Array.isArray(state.people) ? state.people : (state.people = []), Array.isArray(raw?.people) ? raw.people : [], ['role', 'note', 'traits', 'tone'])
+    : new Map((Array.isArray(state.people) ? state.people : []).filter(row => typeof row?.name === 'string').map(row => [row.name, row]))
+  const angles = picked.angles
+    ? mergeByName(Array.isArray(state.angles) ? state.angles : (state.angles = []), Array.isArray(raw?.angles) ? raw.angles : [], ['hook', 'prompt'])
+    : new Map((Array.isArray(state.angles) ? state.angles : []).filter(row => typeof row?.name === 'string').map(row => [row.name, row]))
+  const styles = picked.styles
+    ? mergeByName(Array.isArray(state.styles) ? state.styles : (state.styles = []), Array.isArray(raw?.styles) ? raw.styles : [], ['icon', 'summary', 'tone', 'sentences', 'opening', 'structure', 'words', 'avoid', 'samples'])
+    : new Map((Array.isArray(state.styles) ? state.styles : []).filter(row => typeof row?.name === 'string').map(row => [row.name, row]))
   const styleId = raw?.activeStyleId
-  if (styleId && Array.isArray(raw?.styles)) {
+  if (picked.styles && styleId && Array.isArray(raw?.styles)) {
     const source = raw.styles.find(row => row?.id === styleId)
     const target = source && styles.get(text(source.name))
     if (target && target.id !== state.activeStyleId) state.activeStyleId = target.id
@@ -89,17 +105,17 @@ export function migrateMediaDesk(state, raw, { media = new Map(), now = new Date
     const poster = source?.media?.poster ? media.get(source.media.poster) : null
     if (source?.media?.src && !mapped) missingMedia += 1
     let angleId = null
-    if (source?.angleId) {
+    if (picked.angles && source?.angleId) {
       if (!usedAngles.has(source.angleId)) {
         const sourceAngle = Array.isArray(raw?.angles) ? raw.angles.find(row => row?.id === source.angleId) : null
         usedAngles.set(source.angleId, sourceAngle ? angles.get(text(sourceAngle.name))?.id ?? null : null)
       }
       angleId = usedAngles.get(source.angleId)
     }
-    const personaIds = list(source?.personaIds).map(pid => {
+    const personaIds = picked.people ? list(source?.personaIds).map(pid => {
       const sourcePerson = Array.isArray(raw?.people) ? raw.people.find(row => row?.id === pid) : null
       return sourcePerson ? people.get(text(sourcePerson.name))?.id : null
-    }).filter(Boolean)
+    }).filter(Boolean) : []
     const kind = KIND[source?.kind] ?? 'note'
     state.items.push({
       id,
@@ -107,15 +123,15 @@ export function migrateMediaDesk(state, raw, { media = new Map(), now = new Date
       title: text(source?.title).slice(0, 500),
       body: text(source?.body).slice(0, 40000),
       tags: [...new Set(list(source?.tags))].slice(0, LIMIT_TAGS),
-      status: STATUSES.includes(source?.status) ? source.status : 'idea',
+      status: picked.schedule && STATUSES.includes(source?.status) ? source.status : 'idea',
       angleId,
       personaIds,
       media: mapped ? { ...mapped, ...(poster?.src ? { poster: poster.src } : {}), ...(Number.isFinite(source.media?.w) ? { w: source.media.w } : {}), ...(Number.isFinite(source.media?.h) ? { h: source.media.h } : {}), ...(text(source.media?.name) ? { name: text(source.media.name).slice(0, 160) } : {}) } : null,
       url: http(source?.url),
       source: text(source?.source).slice(0, 500),
       createdAt: iso(source?.createdAt) ?? now,
-      scheduledAt: iso(source?.scheduledAt),
-      platform: PLATFORMS.has(source?.platform) ? source.platform : null,
+      scheduledAt: picked.schedule ? iso(source?.scheduledAt) : null,
+      platform: picked.schedule && PLATFORMS.has(source?.platform) ? source.platform : null,
       contentOrigin: 'user',
       sample: source?.sample === true,
     })

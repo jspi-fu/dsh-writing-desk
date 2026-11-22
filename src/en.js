@@ -76,6 +76,7 @@ export const EN = {
   '更新规则「{name}」': 'Updated writing rule "{name}"',
   '删除规则「{name}」': 'Deleted writing rule "{name}"',
   已清空全部示例数据: 'Cleared all sample data',
+  '移除示例成员后，你的胶囊「{name}」将不足两名成员。请先调整或解散该胶囊；本次未改动任何数据。': 'Removing sample ideas would leave your capsule "{name}" with fewer than two members. Adjust or dissolve that capsule first. Nothing was changed.',
   '不支持的操作：{op}': 'Unsupported operation: {op}',
 
   // 状态
@@ -87,11 +88,15 @@ export const EN = {
 
   // 成稿输入与会话写回(ADR 0006)
   '把 {n} 条灵感交给了创作会话': 'Sent {n} idea(s) to a writing session',
-  '会话写回与你的修改冲突,已暂存到校样浮层等你裁决': 'The session write-back conflicts with your edits. It\'s staged in the proof overlay for you to settle',
   '会话写回了《{title}》': 'The session wrote back "{title}"',
-  没有待裁决的写回: 'No staged write-back to settle',
-  已接受会话的写回: 'Accepted the session write-back',
-  '已保留你的修改,会话那版没有写入': 'Kept your edits; the session version wasn\'t written',
+  // 作品是第一实体(ADR 0013):成稿、写回、删除都落在作品上
+  '开始成稿《{title}》': 'Started "{title}"',
+  '删除作品《{title}》': 'Deleted work "{title}"',
+  '这篇作品在别处更新过（你手上是第 {base} 版，现在是第 {rev} 版）': 'This work was updated elsewhere (you have v{base}, it is now v{rev})',
+  '找不到这篇作品：{id}': 'Work not found: {id}',
+  '成稿需要至少一条灵感': 'A work needs at least one idea as its source',
+  '这份作品还没有正文，先写点内容再发布': 'This work has no body yet. Write something before publishing',
+  '这次写回没有可写的内容': 'Nothing to write back',
 
   // 导出 Skill
   '还没有你自己的风格或规则。示例规则和模板不会被导出': 'You don\'t have your own style or writing rules yet. Sample rules and presets are never exported.',

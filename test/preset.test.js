@@ -13,6 +13,7 @@ import * as skills from '../src/preset-skill.js'
 import hostPlugin from '../src/host.js'
 import { buildSeed } from '../src/seed.js'
 import { Store } from '../src/store.js'
+import { workState } from '../src/work.js'
 
 const ROOT = new URL('../', import.meta.url)
 const read = file => readFileSync(new URL(file, ROOT), 'utf8')
@@ -143,7 +144,7 @@ test('writing_desk_read:按 ID 与胶囊取全文,按 query 找相关,输出有�
   }
 })
 
-test('writing_desk_write:字段写回落库,rev 前进;冲突被拦下时错误里说清裁决去处', async () => {
+test('writing_desk_write:字段写回作品,rev 前进;冲突被拦下时错误里说清去哪裁决', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-tools-'))
   try {
     const store = new Store(dir)
@@ -152,42 +153,44 @@ test('writing_desk_write:字段写回落库,rev 前进;冲突被拦下时错误�
     tools.apply(ctx)
     const write = registered.find(row => row.name === 'writing_desk_write')
     const read = registered.find(row => row.name === 'writing_desk_read')
-    // 首次写回:rev 缺省视为一致,建产物、清交会话登记
-    await store.mutate('交会话', draft => { applyOps(draft, [{ op: 'send_to_session', itemIds: ['seed_1'] }]); return draft })
-    const first = await write.execute({ targetId: 'seed_1', title: '初稿标题', article: '# 初稿\n\n正文', intent: { purpose: '种草', status: 'confirmed' }, note: '初稿' })
+    // 先点成稿:作品是第一实体(ADR 0013),之后所有写回都落在作品上
+    const created = await store.mutate('开始成稿', draft => applyOps(draft, [{ op: 'create_work', itemIds: ['seed_1'] }]))
+    const workId = created.receipts[0].target
+    // 首次写回:rev 缺省视为一致,写字段并前进 rev
+    const first = await write.execute({ workId, title: '初稿标题', article: '# 初稿\n\n正文', intent: { purpose: '种草', status: 'confirmed' } })
     assert.equal(first.written, true)
     assert.equal(first.rev, 1)
     let state = await store.read()
-    let target = state.items.find(row => row.id === 'seed_1')
-    assert.equal(target.production.article, '# 初稿\n\n正文')
-    assert.equal(target.sentToSession, undefined)
-    assert.equal(target.status, 'draft')
-    // 拿着旧 rev 再写回:409,错误说清去校样浮层裁决;pendingWrite 已暂存
-    await assert.rejects(write.execute({ targetId: 'seed_1', rev: 0, article: '会话新版' }), /冲突.*校样浮层/s)
+    let work = state.works.find(row => row.id === workId)
+    assert.equal(work.current.article, '# 初稿\n\n正文')
+    assert.equal(work.current.intent.purpose, '种草')
+    assert.equal(workState(work), 'draft')
+    // 拿着旧 rev 再写回:409,错误说清去作品编辑器裁决
+    await assert.rejects(write.execute({ workId, rev: 0, article: '会话新版' }), /在别处更新过/)
     state = await store.read()
-    assert.equal(state.items.find(row => row.id === 'seed_1').production.pendingWrite.article, '会话新版')
-    // 读一次拿到 rev 与产物概要(write 可写的字段都在,正文只给预览),按读到的 rev 续写就通过
-    const fresh = await read.execute({ itemIds: ['seed_1'] })
-    assert.equal(fresh.items[0].production.rev, 1)
-    assert.equal(fresh.items[0].production.title, '初稿标题')
-    assert.equal(fresh.items[0].production.existingDraft.text, '# 初稿\n\n正文')
-    assert.equal(fresh.items[0].production.intent.purpose, '种草')
-    const second = await write.execute({ targetId: 'seed_1', rev: fresh.items[0].production.rev, article: '定稿正文', note: '润色' })
+    assert.equal(state.works.find(row => row.id === workId).current.article, '# 初稿\n\n正文', '被拦下的写回不落库')
+    // 读一次拿到 rev 与当前稿概要(write 可写的字段都在,正文只给预览),按读到的 rev 续写就通过
+    const fresh = await read.execute({ workIds: [workId] })
+    assert.equal(fresh.works[0].rev, 1)
+    assert.equal(fresh.works[0].title, '初稿标题')
+    assert.equal(fresh.works[0].existingDraft.text, '# 初稿\n\n正文')
+    assert.equal(fresh.items.length, 0)
+    const second = await write.execute({ workId, rev: fresh.works[0].rev, article: '定稿正文' })
     assert.equal(second.rev, 2)
-    // 用户在浮层改过之后,会话按 read 拿基线再写:旧 rev 被拦下——闸门没有首写豁免(ADR 0008)
-    await store.mutate('人工改稿', draft => { applyOps(draft, [{ op: 'update_production', id: 'seed_1', title: '人工标题' }]); return draft })
-    const afterEdit = await read.execute({ itemIds: ['seed_1'] })
-    assert.equal(afterEdit.items[0].production.rev, 3)
-    assert.equal(afterEdit.items[0].production.title, '人工标题')
-    await assert.rejects(write.execute({ targetId: 'seed_1', rev: 2, article: '又写一版' }), /冲突/)
+    // 用户在编辑器改过之后,会话按 read 拿基线再写:旧 rev 仍被拦下——闸门没有首写豁免(ADR 0008)
+    await store.mutate('人工改稿', draft => applyOps(draft, [{ op: 'update_work', id: workId, title: '人工标题' }]))
+    const afterEdit = await read.execute({ workIds: [workId] })
+    assert.equal(afterEdit.works[0].rev, 3)
+    assert.equal(afterEdit.works[0].title, '人工标题')
+    await assert.rejects(write.execute({ workId, rev: 2, article: '又写一版' }), /在别处更新过/)
     // 没有字段直接报错
-    await assert.rejects(write.execute({ targetId: 'seed_1' }), /至少给一个/)
+    await assert.rejects(write.execute({ workId }), /至少给一个/)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 })
 
-test('writing_desk_add_rule 以 proposed 落库等确认;add_style 写卡并设为当前', async () => {
+test('writing_desk_add_rule 以 proposed 落库等确认;add_style 默认设为当前,activate=false 只写候选', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'writing-desk-tools-'))
   try {
     const store = new Store(dir)
@@ -208,6 +211,11 @@ test('writing_desk_add_rule 以 proposed 落库等确认;add_style 写卡并设�
     const style = state.styles.find(row => row.name === '测试腔')
     assert.deepEqual(style.words, ['那天'])
     assert.equal(state.activeStyleId, style.id, '写完设为当前风格')
+    // 从作品学习的候选卡:只写入,不替用户切换当前风格
+    await addStyle.execute({ name: '候选腔', summary: '待确认', activate: false })
+    state = await store.read()
+    assert.ok(state.styles.some(row => row.name === '候选腔'))
+    assert.equal(state.activeStyleId, style.id, 'activate=false 不切换当前风格')
     await assert.rejects(addStyle.execute({}), /风格需要名字/)
   } finally {
     await rm(dir, { recursive: true, force: true })

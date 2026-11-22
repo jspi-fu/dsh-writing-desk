@@ -45,9 +45,9 @@ export function relatedIdeas(items, query, limit = 6) {
   if (!list.length) return []
   const scored = []
   for (const item of items) {
-    const title = `${item.title ?? ''} ${item.production?.title ?? ''}`.toLowerCase()
+    const title = `${item.title ?? ''}`.toLowerCase()
     const tags = (item.tags ?? []).join(' ').toLowerCase()
-    const body = `${item.body ?? ''} ${item.production?.article ?? ''} ${item.source ?? ''}`.toLowerCase()
+    const body = `${item.body ?? ''} ${item.source ?? ''}`.toLowerCase()
     let score = 0
     let strong = false
     for (const { term, weight } of list) {

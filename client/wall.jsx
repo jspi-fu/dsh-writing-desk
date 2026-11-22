@@ -5,12 +5,13 @@ import React from 'react'
 import { Card, openCapture, openEditItem } from './card.jsx'
 import { CapsuleCard } from './capsule.jsx'
 import { clearSelection, dispatchOps, EMPTY_LIST, openCapsule, setDesk, useDesk } from './desk.js'
-import { addReferenceToCurrentSession, copyReferenceForAI, openWritingSession } from './session-link.js'
+import { createWork, openWork } from './desk.js'
+import { addReferenceToCurrentSession, copyReferenceForAI } from './session-link.js'
 import { t } from './i18n.js'
 import { Icon, IconButton, openMenuAt } from './ui.jsx'
 import { tagShelf } from './tags.js'
 import { railOrder } from './rail-order.js'
-import { capsuleMembers, categoryOf, isIdea, posterOf } from './util.js'
+import { capsuleMembers, categoryOf, isIdea, itemIcon, posterOf } from './util.js'
 
 const CATEGORY_OPTIONS = [{ value: 'all', label: '全部' }, { value: 'note', label: '笔记' }, { value: 'file', label: '文件' }, { value: 'link', label: '链接' }]
 const SORT_OPTIONS = [{ value: 'new', label: '最近添加' }, { value: 'old', label: '最早添加' }, { value: 'title', label: '按标题' }]
@@ -43,15 +44,16 @@ function Thumb({ entry }) {
   }
   const poster = posterOf(entry.item)
   if (poster) return <img className="md-rail-pic" src={poster} alt="" loading="lazy" draggable={false} referrerPolicy="no-referrer" />
-  return <span className={`md-rail-glyph is-${categoryOf(entry.item)}`} aria-hidden="true"><Icon name={categoryOf(entry.item) === 'link' ? 'link' : categoryOf(entry.item) === 'file' ? 'image' : 'pen'} size={15} /></span>
+  return <span className={`md-rail-glyph is-${categoryOf(entry.item)}`} aria-hidden="true"><Icon name={itemIcon(entry.item)} size={15} /></span>
 }
 
 /** 第二行:邮票风格的缩略图。跟排期界面一个口径——上日历的按日期先后排在前面,
- * 没排期的接在后面,中间一条黑短竖杠 + 竖排「未排期」;
+ * 没排期的接在后面,中间一条黑短竖杠:杠左竖排「本周」,杠右竖排「未排期」。
  * 左右可滑,两侧渐隐提示到头;悬停出箭头,键盘切到哪张就把它滚到正中。 */
 function ThumbRail({ entries, cut, onOpen, total }) {
   const scroll = React.useRef(null)
-  const parts = cut > 0 && cut < entries.length ? [entries.slice(0, cut), entries.slice(cut)] : [entries]
+  const split = cut > 0 && cut < entries.length
+  const parts = split ? [entries.slice(0, cut), entries.slice(cut)] : [entries]
   const [edges, setEdges] = React.useState({ left: false, right: false })
   const [hover, setHover] = React.useState('')
 
@@ -128,8 +130,9 @@ function ThumbRail({ entries, cut, onOpen, total }) {
             <React.Fragment key={index}>
               {index === 1 ? (
                 <span className="md-railsplit" aria-hidden="true">
+                  <em className="md-railsplit-label is-left">{t('本周')}</em>
                   <i className="md-railsplit-bar" />
-                  <em className="md-railsplit-label">{t('未排期')}</em>
+                  <em className="md-railsplit-label is-right">{t('未排期')}</em>
                 </span>
               ) : null}
               <div className="md-railgroup">
@@ -144,7 +147,10 @@ function ThumbRail({ entries, cut, onOpen, total }) {
                       className="md-rail-plus"
                       aria-label={t('用《{title}》进入创作', { title: entry.title })}
                       title={t('进入创作会话')}
-                      onClick={() => openWritingSession(entry.type === 'capsule' ? { capsuleIds: [entry.id] } : { itemIds: [entry.id] })}
+                      onClick={async () => {
+                        const workId = await createWork(entry.type === 'capsule' ? { capsuleIds: [entry.id] } : { itemIds: [entry.id] })
+                        if (workId) openWork(workId)
+                      }}
                     >
                       <Icon name="plus" size={11} />
                     </button>
@@ -249,7 +255,11 @@ function SelectionBar({ selection, allItems, allCapsules }) {
   const selectAll = () => setDesk({ selection: { items: allItems, capsules: allCapsules } })
   const toChat = () => addReferenceToCurrentSession({ itemIds: pickedItems, capsuleIds: pickedCapsules })
   const toCopy = () => copyReferenceForAI({ itemIds: pickedItems, capsuleIds: pickedCapsules })
-  const toCreate = () => openWritingSession({ itemIds: pickedItems, capsuleIds: pickedCapsules })
+  const toCreate = async () => {
+    // 多选成稿:选中素材合成一篇作品的来源,再打开作品编辑器(ADR 0013)
+    const workId = await createWork({ itemIds: pickedItems, capsuleIds: pickedCapsules })
+    if (workId) { clearSelection(); openWork(workId) }
+  }
   const merge = () => dispatchOps([{ op: 'add_capsule', itemIds: pickedItems }], { label: t('合成胶囊') }).then(() => clearSelection())
   const remove = async () => {
     const ops = [
@@ -263,14 +273,14 @@ function SelectionBar({ selection, allItems, allCapsules }) {
   return (
     <div className="md-selectbar" role="toolbar" aria-label={t('已选灵感')}>
       <span className="md-selectbar-count">{t('已选 {n} 项', { n: count })}</span>
-      <button type="button" className="md-selectbar-btn" onClick={selectAll}>{t('全选')}</button>
+      <button type="button" className="md-selectbar-btn" onClick={selectAll} aria-label={t('全选')}><Icon name="check" size={13} /><span className="md-selectbar-label">{t('全选')}</span></button>
       <span className="md-selectbar-sep" />
-      <button type="button" className="md-selectbar-btn" onClick={toChat}><Icon name="link" size={13} />{t('添加到当前会话')}</button>
-      <button type="button" className="md-selectbar-btn" onClick={toCopy}><Icon name="copy" size={13} />{t('复制给 AI')}</button>
-      <button type="button" className="md-selectbar-btn is-primary" onClick={toCreate}><Icon name="bolt" size={13} />{t('进入创作')}</button>
-      {pickedItems.length > 1 && !pickedCapsules.length ? <button type="button" className="md-selectbar-btn" onClick={merge}>{t('合成胶囊')}</button> : null}
-      <button type="button" className="md-selectbar-btn is-danger" onClick={remove}>{pickedCapsules.length && !pickedItems.length ? t('解散') : t('删除')}</button>
-      <button type="button" className="md-selectbar-btn" onClick={clearSelection}>{t('取消')}</button>
+      <button type="button" className="md-selectbar-btn" onClick={toChat} aria-label={t('添加到当前会话')}><Icon name="link" size={13} /><span className="md-selectbar-label">{t('添加到当前会话')}</span></button>
+      <button type="button" className="md-selectbar-btn" onClick={toCopy} aria-label={t('复制给 AI')}><Icon name="copy" size={13} /><span className="md-selectbar-label">{t('复制给 AI')}</span></button>
+      <button type="button" className="md-selectbar-btn is-primary" onClick={toCreate} aria-label={t('进入创作')}><Icon name="bolt" size={13} /><span className="md-selectbar-label">{t('进入创作')}</span></button>
+      {pickedItems.length > 1 && !pickedCapsules.length ? <button type="button" className="md-selectbar-btn" onClick={merge} aria-label={t('合成胶囊')}><Icon name="scatter" size={13} /><span className="md-selectbar-label">{t('合成胶囊')}</span></button> : null}
+      <button type="button" className="md-selectbar-btn is-danger" onClick={remove} aria-label={pickedCapsules.length && !pickedItems.length ? t('解散') : t('删除')}><Icon name="trash" size={13} /><span className="md-selectbar-label">{pickedCapsules.length && !pickedItems.length ? t('解散') : t('删除')}</span></button>
+      <button type="button" className="md-selectbar-btn" onClick={clearSelection} aria-label={t('取消')}><Icon name="close" size={13} /><span className="md-selectbar-label">{t('取消')}</span></button>
     </div>
   )
 }

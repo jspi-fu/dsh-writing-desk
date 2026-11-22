@@ -63,8 +63,6 @@ test('localizeSamples：中英来回切换只换示例文字，用户内容和�
     { op: 'update_style', id: 'preset_news', tone: '我自己的语气' },
     { op: 'add_style', name: '我的风格', tone: '原样' },
   ])
-  const seed2 = state.items.find(row => row.id === 'seed_2')
-  seed2.production = { status: 'done', title: '成稿标题', article: '正文' }
   const before = clone(state)
 
   assert.equal(samplesNeedLocale(state, 'en'), true)
@@ -76,10 +74,9 @@ test('localizeSamples：中英来回切换只换示例文字，用户内容和�
   assert.equal(item(mine.target).title, '我自己的灵感')
   assert.equal(item(mine.target).body, '只属于我')
   assert.ok(!CJK.test(item('seed_1').title))
-  assert.equal(item('seed_2').status, 'published')
-  assert.ok(item('seed_2').publishedAt)
-  // 中文成稿和改过的标题先收起来，英文下显示英文示例
-  assert.equal(item('seed_2').production, undefined)
+  assert.equal(item('seed_2').status, 'draft', '素材不承载发布状态')
+  assert.equal(item('seed_2').publishedAt, undefined)
+  // 中文标题先收起来，英文下显示英文示例
   assert.ok(!CJK.test(item('seed_2').title))
   assert.ok(!CJK.test(item('seed_3').title))
   assert.ok(!CJK.test(item('seed_3').body))
@@ -162,18 +159,20 @@ test('GET state 按请求头的语言换示例文字', async () => {
   }
 })
 
-test('旧的英文数据：示例上残留的中文成稿收进中文那份，切回中文还在', () => {
+test('旧的英文数据：示例上残留的中文成稿迁成作品，切回中文还在', () => {
   const state = buildSeed(NOW, 'en')
   const row = state.items.find(item => item.id === 'seed_1')
   delete row.otherLang
-  row.production = { status: 'done', title: '中文成稿' }
+  row.production = { status: 'done', title: '中文成稿', article: '正文' }
   const mine = { id: 'it_mine', title: '我的中文灵感', drafts: {} }
   state.items.push(mine)
   migrateState(state)
   assert.equal(row.production, undefined)
   assert.ok(!CJK.test(row.title))
   assert.equal(mine.title, '我的中文灵感')
+  const work = state.works.find(workRow => workRow.sourceItemIds.includes('seed_1'))
+  assert.equal(work.current.title, '中文成稿', '旧成稿迁成作品')
   localizeSamples(state, 'zh')
-  assert.equal(row.production.title, '中文成稿')
+  assert.equal(work.current.title, '中文成稿', '作品不是示例文字，切语言不动')
 })
 

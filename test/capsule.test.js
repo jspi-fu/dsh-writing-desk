@@ -12,8 +12,13 @@ import { retagPreview, tagShelf } from '../client/tags.js'
 
 const NOW = new Date('2026-10-31T15:00:00+08:00')
 
+// 这些领域用例聚焦原始 seed_* 示例；完整 demo 的自动分发与统清在 demo.test.js 单独覆盖。
 function seed() {
-  return buildSeed(NOW)
+  const state = buildSeed(NOW)
+  state.items = state.items.filter(row => !row.demo)
+  state.capsules = state.capsules.filter(row => !row.demo)
+  state.works = state.works.filter(row => !row.demo)
+  return state
 }
 
 test('拖到一起生成命名胶囊并持久化,成员灵感保持独立', async () => {
@@ -34,7 +39,7 @@ test('拖到一起生成命名胶囊并持久化,成员灵感保持独立', asyn
     const saved = new Store(dir)
     await saved.mutate('聚合胶囊', s => applyOps(s, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }]))
     const reopened = new Store(dir)
-    assert.deepEqual((await reopened.read()).capsules.map(c => c.name), ['周末选题'])
+    assert.deepEqual((await reopened.read()).capsules.map(c => c.name), ['周末选题', '街区小店故事', '产品表达案例库'])
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -95,7 +100,7 @@ test('删掉成员灵感,只剩一个就自动解散', () => {
   assert.ok(state.items.some(i => i.id === 'seed_3'), '最后一个成员仍独立存在')
 })
 
-test('清空示例后,胶囊里挂着的示例成员一并摘掉,不足两个的自动解散', () => {
+test('清空示例遇到只剩一名用户成员的混合胶囊时整批拒绝', () => {
   const state = seed()
   const { receipts: added } = applyOps(state, [{ op: 'add_item', title: '我自己的' }])
   const mine = added[0].target
@@ -103,8 +108,11 @@ test('清空示例后,胶囊里挂着的示例成员一并摘掉,不足两个的
     { op: 'add_capsule', name: '混着', itemIds: ['seed_1', mine] },
     { op: 'add_capsule', name: '全是示例', itemIds: ['seed_2', 'seed_3'] },
   ])
-  applyOps(state, [{ op: 'clear_samples' }])
-  assert.equal(state.capsules.length, 0, '只剩一个成员的胶囊自动解散')
+  const before = structuredClone(state)
+  const { errors } = applyOps(state, [{ op: 'clear_samples' }])
+  assert.equal(errors.length, 1)
+  assert.match(errors[0], /未改动任何数据/)
+  assert.deepEqual(state, before, '不解散用户胶囊，也不留下清了一半的状态')
   assert.ok(state.items.some(i => i.id === mine), '自己的灵感仍在画布上')
 })
 
@@ -264,20 +272,55 @@ test('胶囊手动改状态与取消排期同样按整体走', () => {
   assert.deepEqual(members().map(row => row.scheduledAt), [null, null])
 })
 
-test('胶囊发布一次落齐所有成员;不在胶囊里的灵感照旧只改自己', () => {
+test('胶囊排期设置按整体走:提醒开关镜像到所有成员,「知道了」整张写', () => {
   const state = seed()
   applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }])
-  const { receipts } = applyOps(state, [{ op: 'publish_item', id: 'seed_2' }])
-  assert.ok(state.items.filter(row => ['seed_1', 'seed_2'].includes(row.id)).every(row => row.status === 'published'))
-  assert.match(receipts[0].text, /胶囊《周末选题》已发布/)
+  const capsule = state.capsules[0]
+  const members = () => state.items.filter(row => capsule.itemIds.includes(row.id))
+  const when = '2026-11-05T09:00:00.000Z'
+
+  // 排期即默认绑定系统提示;用户没关过就有提醒
+  applyOps(state, [{ op: 'schedule_item', id: 'seed_1', scheduledAt: when }])
+  assert.deepEqual(members().map(row => row.reminder), [true, true])
+
+  // 手动关掉:改哪一行都整张一起关
+  applyOps(state, [{ op: 'update_item', id: 'seed_2', reminder: false }])
+  assert.deepEqual(members().map(row => row.reminder), [false, false])
+
+  // 自动成稿/自动投递已删除(ADR 0013 修订):排期只剩时间、系统提示与平台
+  applyOps(state, [{ op: 'schedule_item', id: 'seed_1', scheduledAt: when, autoProduce: true, autoDispatch: true }])
+  assert.deepEqual(members().map(row => [row.autoProduce, row.autoDispatch]), [[undefined, undefined], [undefined, undefined]])
+
+  // 「知道了」一次确认写齐所有成员(一张胶囊只响一条提醒),而且不改撤销栈:没有回执
+  const ack = applyOps(state, [{ op: 'ack_reminder', id: 'seed_2' }])
+  assert.deepEqual(ack.errors, [])
+  assert.deepEqual(ack.receipts, [])
+  const stamps = members().map(row => row.remindedAt)
+  assert.equal(new Set(stamps).size, 1, '整张胶囊用同一个回执时间')
+  assert.ok(!Number.isNaN(Date.parse(stamps[0])), '回执是真实时间')
+  assert.ok(state.items.find(row => row.id === 'seed_3').remindedAt === undefined, '不在胶囊里的灵感不受影响')
+})
+
+test('胶囊成稿一次落齐所有成员;不在胶囊里的灵感不被引用', () => {
+  const state = seed()
+  applyOps(state, [{ op: 'add_capsule', name: '周末选题', itemIds: ['seed_1', 'seed_2'] }])
+  const { receipts } = applyOps(state, [{ op: 'create_work', capsuleIds: [state.capsules[0].id] }])
+  // 整堆成稿:所有成员都进作品的来源(ADR 0013)
+  const work = state.works.find(row => row.id === receipts[0].target)
+  assert.deepEqual(work.sourceItemIds.sort(), ['seed_1', 'seed_2'].sort())
+  // 素材本身不再有成稿与发布状态
+  assert.ok(state.items.filter(row => ['seed_1', 'seed_2'].includes(row.id)).every(row => !row.production && !row.publishedAt))
+  assert.match(receipts[0].text, /开始成稿/)
   assert.equal(state.items.find(row => row.id === 'seed_3').status, 'idea', '单张灵感不受影响')
 })
 
 test('示例数据从灵感/待排期开始;迁移把存量示例退回待排期,自建条目与已写成稿的不动', () => {
   const fresh = buildSeed(NOW)
-  assert.ok(fresh.items.every(row => row.status === 'idea' && row.scheduledAt === null && row.publishedAt === null), '示例不带排期与发布')
+  assert.ok(fresh.items.filter(row => row.sample && !row.demo).every(row => row.status === 'idea' && row.scheduledAt === null && !row.publishedAt && !row.production), '原始示例不带排期、成稿与发布')
+  assert.ok(fresh.items.some(row => row.demo && row.scheduledAt), '完整演示按需求自带排期')
 
-  const state = buildSeed(NOW)
+  const state = seed()
+  delete state.sampleScheduleReset
   const sample = state.items[0]
   sample.status = 'published'
   sample.scheduledAt = '2026-11-02T12:00:00.000Z'
@@ -290,7 +333,7 @@ test('示例数据从灵感/待排期开始;迁移把存量示例退回待排期
   migrateState(state)
   assert.equal(sample.status, 'idea')
   assert.equal(sample.scheduledAt, null)
-  assert.equal(sample.publishedAt, null)
+  assert.ok(!sample.publishedAt, '示例不再带发布时间')
   assert.equal(wrote.scheduledAt, '2026-11-04T12:00:00.000Z', '已经写成稿的示例是真实产物,保持原样')
   const own = state.items.find(row => row.id === 'own')
   assert.equal(own.status, 'published', '自建条目不动')

@@ -15,6 +15,23 @@ export const CATEGORY_LABEL = { note: '笔记', file: '文件', link: '链接' }
 export function categoryOf(item) {
   return KIND_CATEGORY[item?.kind] ?? 'note'
 }
+
+const IMAGE_EXT = /^(PNG|JPG|JPEG|WEBP|GIF|AVIF)$/
+const VIDEO_EXT = /^(MP4|WEBM|MOV|MKV|M4V)$/
+
+/** 卡片、缩略图与胶囊成员共用同一套类型图标，普通文件也按扩展名区分图片和视频。 */
+export function itemIcon(item) {
+  if (item?.kind === 'image') return 'image'
+  if (item?.kind === 'video') return 'film'
+  const category = categoryOf(item)
+  if (category === 'link') return 'link'
+  if (category === 'note') return 'pen'
+  const ext = fileExtOf(item)
+  if (IMAGE_EXT.test(ext)) return 'image'
+  if (VIDEO_EXT.test(ext)) return 'film'
+  return 'folder'
+}
+
 export const PLATFORMS = ['公众号', '小红书', '知乎']
 /** 下拉框里的平台顺序。 */
 export function platformChoices() {
@@ -136,14 +153,6 @@ export function computeStreak(items, now = new Date()) {
     cursor.setDate(cursor.getDate() - 1)
   }
   return streak
-}
-
-/** 成稿之后，卡片显示封面和最终标题。 */
-export function displayItem(item) {
-  const production = item.production
-  if (!production?.title) return item
-  const src = production.cover?.src
-  return { ...item, title: production.title, ...(src ? { kind: 'image', media: { src, w: 3, h: 2 } } : {}) }
 }
 
 export function posterOf(item) {

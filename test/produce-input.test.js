@@ -62,85 +62,100 @@ test('已删除的灵感被过滤;全部失效时报 400', () => {
   assert.throws(() => resolveProduceInput(state, {}), err => err.status === 400)
 })
 
-test('send_to_session:整批来源登记 sentToSession,写回时由 submit 清掉', () => {
+test('create_work:胶囊整堆立一篇作品,快照带标题,当前稿从来源标题起步', () => {
   const state = seed()
   applyOps(state, [{ op: 'add_capsule', name: '堆', itemIds: ['seed_1', 'seed_2'] }])
   const [capsule] = state.capsules
-  const { receipts } = applyOps(state, [{ op: 'send_to_session', capsuleIds: [capsule.id] }])
-  assert.match(receipts[0].text, /2 条灵感/)
-  const first = state.items.find(row => row.id === 'seed_1')
-  const second = state.items.find(row => row.id === 'seed_2')
-  assert.ok(first.sentToSession?.at)
-  assert.ok(second.sentToSession?.at)
-  // 全部失效时不产生登记,回执给错误
-  const { errors } = applyOps(state, [{ op: 'send_to_session', itemIds: ['gone'] }])
-  assert.match(errors[0], /没有可用的灵感/)
+  const { receipts, errors } = applyOps(state, [{ op: 'create_work', capsuleIds: [capsule.id] }])
+  assert.deepEqual(errors, [])
+  const work = state.works.find(row => row.id === receipts[0].target)
+  assert.ok(work, '回执 target 就是作品 id')
+  assert.deepEqual(work.sourceItemIds, ['seed_1', 'seed_2'])
+  assert.deepEqual(work.sourceCapsuleIds, [capsule.id])
+  assert.deepEqual(work.sourceSnapshot.map(row => row.itemId), ['seed_1', 'seed_2'])
+  assert.equal(work.current.title, state.items.find(row => row.id === 'seed_1').title)
+  assert.equal(work.current.article, '')
+  assert.equal(work.current.rev, 0)
+  assert.equal(work.publication.status, 'draft')
+  assert.equal(work.published, undefined)
 })
 
-test('write_production:整链写回——建产物、清登记、rev 前进、快照带内容', () => {
+test('create_work:同一批素材可以反复成稿,每篇独立;成稿即消费排期', () => {
   const state = seed()
-  applyOps(state, [{ op: 'send_to_session', itemIds: ['seed_1'] }])
+  applyOps(state, [{ op: 'schedule_item', id: 'seed_2', scheduledAt: '2026-11-01T12:00:00.000Z' }])
+  const first = applyOps(state, [{ op: 'create_work', itemIds: ['seed_2'] }]).receipts[0].target
+  const second = applyOps(state, [{ op: 'create_work', itemIds: ['seed_2'] }]).receipts[0].target
+  assert.notEqual(first, second)
+  assert.equal(state.works.filter(row => !row.demo).length, 2)
+  // 排期是「到点成稿」的提醒,成稿即消费,不会同一张卡反复提醒
+  assert.ok(!state.items.find(row => row.id === 'seed_2').scheduledAt, '排期被消费掉了')
+  // 删作品不删素材:来源仍在,作品只是少一篇；首次演示作品不参与这个场景计数
+  applyOps(state, [{ op: 'delete_work', id: first }])
+  assert.deepEqual(state.works.filter(row => !row.demo).map(row => row.id), [second])
+  assert.ok(state.items.some(row => row.id === 'seed_2'))
+})
+
+test('write_work:会话写回落当前稿,rev 前进;旧 rev 被 409 拦下且正文不动', () => {
+  const state = seed()
+  const workId = applyOps(state, [{ op: 'create_work', itemIds: ['seed_1'] }]).receipts[0].target
   const { receipts } = applyOps(state, [{
-    op: 'write_production', targetId: 'seed_1', rev: 0,
+    op: 'write_work', id: workId, rev: 0,
     title: '会话标题', article: '# 会话标题\n\n正文', coverText: '封面字',
     intent: { purpose: '教程', status: 'confirmed' },
     images: [{ src: 'writing-desk/files/a.png', caption: '示意图', anchor: '第一步' }],
-    note: '初稿',
   }])
   assert.match(receipts[0].text, /会话写回了/)
-  const item = state.items.find(row => row.id === 'seed_1')
-  assert.equal(item.production.status, 'done')
-  assert.equal(item.production.title, '会话标题')
-  assert.equal(item.production.aiArticle, item.production.article)
-  assert.equal(item.production.intent.status, 'confirmed')
-  assert.equal(item.production.images[0].anchor, '第一步')
-  assert.equal(item.production.rev, 1)
-  assert.equal(item.production.snapshots[0].note, '初稿')
-  assert.equal(item.production.snapshots[0].article, item.production.article)
-  assert.equal(item.sentToSession, undefined)
-  assert.equal(item.status, 'draft')
+  const work = state.works.find(row => row.id === workId)
+  assert.equal(work.current.title, '会话标题')
+  assert.equal(work.current.article, '# 会话标题\n\n正文')
+  assert.equal(work.current.coverText, '封面字')
+  assert.equal(work.current.intent.status, 'confirmed')
+  assert.equal(work.current.images[0].anchor, '第一步')
+  assert.equal(work.current.rev, 1)
+  // 只存当前稿(ADR 0014):没有快照、没有 aiOriginal、没有人工改动标记
+  assert.equal(work.current.snapshots, undefined)
+  assert.equal(work.current.aiArticle, undefined)
+  // 会话拿着旧 rev 写回:冲突进 conflicts,当前稿保持不变
+  const stale = applyOps(state, [{ op: 'write_work', id: workId, rev: 0, article: '会话的新版正文' }])
+  assert.equal(stale.errors.length, 1)
+  assert.equal(stale.conflicts.length, 1)
+  assert.equal(stale.conflicts[0].rev, 1)
+  assert.equal(work.current.article, '# 会话标题\n\n正文')
+  // 冲突裁决在界面:用户选「覆盖」= 带 force 重发一次
+  applyOps(state, [{ op: 'write_work', id: workId, rev: 0, article: '确认覆盖的正文', force: true }])
+  assert.equal(work.current.article, '确认覆盖的正文')
+  assert.equal(work.current.rev, 2)
 })
 
-test('write_production:rev 基线不符时拦截并暂存 pendingWrite,裁决走 apply/discard', () => {
+test('update_work:自动保存走同一套字段与乐观锁,不带业务字段时不前进 rev', () => {
   const state = seed()
-  applyOps(state, [
-    { op: 'write_production', targetId: 'seed_1', title: '第一版', article: '第一版正文' },
-    { op: 'update_production', id: 'seed_1', article: '我手改的正文' },
-  ])
-  const item = state.items.find(row => row.id === 'seed_1')
-  const rev = item.production.rev
-  // 会话还拿着旧 rev 写回:被拦下、暂存,状态与正文都不动
-  const { errors } = applyOps(state, [{ op: 'write_production', targetId: 'seed_1', rev: 1, article: '会话的新版正文', note: '润色' }])
-  assert.match(errors[0], /冲突/)
-  assert.equal(item.production.article, '我手改的正文')
-  assert.equal(item.production.pendingWrite.article, '会话的新版正文')
-  assert.equal(item.production.pendingWrite.note, '润色')
-  // 接受暂存:会话版本落库,rev 前进,暂存清掉
-  applyOps(state, [{ op: 'apply_write', targetId: 'seed_1' }])
-  assert.equal(item.production.article, '会话的新版正文')
-  assert.equal(item.production.rev, rev + 1)
-  assert.equal(item.production.pendingWrite, undefined)
-  // 再来一次冲突,这次保留我的
-  applyOps(state, [{ op: 'write_production', targetId: 'seed_1', rev: 1, title: '又一个新标题' }])
-  assert.equal(item.production.pendingWrite.title, '又一个新标题')
-  applyOps(state, [{ op: 'discard_write', targetId: 'seed_1' }])
-  assert.notEqual(item.production.title, '又一个新标题')
-  assert.equal(item.production.pendingWrite, undefined)
-  // 没有暂存时报错不炸
-  const empty1 = applyOps(state, [{ op: 'apply_write', targetId: 'seed_1' }])
-  assert.match(empty1.errors[0], /没有待裁决的写回/)
-  const empty2 = applyOps(state, [{ op: 'discard_write', targetId: 'seed_1' }])
-  assert.match(empty2.errors[0], /没有待裁决的写回/)
+  const workId = applyOps(state, [{ op: 'create_work', itemIds: ['seed_1'] }]).receipts[0].target
+  const work = state.works.find(row => row.id === workId)
+  applyOps(state, [{ op: 'update_work', id: workId, rev: 0, article: '我手写的' }])
+  assert.equal(work.current.article, '我手写的')
+  assert.equal(work.current.rev, 1)
+  // 停笔自动保存只带 rev、没带内容:不算一次修改
+  applyOps(state, [{ op: 'update_work', id: workId, rev: 1 }])
+  assert.equal(work.current.rev, 1)
+  // 兼容旧字段名 workId
+  applyOps(state, [{ op: 'update_work', workId, rev: 1, coverText: '封面' }])
+  assert.equal(work.current.coverText, '封面')
+  assert.equal(work.current.rev, 2)
 })
 
-test('write_production:force 语义只在用户明确说覆盖时生效', () => {
+test('publish_work:冻结发布稿;空作品不许发布', () => {
   const state = seed()
-  applyOps(state, [
-    { op: 'write_production', targetId: 'seed_1', title: '第一版', article: '第一版正文' },
-    { op: 'update_production', id: 'seed_1', article: '我手改的正文' },
-  ])
-  applyOps(state, [{ op: 'write_production', targetId: 'seed_1', rev: 1, article: '用户明确让覆盖的版本', force: true }])
-  const item = state.items.find(row => row.id === 'seed_1')
-  assert.equal(item.production.article, '用户明确让覆盖的版本')
-  assert.equal(item.production.pendingWrite, undefined)
+  const empty = applyOps(state, [{ op: 'create_work', itemIds: ['seed_1'] }]).receipts[0].target
+  const blocked = applyOps(state, [{ op: 'publish_work', id: empty }])
+  assert.match(blocked.errors[0], /还没有正文/)
+  applyOps(state, [{ op: 'update_work', id: empty, rev: 0, article: '正文' }])
+  const { receipts } = applyOps(state, [{ op: 'publish_work', id: empty }])
+  assert.match(receipts[0].text, /已发布/)
+  const work = state.works.find(row => row.id === empty)
+  assert.equal(work.publication.status, 'published')
+  assert.equal(work.published.article, '正文')
+  // 发布稿是冻结副本:之后继续改当前稿不动它
+  applyOps(state, [{ op: 'update_work', id: empty, rev: 1, article: '改过的正文' }])
+  assert.equal(work.published.article, '正文')
+  assert.equal(work.current.article, '改过的正文')
 })
