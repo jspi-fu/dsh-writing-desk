@@ -511,18 +511,55 @@ function Desk() {
   )
 }
 
-function PanelIcon({ size }) {
-  return <Icon name="scatter" size={size} />
-}
-
-export const inject = ['slots', 'layout']
+export const inject = ['slots', 'layout', 'sidebarRightTabs']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
   mountComposerDock(ctx)
   mountWorkspace(ctx)
-  mountBetterSidebar(ctx)
   mountScheduleReminder(ctx, PANEL_ID)
+  mountRightSidebarTab(ctx)
+}
+
+/**
+ * 右侧边栏入口：走宿主 ui-sidebar-right 的官方两段式注册——
+ * 阶段一 ctx.sidebarRightTabs.register 登记页签类型（含 guide 条目，
+ * 右侧栏引导页据此列出入口）；阶段二把 Desk 挂进 keyed 的
+ * sidebar.right.pane.tab 槽位（key = 类型的 kind）。ctx.sidebarRightTabs
+ * 由宿主 ui-sidebar-right 提供，缺失时静默降级，不影响左侧入口。
+ */
+function mountRightSidebarTab(ctx) {
+  try {
+    ctx.effect(() => ctx.sidebarRightTabs.register({
+      id: 'dsh-writing-desk',
+      kind: PANEL_ID,
+      // 页面类型：不认资源地址，仅由 kind 打开（guide 条目 / openTab）
+      title: () => t('图文创作台'),
+      guide: [{
+        id: PANEL_ID,
+        order: 60,
+        title: () => t('图文创作台'),
+        icon: GuideIcon,
+      }],
+    }), 'dsh-writing-desk: right sidebar tab type')
+    // body 槽位按定义的 id（非 kind）分发
+    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+      { name: 'sidebar.right.pane.tab', key: 'dsh-writing-desk' },
+      RightTabBody,
+    )), 'dsh-writing-desk: right sidebar tab body')
+  } catch (error) {
+    console.warn('[dsh-writing-desk] right sidebar entry skipped:', error)
+  }
+}
+
+/** 右侧栏 guide 条目图标（IconProps：按需取 size，缺省 16）。 */
+function GuideIcon(props) {
+  return <Icon name="scatter" size={props.size ?? 16} />
+}
+
+/** 右侧栏页签体：无参页面类型，直接渲染工作台。 */
+function RightTabBody() {
+  return <Desk />
 }
 
 /**
@@ -561,29 +598,4 @@ function mountWorkspace(ctx) {
   }
 }
 
-/**
- * 入口只挂在右侧栏（dsh-better-sidebar 的页面槽位）：左侧栏不再注册，避免同一个工作台
- * 在两处重复出现。没装 better-sidebar 就什么都不做——它是软依赖，不进顶层的 inject。
- */
-function mountBetterSidebar(ctx) {
-  const register = inner => {
-    const sidebar = inner.betterSidebar ?? inner.get?.('betterSidebar')
-    if (typeof sidebar?.registerTab !== 'function') return
-    inner.effect(() => sidebar.registerTab({
-      id: `${PANEL_ID}:workbench`,
-      title: () => t('图文创作台'),
-      description: () => t('灵感、内容、排期、风格'),
-      icon: size => <PanelIcon size={size} />,
-      order: 60,
-      single: true,
-      component: Desk,
-    }), 'dsh-writing-desk: better-sidebar tab')
-  }
-  try {
-    // 服务晚于我们就绪、或者中途被卸掉再装回，子作用域都会跟着重来
-    if (typeof ctx.inject === 'function') ctx.inject(['betterSidebar'], register)
-    else register(ctx)
-  } catch (error) {
-    console.warn('[dsh-writing-desk] better-sidebar tab skipped:', error)
-  }
-}
+

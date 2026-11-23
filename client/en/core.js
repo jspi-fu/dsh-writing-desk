@@ -2,7 +2,6 @@
 export const CORE = {
   // 侧栏和顶栏
   '图文创作台': 'Writing Desk',
-  '灵感、内容、排期、风格': 'Ideas, content, schedule, styles',
   '工作台导航': 'Desk navigation',
   '灵感（导航）': 'Ideas',
   '灵感': 'Idea',
