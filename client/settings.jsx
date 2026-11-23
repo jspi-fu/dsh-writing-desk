@@ -226,7 +226,7 @@ export function SettingsDialog() {
             {version?.updateAvailable ? <a href={updateUrl(version)} target="_blank" rel="noreferrer">{t('有新版本 ↑ v{version}', { version: version.latest })}</a> : null}
           </div>
           <div className="md-form-foot">
-            <span style={{ flex: 1 }} />
+            <span className="md-grow" />
             <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
             <button type="submit" className="md-btn is-primary">{t('保存')}</button>
           </div>

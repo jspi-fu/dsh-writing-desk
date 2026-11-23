@@ -193,7 +193,7 @@ npm pack                       # 打出可安装的 tgz
 | `extension/` | DSwritesync：Wechatsync 2.0.10 的 GPL-3.0 vendored fork + StashDock 式收进侧栏（在 `extension/packages/extension`） |
 | `native/` | 本地助手（helper.bat/helper.mjs）与 NM 注册器：浏览器扩展经 Native Messaging 与投递箱交换数据，主仓库 MIT 自研 |
 | `scripts/` | 打包、沙盒、示例素材生成、插件市场索引 |
-| `assets/` | 示例图片和视频，全部由 `scripts/gen-assets.py` 程序绘制 |
+| `assets/` | 示例图片和视频，由 `scripts/gen-assets.py` 程序绘制（logo 为手工设计，存档见 `docs/logo-final/`） |
 
 扩展不进 npm 插件包；`npm pack` 的产物是插件本体加 `native/` 本地助手。扩展接入面(Native Messaging 自动配对)见 [ADR 0012](docs/adr/0012-bridge-native-messaging.md)（Native Messaging 自动配对，CLI/token 已退役；投递箱数据契约仍循 ADR 0009/0010），参考项目的研究笔记在 [docs/research/](docs/research/)。`extension/` 按 GPL-3.0 发布，仓库其余部分仍 MIT。
 

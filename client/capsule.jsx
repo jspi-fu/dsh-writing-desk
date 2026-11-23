@@ -2,9 +2,8 @@
 // 点开是集合的浮层,右上角是「解散」;多选、解散、添加成员都和多选条走同一套动作。
 // 成员灵感仍独立存在,只是不再单独出现在墙面上。
 import React from 'react'
-import { Card, openEditItem } from './card.jsx'
-import { closeCapsule, dispatchOps, EMPTY_LIST, openCapsule, setDesk, toggleSelect, useDesk } from './desk.js'
-import { createWork, openWork } from './desk.js'
+import { Card } from './card.jsx'
+import { closeCapsule, createWork, dispatchOps, EMPTY_LIST, openCapsule, openItem, openWork, setDesk, toggleSelect, useDesk } from './desk.js'
 import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, overDock, startRefDrag } from './session-link.js'
 import { t } from './i18n.js'
 import { Dialog, Icon, openMenuAt } from './ui.jsx'
@@ -356,6 +355,9 @@ export function CapsuleView() {
     window.addEventListener('pointerup', onUp)
   }
 
+  // 拖拽中途浮层被远端解散/撤销而卸载时,ghost 与纸堆样式一并收尾
+  React.useEffect(() => () => clearDrag(), [])
+
   const reorder = (dragId, targetId, after = false) => {
     const ids = [...capsule.itemIds]
     const from = ids.indexOf(dragId)
@@ -370,7 +372,7 @@ export function CapsuleView() {
   const openMember = (item) => {
     if (suppressClick.current) return
     closeCapsule()
-    openEditItem(item.id)
+    openItem(item.id)
   }
 
   const pageItems = members.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
@@ -466,8 +468,9 @@ export function CapsuleAdd() {
   const toggle = (itemId) => setPicked(current => current.includes(itemId) ? current.filter(row => row !== itemId) : [...current, itemId])
   const save = () => {
     if (!picked.length) return close()
+    // 失败(dispatchOps 返回 null)就不关:勾选还在,用户改完再试
     dispatchOps([{ op: 'update_capsule', id, itemIds: [...capsule.itemIds, ...picked] }], { label: t('添加灵感') })
-      .then(close)
+      .then(data => { if (data) close() })
   }
   return (
     <Dialog title={t('往「{name}」里添加灵感', { name: capsule.name })} onClose={close} width={460}>
@@ -489,7 +492,7 @@ export function CapsuleAdd() {
       ) : (
         <p className="md-muted">{t('墙上的灵感都已经在这堆里了。')}</p>
       )}
-      <footer className="md-dialog-foot">
+      <footer className="md-form-foot">
         <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
         <button type="button" className="md-btn is-primary" disabled={!picked.length} onClick={save}>{t('添加 {n} 张', { n: picked.length })}</button>
       </footer>

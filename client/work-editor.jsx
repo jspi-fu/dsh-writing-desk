@@ -2,6 +2,7 @@
 // 保存是自动的(停笔约 700ms 落一次),带 rev 乐观锁;冲突时摆两条路:
 // 「用最新的」丢掉本地改动,或「覆盖」显式 force。没有版本快照、没有人工改动徽标。
 import React from 'react'
+import { BRIDGE_ADAPTERS } from '../src/platforms.js'
 import { PUBLICATION_LABEL, workHasText, workState, workTitle } from '../src/work.js'
 import { closeWork, deleteWork, dispatchPublish, EMPTY_LIST, exportForPublish, getDesk, openWork, publishWork, revealWorkFiles, saveWorkFiles, toast, useDesk } from './desk.js'
 import { plural, t, useLang } from './i18n.js'
@@ -17,29 +18,8 @@ const FORMS = [
   { id: 'zhihu', label: '知乎', width: 700 },
 ]
 
-// 桥适配器清单:与 src/bridge.js 的 BRIDGE_ADAPTERS 一致(上游公开的内容平台)。
-const DISPATCH_TARGETS = [
-  { id: 'weixin', label: '公众号' },
-  { id: 'zhihu', label: '知乎' },
-  { id: 'juejin', label: '掘金' },
-  { id: 'weibo', label: '微博' },
-  { id: 'bilibili', label: 'B站' },
-  { id: 'douban', label: '豆瓣' },
-  { id: 'baijiahao', label: '百家号' },
-  { id: 'sohu', label: '搜狐号' },
-  { id: 'csdn', label: 'CSDN' },
-  { id: 'segmentfault', label: '思否' },
-  { id: 'yuque', label: '语雀' },
-  { id: 'xueqiu', label: '雪球' },
-  { id: 'woshipm', label: '人人都是产品经理' },
-  { id: '51cto', label: '51CTO' },
-  { id: 'imooc', label: '慕课手记' },
-  { id: 'oschina', label: '开源中国' },
-  { id: 'cnblogs', label: '博客园' },
-  { id: 'eastmoney', label: '东方财富' },
-  { id: 'aliyun', label: '阿里云开发者社区' },
-  { id: 'xiaohongshu', label: '小红书' },
-]
+// 投递平台从 src/platforms.js 的 BRIDGE_ADAPTERS 派生(唯一来源),不再手工镜像。
+const DISPATCH_TARGETS = Object.entries(BRIDGE_ADAPTERS).map(([id, label]) => ({ id, label }))
 
 /** 投递状态行:publication.dispatches 里的逐平台结果。 */
 function DispatchList({ dispatches }) {
@@ -93,7 +73,7 @@ function PublishDialog({ work, onClose }) {
         </div>
         <p className="md-muted">{t('投递只把草稿送进平台草稿箱;真的发了才点「标记已发布」。')}</p>
         <div className="md-form-foot">
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={onClose}>{t('取消')}</button>
           <button type="button" className="md-btn is-primary" onClick={mark} disabled={!workHasText(work)}>{t('标记已发布')}</button>
         </div>
@@ -183,17 +163,20 @@ function WorkPane({ work }) {
     closeWork()
   }
 
+  // Esc 关闭的闭包走 ref:监听器只挂一次,不随每次渲染拆装
+  const escapeRef = React.useRef({ publish, close })
+  escapeRef.current = { publish, close }
   React.useEffect(() => {
     const onKey = (event) => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      if (publish) return
+      if (escapeRef.current.publish) return
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return
       event.preventDefault()
-      close()
+      escapeRef.current.close()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  })
+  }, [])
   // 作品被删或被撤销掉时收起编辑器,不留空壳
   React.useEffect(() => { if (!getDesk().state?.works?.some(row => row.id === work.id)) closeWork() })
 
@@ -252,7 +235,7 @@ function WorkPane({ work }) {
         <div className="md-work-conflict" role="alert">
           <Icon name="spark" size={13} />
           <span>{conflict.message ?? t('这篇作品在别处更新过')}</span>
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn is-small" onClick={() => {
             const latest = (getDesk().state?.works ?? []).find(row => row.id === work.id)
             setDraft(fieldsOf(latest ?? work))
@@ -274,7 +257,7 @@ function WorkPane({ work }) {
               onChange={event => update('article', event.target.value)} />
             <div className="md-work-editor-stats">
               <span><b>{words}</b>{t('字', { s: plural(words, '', 's') })}</span>
-              <span style={{ flex: 1 }} />
+              <span className="md-grow" />
               <span className="md-muted">{t('停笔约 0.7 秒自动保存')}</span>
             </div>
           </div>
@@ -307,7 +290,7 @@ function WorkPane({ work }) {
             <span key={source.itemId} className="md-work-source">{source.title || t('（无标题）')}</span>
           ))}
         </span>
-        <span style={{ flex: 1 }} />
+        <span className="md-grow" />
         <button type="button" className="md-pill is-danger" onClick={async () => {
           if (!window.confirm(t('删除这篇作品？来源素材会留着，还能再成稿。'))) return
           closeWork()
@@ -327,7 +310,7 @@ function PublishResult({ result, onClose }) {
       <div className="md-form">
         <p className="md-muted">{t('发布包(article.md + images/):{dir}', { dir: result.dir })}</p>
         <div className="md-form-foot">
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={onClose}>{t('关闭')}</button>
         </div>
       </div>

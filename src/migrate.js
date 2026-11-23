@@ -2,9 +2,11 @@
 // 只搬内容:灵感条目、标签、状态、时间、封面/媒体、平台,以及角度与读者按名字合并;
 // 账号、指标、技能、对话不迁。写入前由 host 把媒体文件复制进 writing-desk/files。
 import { STATUSES } from './state.js'
+import { PLATFORMS } from './platforms.js'
+import { isHttpUrl } from './url.js'
 
 const KIND = { image: 'image', video: 'video', web: 'web', note: 'note', quote: 'note' }
-const PLATFORMS = new Set(['公众号', '小红书', '知乎'])
+const PLATFORM_SET = new Set(PLATFORMS)
 const LIMIT_TAGS = 24
 const SELECTION = ['items', 'schedule', 'angles', 'people', 'styles']
 
@@ -17,13 +19,7 @@ function normalizeSelection(selection) {
 
 const text = value => typeof value === 'string' ? value : ''
 const iso = value => typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? new Date(value).toISOString() : null
-const http = value => {
-  if (typeof value !== 'string' || !value) return null
-  try {
-    const { protocol } = new URL(value)
-    return protocol === 'http:' || protocol === 'https:' ? value : null
-  } catch { return null }
-}
+const http = value => isHttpUrl(value) ? value : null
 const list = value => Array.isArray(value) ? value.filter(row => typeof row === 'string' && row.trim()).map(row => row.trim()) : []
 
 /** 概览:先让用户看清要搬多少东西,再决定。 */
@@ -131,7 +127,7 @@ export function migrateMediaDesk(state, raw, { media = new Map(), now = new Date
       source: text(source?.source).slice(0, 500),
       createdAt: iso(source?.createdAt) ?? now,
       scheduledAt: picked.schedule ? iso(source?.scheduledAt) : null,
-      platform: picked.schedule && PLATFORMS.has(source?.platform) ? source.platform : null,
+      platform: picked.schedule && PLATFORM_SET.has(source?.platform) ? source.platform : null,
       contentOrigin: 'user',
       sample: source?.sample === true,
     })

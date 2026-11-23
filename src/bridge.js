@@ -12,35 +12,13 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, rm, utimes, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { applyOps } from './ops.js'
+import { applyOps, newId } from './ops.js'
 import { readPairing } from './pairing.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
-
-// 平台与适配器 id 的映射:与 extension/packages/core/src/adapters/platforms 的
-// 内容适配器一致(20 个内容平台,排除 zip-download;xiaohongshu 为页面自动化草稿)。
-export const BRIDGE_ADAPTERS = {
-  weixin: '公众号',
-  zhihu: '知乎',
-  juejin: '掘金',
-  weibo: '微博',
-  bilibili: 'B站',
-  douban: '豆瓣',
-  baijiahao: '百家号',
-  sohu: '搜狐号',
-  csdn: 'CSDN',
-  segmentfault: '思否',
-  yuque: '语雀',
-  xueqiu: '雪球',
-  woshipm: '人人都是产品经理',
-  '51cto': '51CTO',
-  imooc: '慕课手记',
-  oschina: '开源中国',
-  cnblogs: '博客园',
-  eastmoney: '东方财富',
-  aliyun: '阿里云开发者社区',
-  xiaohongshu: '小红书',
-}
+// 投递平台清单是纯数据:与 extension 适配器对齐的唯一来源在 platforms.js
+import { BRIDGE_ADAPTERS } from './platforms.js'
+import { isHttpUrl } from './url.js'
 
 export function bridgePaths() {
   const root = join(dshHome(), 'writing-desk', 'bridge')
@@ -54,7 +32,7 @@ export function bridgePaths() {
   }
 }
 
-export async function ensureBridgeDirs() {
+async function ensureBridgeDirs() {
   const paths = bridgePaths()
   for (const dir of [paths.root, paths.inbox, paths.outbox, paths.receipts]) {
     await mkdir(dir, { recursive: true })
@@ -124,21 +102,12 @@ async function normalizeCover(cover, filesDir) {
     // StashDock 同款上限:750KB 解码体积(base64 约 100 万字符),防投递文件过大
     if (match[2].length > 1_000_000) throw new Error(tr('封面图片太大'))
     const buffer = Buffer.from(match[2], 'base64')
-    const name = `${newImageName()}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`
+    const name = `${newId('b')}.${match[1] === 'jpeg' ? 'jpg' : match[1]}`
     await writeFile(join(filesDir, name), buffer)
     return `writing-desk/files/${name}`
   }
-  try {
-    const { protocol } = new URL(cover)
-    if (protocol === 'http:' || protocol === 'https:') return cover
-  } catch { /* 不是合法地址 */ }
+  if (isHttpUrl(cover)) return cover
   throw new Error(tr('封面地址不受支持'))
-}
-
-let imageCounter = 0
-function newImageName() {
-  imageCounter += 1
-  return `b${Date.now().toString(36)}${imageCounter.toString(36)}`
 }
 
 /**
@@ -170,12 +139,7 @@ export function normalizeCaptureUrl(url) {
 /** 校验并折算成 add_item / update_item op;任何字段不合规都抛错,由调用方把错误写进回执。 */
 async function importOp(payload, filesDir, draft) {
   const url = typeof payload.url === 'string' ? payload.url.trim() : ''
-  try {
-    const { protocol } = new URL(url)
-    if (protocol !== 'http:' && protocol !== 'https:') throw new Error()
-  } catch {
-    throw new Error(tr('链接必须是 http(s) 地址'))
-  }
+  if (!isHttpUrl(url)) throw new Error(tr('链接必须是 http(s) 地址'))
   const tags = Array.isArray(payload.tags)
     ? payload.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim().slice(0, 48)).slice(0, 12)
     : []
@@ -324,14 +288,7 @@ export async function digestReceipts(store) {
       for (const row of results) {
         if (!row || typeof row.platform !== 'string' || !Object.hasOwn(BRIDGE_ADAPTERS, row.platform)) continue
         const url = typeof row.url === 'string' && row.url ? row.url : null
-        let safeUrl = null
-        if (url) {
-          try {
-            const { protocol } = new URL(url)
-            if (protocol !== 'http:' && protocol !== 'https:') throw new Error()
-            safeUrl = url
-          } catch { safeUrl = null }
-        }
+        const safeUrl = url && isHttpUrl(url) ? url : null
         ops.push({
           op: 'record_work_dispatch',
           id: payload.itemId,
@@ -351,7 +308,10 @@ export async function digestReceipts(store) {
             if (seen.digest !== digest) throw new Error(tr('同一编号的回执内容与上次不同,拒绝处理'))
             return { state: draft }
           }
-          applyOps(draft, ops)
+          // 与 digestInbox 同构:平台结果落不进作品(典型是作品已被删)就把整份回执
+          // 留档 .failed,绝不能吞掉错误后照常 rm——那等于平台结果永久丢失。
+          const { errors } = applyOps(draft, ops)
+          if (errors.length) throw new Error(errors[0])
           rememberSeen(draft, payload.operationId, digest, { ok: true })
           return { state: draft }
         }, { undoable: false })

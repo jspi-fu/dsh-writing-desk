@@ -1,9 +1,9 @@
-/* 常驻排期焦点：固定黑底杂志卡片；图片与文字等高，所有宽度都保持左图右字。 */
+/* 常驻「下一条」卡片：固定黑底杂志卡片；图片与文字等高，所有宽度都保持左图右字。 */
 .md-schedule {
-  grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 480px) 248px;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 30vw, 480px);
 }
 
-.md-schedule > .md-schedule-focus {
+.md-schedule > .md-rail-col {
   grid-column: 2;
   grid-row: 1;
 }
@@ -17,7 +17,8 @@
   --focus-line: rgb(247 247 245 / .14);
   --focus-fill: rgb(247 247 245 / .09);
   min-width: 0;
-  align-self: start;
+  /* 现在位于纵向 flex 右栏中：横向要撑满整行，不能再按内容收缩。 */
+  align-self: stretch;
   color-scheme: dark;
 }
 
@@ -376,8 +377,8 @@
 
 @container (max-width: 1280px) {
   .md-schedule {
-    grid-template-columns: minmax(0, 1fr) 248px;
-    grid-template-rows: minmax(420px, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) clamp(340px, 34vw, 440px);
+    grid-template-rows: minmax(420px, 1fr);
   }
 
   .md-schedule > .md-cal-tile {
@@ -388,11 +389,6 @@
   .md-schedule > .md-rail-col {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .md-schedule > .md-schedule-focus {
-    grid-column: 1 / -1;
-    grid-row: 2;
   }
 
   .md-root .md-schedule-focus-card {
@@ -421,7 +417,6 @@
   }
 
   .md-schedule > .md-cal-tile,
-  .md-schedule > .md-schedule-focus,
   .md-schedule > .md-rail-col {
     grid-column: 1;
     grid-row: auto;

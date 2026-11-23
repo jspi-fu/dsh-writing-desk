@@ -9,7 +9,7 @@
 // - 一张胶囊只提醒一条,不按成员炸出十条。
 import React from 'react'
 import { EMPTY_LIST, dispatchOps, openItem, refreshState, useDesk } from './desk.js'
-import { t } from './i18n.js'
+import { t, useLang } from './i18n.js'
 import { Icon } from './ui.jsx'
 import { fmtWhen } from './util.js'
 import { reminderDue } from '../src/state.js'
@@ -66,6 +66,8 @@ function dueAlerts(items, capsules, now) {
 }
 
 function ReminderBanner({ panelId, layout }) {
+  // 横幅挂在宿主 overlay,不在 index.jsx 的语言订阅树下,切换语言要自己跟
+  useLang()
   const items = useDesk(state => state.state?.items ?? EMPTY_LIST)
   const capsules = useDesk(state => state.state?.capsules ?? EMPTY_LIST)
   const [tick, setTick] = React.useState(0)

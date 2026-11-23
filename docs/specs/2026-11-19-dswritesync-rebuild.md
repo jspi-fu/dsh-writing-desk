@@ -2,6 +2,8 @@
 
 Status: confirmed(2026-11-19 grill 会话;实现前的共享理解,决策细节见 [ADR 0010](../adr/0010-dswritesync-wechatsync-fork.md))
 
+> **已被 ADR 0012 部分取代(2026-11-19)**:本地接入面最终走了 Native Messaging 自动配对——本文的 `dswritesync serve` CLI、WS 端口、token/auth.json 与「Desk 协议 v1」章节仅作历史记录,现状以 [ADR 0012](../adr/0012-bridge-native-messaging.md) 与 `GLOSSARY.md` 的「本地助手 / 配对 / 投递箱」词条为准。
+
 ## 目标
 
 把现有自研浏览器扩展与本地桥完全替换为 **DSwritesync**:一个以 Wechatsync v2 完整源码为基座、加入 StashDock 浏览器扩展采集能力的 MV3 侧边栏应用 + CLI。用户在一个侧栏里完成「收进网页 → 同步到平台草稿箱」;工作台继续承担编辑、成稿、校样与发布状态确认。

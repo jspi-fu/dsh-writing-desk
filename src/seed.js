@@ -2,7 +2,7 @@
 import { currentLang, normalizeLang } from './i18n.js'
 import { buildDemo } from './demo.js'
 import { PRESET_VERSION, migratePresets, presetText, seedPresets } from './style-presets.js'
-import { isUsed } from './work.js'
+import { isUsed, makeWork } from './work.js'
 
 const A = name => `writing-desk/assets/${name}`
 
@@ -133,7 +133,7 @@ function migrateWorks(state) {
     const okDispatch = dispatches.find(row => row?.ok === true)
     const published = item.status === 'published' || Boolean(item.publishedAt)
     const capsuleIds = (state.capsules ?? []).filter(capsule => (capsule.itemIds ?? []).includes(item.id)).map(capsule => capsule.id)
-    works.push({
+    const work = makeWork({
       id: `w_migrated_${item.id}`,
       sourceItemIds: [item.id],
       sourceCapsuleIds: capsuleIds,
@@ -145,11 +145,11 @@ function migrateWorks(state) {
         ...(published && item.publishedAt ? { publishedAt: item.publishedAt } : {}),
         ...(dispatches.length ? { dispatches } : {}),
       },
-      sessionIds: [],
       createdAt: production.startedAt ?? item.createdAt ?? new Date().toISOString(),
       updatedAt: production.finishedAt ?? item.createdAt ?? new Date().toISOString(),
-      ...(published ? { published: { ...current, publishedAt: item.publishedAt ?? null } } : {}),
     })
+    if (published) work.published = { ...current, publishedAt: item.publishedAt ?? null }
+    works.push(work)
   }
   // 素材上不再留成稿字段:内容只在作品里(ADR 0013),旧快照与 AI 原稿丢弃(ADR 0014)
   for (const item of state.items ?? []) {

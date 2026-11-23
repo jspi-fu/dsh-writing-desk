@@ -58,7 +58,7 @@ function AddStyleDialog({ initialTab, onClose }) {
           <input value={name} onChange={e => setName(e.target.value)} placeholder={t('比如我的公众号风格')} />
         </label>
         <div className="md-form-foot">
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={onClose}>{t('取消')}</button>
           <button type="submit" className="md-btn is-primary" disabled={busy}>{busy ? <span className="md-shimmer">{t('正在打开…')}</span> : t('交给创作会话提炼')}</button>
         </div>

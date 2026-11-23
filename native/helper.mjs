@@ -180,8 +180,10 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
         }
       }
     }
-    const blobs = { task, article, images }
+    const blobs = { task, article, images, cachedAt: now() }
     blobCache.set(operationId, blobs)
+    // 长端口常驻下缓存只进不出会慢慢变大;回执一到就清,这里再给个条数上限兜底
+    for (const key of [...blobCache.keys()].slice(0, Math.max(0, blobCache.size - 8))) blobCache.delete(key)
     return blobs
   }
 
@@ -213,7 +215,8 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
         try {
           const info = await fsp.stat(file)
           const b64len = 4 * Math.ceil(info.size / 3)
-          images.push({ ref, mime: MIME_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream', ...base64Shards('x'.repeat(b64len)) })
+          const shards = Math.max(1, Math.ceil(b64len / CHUNK_B64))
+          images.push({ ref, mime: MIME_TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream', shards })
         } catch {
           log({ dir: 'note', message: `image unreadable: ${ref}` })
         }
@@ -321,12 +324,21 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
       const next = { ...payload, operationId, at: new Date().toISOString() }
       const existing = await readJson(file)
       if (existing) {
-        const same = JSON.stringify({ ...existing, at: null }) === JSON.stringify({ ...next, at: null })
+        // 语义比较(键排序后再序列化):扩展重试路径若以不同键序重组同一内容,不该误判冲突
+        const canonical = value => {
+          if (Array.isArray(value)) return value.map(canonical)
+          if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]))
+          return value
+        }
+        const same = JSON.stringify(canonical({ ...existing, at: null })) === JSON.stringify(canonical({ ...next, at: null }))
+        const claimed = path.join(paths.outbox, `publish-${operationId}.json.claiming`)
+        await fsp.rm(claimed, { force: true }).catch(() => {})
         if (!same) return { ok: false, error: 'receipt conflict for same operationId' }
-      } else {
-        await writeJsonAtomic(file, next)
-        log({ dir: 'note', message: `receipt ${operationId}` })
+        blobCache.delete(operationId)
+        return { ok: true }
       }
+      await writeJsonAtomic(file, next)
+      log({ dir: 'note', message: `receipt ${operationId}` })
       blobCache.delete(operationId)
       const claimed = path.join(paths.outbox, `publish-${operationId}.json.claiming`)
       await fsp.rm(claimed, { force: true }).catch(() => {})
@@ -358,6 +370,9 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
         continue
       }
       if (now() - info.mtimeMs < STALE_CLAIM_MS) continue
+      // 分片还在被扩展拉取(慢网大文章):先别判死,等它收尾;缓存条目自己也有时效
+      const cached = blobCache.get(operationId)
+      if (cached && now() - cached.cachedAt < STALE_CLAIM_MS) continue
       const task = await readJson(file)
       const platforms = Array.isArray(task?.platforms) ? task.platforms.filter(row => typeof row === 'string') : []
       await writeJsonAtomic(receiptFile, {
@@ -390,8 +405,12 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
         continue
       }
       seen.add(name)
-      // 助手启动前留下的旧回执不补推,避免扩展重启后收到一串过期通知
-      if (info.mtimeMs < startedAt - 2000) continue
+      // 助手启动前留下的旧回执不补推,避免扩展重启后收到一串过期通知;
+      // 收进本体早已上墙,回执只是通知,删掉免得 pending 计数只涨不清
+      if (info.mtimeMs < startedAt - 2000) {
+        await fsp.rm(file, { force: true }).catch(() => {})
+        continue
+      }
       const body = await readJson(file)
       if (!isPlainObject(body)) continue
       const operationId = typeof body.operationId === 'string'
@@ -405,6 +424,8 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
         ...(body.duplicate === true || body.replay === true ? { duplicate: true } : {}),
         ...(body.replaced === true ? { replaced: true } : {}),
       } })
+      // 推送即删:回执的唯一消费者是扩展,留着只会让设置页的 pending 计数虚涨
+      await fsp.rm(file, { force: true }).catch(() => {})
     }
   }
 
@@ -433,7 +454,10 @@ export async function main({ argv = process.argv, env = process.env, input = pro
   let outboxSeen = null
   const receiptsSeen = new Set()
   const send = value => write(value)
+  let scanning = false
   const scan = async () => {
+    if (scanning) return
+    scanning = true
     try {
       const names = await fsp.readdir(paths.outbox).catch(() => [])
       const fingerprint = names.filter(name => name.endsWith('.json')).sort().join(',')
@@ -441,7 +465,7 @@ export async function main({ argv = process.argv, env = process.env, input = pro
       outboxSeen = fingerprint
       await core.recoverStaleClaims()
       await core.pollCaptureResults(receiptsSeen, send)
-    } catch { /* 扫描失败不影响下一轮 */ }
+    } catch { /* 扫描失败不影响下一轮 */ } finally { scanning = false }
   }
 
   let stopLongMode = null

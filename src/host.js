@@ -2,10 +2,11 @@
 // 成稿在 DSH 创作会话里发生(ADR 0006),这里只剩数据、看板与人工介入的服务面,没有任何模型调用。
 import { createReadStream, existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
-import { copyFile, mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BRIDGE_ADAPTERS, bridgeStatus, digestInbox, digestReceipts, touchHeartbeat, writeCatalog, writePublishTask } from './bridge.js'
+import { BRIDGE_ADAPTERS } from './platforms.js'
+import { bridgeStatus, digestInbox, digestReceipts, touchHeartbeat, writeCatalog, writePublishTask } from './bridge.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { exportPublishPackage } from './publish.js'
 import { harvest, harvestText } from './harvest.js'
@@ -189,7 +190,10 @@ async function handleUpload(req, store, res) {
   const buffer = await readBuffer(req, MAX_UPLOAD)
   await store.read()
   const name = `${newId('f')}${ext}`
-  await writeFile(join(store.filesDir, name), buffer)
+  // 与全仓其他写路径一样走 tmp + rename:同名请求不至于读到半截文件
+  const tmp = join(store.filesDir, `${name}.${process.pid}.tmp`)
+  await writeFile(tmp, buffer)
+  await rename(tmp, join(store.filesDir, name))
   const kind = MIME[ext]?.startsWith('video/') ? 'video' : MIME[ext]?.startsWith('image/') ? 'image' : 'file'
   return json(res, 200, { src: `writing-desk/files/${name}`, kind, name: declared || name, size: buffer.length })
 }
@@ -271,6 +275,24 @@ function digestBridge(store) {
     } catch { /* 投递箱损坏不应打断页面路由,下轮再试 */ }
   })().finally(() => { digesting = null })
   return digesting
+}
+
+/** work/export 与 work/dispatch 的公共体:导出发布包并把落盘记录写回作品。 */
+async function exportWorkPackage(store, desk, workId) {
+  const settings = await desk.settings.read()
+  const state = await store.read()
+  const work = workOfId(state, workId)
+  if (!workHasText(work)) throw Object.assign(new Error(tr('这份作品还没有正文')), { status: 400 })
+  const exported = await exportPublishPackage(workDoc(work), {
+    filesDir: store.filesDir,
+    exportDir: resolveExportDir(settings.exportDir),
+  })
+  const next = await store.mutate(tr('导出发布包'), (draft) => {
+    const target = workOfId(draft, workId)
+    if (target) target.cliPath = exported.dir
+    return draft
+  }, { undoable: false })
+  return { exported, next, work }
 }
 
 async function route(ctx, store, desk, req, res) {
@@ -412,26 +434,14 @@ case 'pick-folder': {
     case 'skills/export': {
       const state = await store.read()
       const result = await exportSkill(state, dshHome())
-      const next = await store.mutate('导出 Skill', (draft) => {
+      const next = await store.mutate(tr('导出 Skill'), (draft) => {
         applyOps(draft, draft.skills.filter(s => !s.sample && s.status === 'active').map(s => ({ op: 'update_skill', id: s.id, status: 'exported' })))
         return draft
       }, { undoable: false })
       return json(res, 200, { ...result, state: next })
     }
     case 'work/export': {
-      const settings = await desk.settings.read()
-      const state = await store.read()
-      const work = workOfId(state, body.id)
-      if (!workHasText(work)) return json(res, 400, { error: tr('这份作品还没有正文') })
-      const exported = await exportPublishPackage(workDoc(work), {
-        filesDir: store.filesDir,
-        exportDir: resolveExportDir(settings.exportDir),
-      })
-      const next = await store.mutate(tr('导出发布包'), (draft) => {
-        const target = workOfId(draft, body.id)
-        if (target) target.cliPath = exported.dir
-        return draft
-      }, { undoable: false })
+      const { exported, next } = await exportWorkPackage(store, desk, body.id)
       return json(res, 200, { ...exported, state: next })
     }
     // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手分片下发浏览器扩展。
@@ -439,21 +449,12 @@ case 'pick-folder': {
     case 'work/dispatch': {
       const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p))
       if (!platforms.length) return json(res, 400, { error: tr('至少选一个可投递的平台') })
-      const settings = await desk.settings.read()
-      const state = await store.read()
-      const work = workOfId(state, body.id)
-      if (!workHasText(work)) return json(res, 400, { error: tr('这份作品还没有正文') })
-      const exported = await exportPublishPackage(workDoc(work), { filesDir: store.filesDir, exportDir: resolveExportDir(settings.exportDir) })
+      const { exported, next, work } = await exportWorkPackage(store, desk, body.id)
       const articleMd = await readFile(exported.articlePath, 'utf8')
       // 任务里的图片键与正文里的相对引用一致(images/xxx),桥读文件转 data URI 后才下发扩展
       const images = Object.fromEntries(exported.imageFiles.map(ref => [ref, join(exported.dir, ref)]))
       // 桥协议的 itemId 字段沿用旧名,值是作品 id(扩展侧读的是同一字段,不用跟着改)
       const task = await writePublishTask({ itemId: work.id, title: workTitle(work), articleMd, images, platforms })
-      const next = await store.mutate(tr('导出发布包'), (draft) => {
-        const target = workOfId(draft, body.id)
-        if (target) target.cliPath = exported.dir
-        return draft
-      }, { undoable: false })
       return json(res, 200, { operationId: task.operationId, dir: exported.dir, state: next })
     }
     // 风格学习(ADR 0014):把选中作品的创作会话转录 + 发布稿拼成一段材料,

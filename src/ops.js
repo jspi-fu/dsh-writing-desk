@@ -1,19 +1,16 @@
 // 工作台的唯一写入口：界面操作都走这里，统一校验字段并产出回执。
 // 模型输出也是不可信输入，所以这里只放行白名单字段。
 import { currentLang, platformName, tr } from './i18n.js'
-// 状态枚举以 state.js 为唯一来源;这里 re-export 保持既有引用不破
-import { reduce, STATUSES } from './state.js'
+// 状态枚举与词条以 state.js 为唯一来源;平台清单以 platforms.js 为唯一来源
+import { KINDS, reduce, STATUS_LABEL, STATUSES } from './state.js'
+import { PLATFORMS } from './platforms.js'
+import { isHttpUrl } from './url.js'
 import { resolveProduceInput } from './produce-input.js'
 // 作品是第一位实体(ADR 0013):正文与发布状态都落在 state.works 上
-import { CURRENT_FIELDS, workHasText, workOfId, workTitle } from './work.js'
-
-export { STATUSES }
-export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
-export const KINDS = ['image', 'video', 'web', 'quote', 'note', 'file']
-export const PLATFORMS = ['公众号', '小红书', '知乎']
+import { CURRENT_FIELDS, makeWork, workHasText, workOfId, workTitle } from './work.js'
 
 /** 状态在当前语言下的名字。 */
-export function statusLabel(status) {
+function statusLabel(status) {
   return tr(STATUS_LABEL[status] ?? String(status))
 }
 
@@ -38,15 +35,6 @@ let counter = 0
 export function newId(prefix = 'x') {
   counter += 1
   return `${prefix}_${Date.now().toString(36)}${counter.toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
-}
-
-function isHttpUrl(value) {
-  try {
-    const { protocol } = new URL(value)
-    return protocol === 'http:' || protocol === 'https:'
-  } catch {
-    return false
-  }
 }
 
 function coerce(type, value) {
@@ -101,7 +89,7 @@ function short(text, n = 22) {
 
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-export function fmtWhen(iso) {
+function fmtWhen(iso) {
   if (!iso) return tr('未排期')
   const d = new Date(iso)
   const pad = v => String(v).padStart(2, '0')
@@ -227,6 +215,19 @@ function stampCurrent(work, fields, now) {
   work.updatedAt = now
 }
 
+/** update_work 与 write_work 的公共体:同一套字段清洗与乐观锁,只差回执与空字段行为。 */
+function writeCurrent(state, op, now, receipt, { throwOnEmpty = false } = {}) {
+  const work = findWork(state, op.id ?? op.workId)
+  const fields = workCurrentFields(op)
+  if (!Object.keys(fields).length) {
+    if (throwOnEmpty) throw new Error(tr('这次写回没有可写的内容'))
+    return null
+  }
+  assertWorkRev(work, op)
+  stampCurrent(work, fields, now)
+  return { text: receipt(short(workTitle(work))), target: work.id, kind: 'work' }
+}
+
 /**
  * 成稿即消费排期(ADR 0013):素材的一次排期只用来触发一次成稿,
  * 无论手动点成稿还是别处写回,落库后就把主体(含整张胶囊)的排期清掉,免得反复提醒。
@@ -333,17 +334,8 @@ const handlers = {
     const item = findById(state.items, op.id)
     state.items = state.items.filter(row => row.id !== op.id)
     for (const child of state.items) if (child.parentId === op.id) child.parentId = item.parentId ?? null
-    // 成员灵感删了就从胶囊里摘掉;剩一个的胶囊没有存在意义,自动解散
-    for (const capsule of [...(state.capsules ?? [])]) {
-      if (!capsule.itemIds.includes(op.id)) continue
-      const remaining = capsule.itemIds.filter(id => id !== op.id)
-      if (remaining.length < 2) {
-        capsule.itemIds = remaining
-        releaseCapsule(state, capsule)
-      } else {
-        capsule.itemIds = remaining
-      }
-    }
+    // 成员灵感删了就从胶囊里摘掉;剩一个的胶囊没有存在意义,自动解散(与收进胶囊共用同一套不变量)
+    detachFromOtherCapsules(state, [op.id], null)
     return { text: tr('删除《{title}》', { title: short(item.title) }) }
   },
   schedule_item(state, op, now) {
@@ -423,23 +415,13 @@ const handlers = {
     work.updatedAt = now
     return null
   },
-  // 作品编辑器的保存:只改当前稿。带 rev 时是乐观锁,冲突由界面选「用最新的 / 覆盖」。
+  // 作品编辑器的保存(自动保存)与创作会话写回(ADR 0006)走同一套字段、乐观锁与 rev 前进,
+  // 只差回执措辞与空字段行为:自动保存没内容就安静跳过,写回没内容要告诉会话。
   update_work(state, op, now) {
-    const work = findWork(state, op.id ?? op.workId)
-    const fields = workCurrentFields(op)
-    if (!Object.keys(fields).length) return null
-    assertWorkRev(work, op)
-    stampCurrent(work, fields, now)
-    return { text: tr('修改《{title}》', { title: short(workTitle(work)) }), target: work.id, kind: 'work' }
+    return writeCurrent(state, op, now, title => tr('修改《{title}》', { title }))
   },
-  // 创作会话写回(ADR 0006 的写回入口):与自动保存同一套字段与乐观锁,只是回执措辞不同。
   write_work(state, op, now) {
-    const work = findWork(state, op.id ?? op.workId ?? op.targetId)
-    const fields = workCurrentFields(op)
-    if (!Object.keys(fields).length) throw new Error(tr('这次写回没有可写的内容'))
-    assertWorkRev(work, op)
-    stampCurrent(work, fields, now)
-    return { text: tr('会话写回了《{title}》', { title: short(workTitle(work)) }), target: work.id, kind: 'work' }
+    return writeCurrent(state, op, now, title => tr('会话写回了《{title}》', { title }), { throwOnEmpty: true })
   },
   // 作品记录自己的创作会话指针(ADR 0014:只存 ID,风格学习时按它读转录)。
   link_work_session(state, op) {
@@ -463,7 +445,7 @@ const handlers = {
     const capsuleIds = [...new Set(Array.isArray(op.capsuleIds) ? op.capsuleIds.filter(id => typeof id === 'string') : [])]
       .filter(id => (state.capsules ?? []).some(row => row.id === id))
     const first = state.items.find(row => row.id === sourceIds[0])
-    const work = {
+    const work = makeWork({
       id: newId('w'),
       sourceItemIds: sourceIds,
       sourceCapsuleIds: capsuleIds,
@@ -471,36 +453,16 @@ const handlers = {
         const item = state.items.find(row => row.id === id)
         return { itemId: id, title: item?.title ?? '', kind: item?.kind ?? 'note' }
       }),
-      current: { title: first?.title ?? '', coverText: '', article: '', rev: 0 },
-      publication: { status: 'draft' },
-      sessionIds: [],
+      current: { title: first?.title ?? '', coverText: '', article: '' },
       createdAt: now,
-      updatedAt: now,
-    }
+    })
     state.works = [work, ...(state.works ?? [])]
     // 成稿即消费排期,免得同一张卡反复提醒
     consumeSchedule(state, sourceIds, capsuleIds, now)
     return { text: tr('开始成稿《{title}》', { title: short(workTitle(work) || tr('新作品')) }), target: work.id, kind: 'work' }
   },
-  // 批量改标签:先整批校验期望版本,有一个对不上就整批拒绝——
-  // Agent 的自动整理不许冲掉用户预览之后又手动改过的分类。
-  retag_items(state, op) {
-    const ids = [...new Set(coerce('ids', op.itemIds) ?? [])]
-    if (!ids.length) throw new Error(tr('没有要改标签的灵感'))
-    const tags = coerce('list', op.tags) ?? []
-    const targets = ids.map(id => findById(state.items, id))
-    for (const item of targets) {
-      const expected = op.revisions?.[item.id]
-      const current = item.revision ?? 0
-      if (typeof expected !== 'number') throw new Error(tr('《{title}》没带期望版本，先看一遍改前改后再应用', { title: short(item.title) }))
-      if (expected !== current) throw new Error(tr('《{title}》的标签刚被改过（期望第 {expected} 版，现在是第 {current} 版），重新预览后再应用', { title: short(item.title), expected, current }))
-    }
-    for (const item of targets) {
-      item.tags = tags
-      item.revision = (item.revision ?? 0) + 1
-    }
-    return { text: tr('给 {n} 条灵感改了标签', { n: targets.length }), kind: 'item' }
-  },
+  // 批量改标签的 retag_items 已随不可达的批量改标签 UI 一起退役:标签改名/删除走
+  // rename_tag / delete_tag(标签筛选面板),单条灵感改标签走 update_item。
   // 标签改名/删除:标签是挂在灵感上的字符串,遍历改写。没有标签表,所以也不存在孤儿。
   rename_tag(state, op) {
     const from = String(op.from ?? '').trim()

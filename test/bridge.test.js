@@ -6,7 +6,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { digestInbox, digestReceipts, bridgeStatus, touchHeartbeat, writePublishTask, writeCatalog, bridgePaths, BRIDGE_ADAPTERS, normalizeCaptureUrl } from '../src/bridge.js'
+import { digestInbox, digestReceipts, bridgeStatus, touchHeartbeat, writePublishTask, writeCatalog, bridgePaths, normalizeCaptureUrl } from '../src/bridge.js'
+import { BRIDGE_ADAPTERS } from '../src/platforms.js'
 import { applyOps } from '../src/ops.js'
 import { Store } from '../src/store.js'
 

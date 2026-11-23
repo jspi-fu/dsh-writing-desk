@@ -191,7 +191,7 @@ npm pack                       # Build an installable tgz
 | `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel (in `extension/packages/extension`) |
 | `native/` | Local helper (helper.bat/helper.mjs) and the NM registrar: the browser extension reaches the bridge mailbox over Native Messaging; MIT in this repo |
 | `scripts/` | Packaging, sandbox, sample assets, marketplace index |
-| `assets/` | Sample images and videos, all drawn by `scripts/gen-assets.py` |
+| `assets/` | Sample images and videos, drawn by `scripts/gen-assets.py` (the logo is hand-made; archive in `docs/logo-final/`) |
 
 The extension is not part of the npm plugin package; `npm pack` ships the plugin itself plus the `native/` local helper. The extension hookup (Native Messaging auto-pairing) is documented in [ADR 0012](docs/adr/0012-bridge-native-messaging.md) (Native Messaging auto-pairing; the CLI/token path is retired, the mailbox contract still follows ADR 0009/0010), with research notes in [docs/research/](docs/research/). `extension/` is GPL-3.0; the rest of the repository remains MIT.
 

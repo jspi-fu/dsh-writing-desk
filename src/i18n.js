@@ -30,15 +30,6 @@ export function tr(zh, vars) {
   return vars ? text.replace(/\{(\w+)\}/g, (match, key) => (vars[key] === undefined ? match : String(vars[key]))) : text
 }
 
-/** 英文界面时追加到系统提示词末尾，让模型用英文写所有给人看的内容。 */
-export const ENGLISH_DIRECTIVE = [
-  '',
-  '## Output language',
-  'The user works in English. Write every human-readable value (titles, cover text, scripts, outlines, captions, storyboard lines, voice-over, style cards, rules) in natural, fluent English, even if the instructions above or the material are in Chinese.',
-  'Keep JSON keys, op names, ids, enum values and platform names exactly as specified above.',
-  'Where a length limit is given in Chinese characters (字), treat it as about half as many English words.',
-].join('\n')
-
 /** 按当前语言二选一，给提示词里的语言相关片段用。 */
 export function byLang(zh, en) {
   return currentLang() === 'en' ? en : zh

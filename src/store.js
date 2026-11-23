@@ -84,6 +84,8 @@ export class Store {
       await this.persist()
       return
     }
+    // mtime 判等依赖文件系统的时间戳粒度:NTFS/APFS 足够细,秒级粒度的盘(exFAT 等)
+    // 理论上可能把两次写判成没变;桌面场景可接受,不做内容 hash 抽样。
     if (this.state && info.mtimeMs === this.mtimeMs) return
     this.state = migrateState(JSON.parse(await readFile(this.file, 'utf8')))
     this.mtimeMs = info.mtimeMs

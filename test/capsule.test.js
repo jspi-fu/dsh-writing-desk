@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import { applyOps } from '../src/ops.js'
 import { buildSeed, migrateState } from '../src/seed.js'
 import { Store } from '../src/store.js'
-import { retagPreview, tagShelf } from '../client/tags.js'
+import { tagShelf } from '../client/tags.js'
 
 const NOW = new Date('2026-10-31T15:00:00+08:00')
 
@@ -151,18 +151,6 @@ test('读旧数据时,只剩一个成员的胶囊直接解散,成员留在灵感
   assert.ok(migrated.items.some(i => i.id === 'seed_1'), '成员灵感仍在')
 })
 
-test('批量改标签带期望 revision:版本一致才应用,应用后版本前进', () => {
-  const state = seed()
-  const { receipts, errors } = applyOps(state, [{ op: 'retag_items', itemIds: ['seed_1', 'seed_2'], tags: ['选题', '周末'], revisions: { seed_1: 0, seed_2: 0 } }])
-  assert.deepEqual(errors, [])
-  assert.equal(receipts.length, 1)
-  for (const id of ['seed_1', 'seed_2']) {
-    const item = state.items.find(i => i.id === id)
-    assert.deepEqual(item.tags, ['选题', '周末'])
-    assert.equal(item.revision, 1, '标签写进库里,版本跟着走')
-  }
-})
-
 test('update_item 改标签同样前进版本,改别的字段不动版本', () => {
   const state = seed()
   applyOps(state, [{ op: 'update_item', id: 'seed_1', tags: ['手动放的'] }])
@@ -171,40 +159,6 @@ test('update_item 改标签同样前进版本,改别的字段不动版本', () =
   assert.equal(item.revision, 1, '手动分类也是一次标签变更')
   applyOps(state, [{ op: 'update_item', id: 'seed_1', title: '换个标题' }])
   assert.equal(state.items.find(i => i.id === 'seed_1').revision, 1, '不动标签就不前进')
-})
-
-test('版本冲突整批拒绝:一条都不应用,手动分类原样保留', () => {
-  const state = seed()
-  const before = Object.fromEntries(state.items.map(i => [i.id, i.tags]))
-  applyOps(state, [{ op: 'update_item', id: 'seed_1', tags: ['我手动放的'] }])
-  const { errors } = applyOps(state, [{ op: 'retag_items', itemIds: ['seed_1', 'seed_2'], tags: ['自动整理'], revisions: { seed_1: 0, seed_2: 0 } }])
-  assert.equal(errors.length, 1)
-  assert.deepEqual(state.items.find(i => i.id === 'seed_1').tags, ['我手动放的'], '陈旧的期望版本不许冲掉手动分类')
-  assert.deepEqual(state.items.find(i => i.id === 'seed_2').tags, before.seed_2, '整批拒绝,没冲突的成员也不动')
-  assert.equal(state.items.find(i => i.id === 'seed_2').revision, undefined)
-})
-
-test('不带期望版本的批量改标签直接拒绝', () => {
-  const state = seed()
-  const before = state.items.find(i => i.id === 'seed_1').tags
-  const { errors } = applyOps(state, [{ op: 'retag_items', itemIds: ['seed_1'], tags: ['x'] }])
-  assert.equal(errors.length, 1)
-  assert.deepEqual(state.items.find(i => i.id === 'seed_1').tags, before)
-})
-
-// 改前→改后的 diff 预览:纯函数,提交时把每行的 revision 原样回传做乐观锁
-test('retagPreview:逐条给出改前、改后和当前版本', () => {
-  const items = [
-    { id: 'a', title: '灵感 A', tags: ['旧标签'], revision: 3 },
-    { id: 'b', title: '灵感 B', tags: [] },
-    { id: 'c', title: '灵感 C', tags: ['选题', '周末'] },
-  ]
-  const rows = retagPreview(items, ['a', 'b', 'c'], ['选题', '周末'])
-  assert.deepEqual(rows, [
-    { id: 'a', title: '灵感 A', before: ['旧标签'], after: ['选题', '周末'], changed: true, revision: 3 },
-    { id: 'b', title: '灵感 B', before: [], after: ['选题', '周末'], changed: true, revision: 0 },
-    { id: 'c', title: '灵感 C', before: ['选题', '周末'], after: ['选题', '周末'], changed: false, revision: 0 },
-  ])
 })
 
 // 选题资料架:按标签取用灵感的检索面

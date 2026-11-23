@@ -76,7 +76,7 @@ export function LearnFromWorksDialog({ initialIds = [], onClose }) {
         <p className="md-muted">{t('只会写候选规则和候选风格卡，不会自动切换当前风格。创作会话不会被改动。')}</p>
         <div className="md-form-foot">
           <span className="md-muted">{t('已选 {n} 篇', { n: ids.length })}</span>
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={onClose}>{t('取消')}</button>
           <button type="submit" className="md-btn is-primary" disabled={!ids.length || busy}>
             {busy ? t('正在读对话…') : t('学习写法')}

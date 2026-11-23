@@ -165,6 +165,8 @@
 
 ### 3.3 校样浮层的平台形态预览（client/proof.jsx）
 
+> 注(2026-11-23):`client/proof.jsx` 已被 ADR 0014/0015 的 `client/work-editor.jsx`(作品编辑器)取代,本文引用它的行号与交互仅作时点快照。
+
 - 纯前端实现：三平台只差**栏宽重排**——小红书 375 / 公众号 578 / 知乎 700（`proof.jsx:11-15`），CSS 变量 `--paper-w` 切换，角标注明"近似预览"，不做像素承诺（ADR 0006 校样浮层行）。
 - 图片插回：`ArticleFlow` 按 `## anchor` 匹配小标题放图，未匹配的按位置均分兜底（`proof.jsx:187-217`）。
 - 就地编辑：标题/封面文案/正文 `update_production` 落库可撤销（`proof.jsx:243-245,314-340`）；版本面板回退 = 用快照三字段再走 `update_production`（`proof.jsx:83-115`）；冲突横幅给 `apply_write`/`discard_write` + 双栏 diff（`proof.jsx:118-155`）。

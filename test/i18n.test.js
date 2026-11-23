@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
+import { readFileSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { EN } from '../src/en.js'
 import { currentLang, tr, withLang } from '../src/i18n.js'
 import { applyOps } from '../src/ops.js'
 import { buildSeed, localizeSamples, migrateState, samplesNeedLocale } from '../src/seed.js'
@@ -175,4 +177,18 @@ test('旧的英文数据：示例上残留的中文成稿迁成作品，切回�
   localizeSamples(state, 'zh')
   assert.equal(work.current.title, '中文成稿', '作品不是示例文字，切语言不动')
 })
+
+// 词典一致性:src 里每个 tr('…') 字面量都要在 en.js 里有英文词条。
+// 桥回执会原样展示给扩展端,缺键等于英文用户看到中文报错——这种腐化在这里拦住。
+test('en.js 覆盖 src 里所有 tr() 字面量', () => {
+  const dir = new URL('../src/', import.meta.url)
+  const literals = new Set()
+  for (const name of readdirSync(dir).filter(name => name.endsWith('.js'))) {
+    const code = readFileSync(new URL(name, dir), 'utf8')
+    for (const match of code.matchAll(/\btr\(\s*'((?:[^'\\]|\\.)*)'/g)) literals.add(match[1].replaceAll('\\\'', '\''))
+  }
+  const missing = [...literals].filter(key => !(key in EN))
+  assert.deepEqual(missing, [], '这些 tr() 字面量在 en.js 里没有词条')
+})
+
 

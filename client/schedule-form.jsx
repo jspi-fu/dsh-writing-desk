@@ -41,7 +41,8 @@ export function ScheduleBox({ item }) {
     const date = new Date(at)
     if (Number.isNaN(date.getTime())) return
     setBusy(true)
-    await dispatchOps([{ op: 'schedule_item', id: item.id, scheduledAt: date.toISOString(), reminder, platform: null }], { label: t('排期') })
+    // 排期设置没有平台选择:不传字段,旧数据上的平台原样保留,不做无声清空
+    await dispatchOps([{ op: 'schedule_item', id: item.id, scheduledAt: date.toISOString(), reminder }], { label: t('排期') })
     setBusy(false)
     setOpen(false)
   }
@@ -79,7 +80,7 @@ export function ScheduleBox({ item }) {
           </label>
           <div className="md-schedulebox-foot">
             {item.scheduledAt ? <button type="button" className="md-btn is-danger" disabled={busy} onClick={unschedule}>{t('取消排期')}</button> : null}
-            <span style={{ flex: 1 }} />
+            <span className="md-grow" />
             <button type="button" className="md-btn" onClick={() => setOpen(false)}>{t('收起')}</button>
             <button type="button" className="md-btn is-primary" disabled={busy || !at} onClick={save}>{busy ? t('保存中…') : t('排期')}</button>
           </div>

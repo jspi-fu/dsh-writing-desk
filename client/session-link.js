@@ -5,7 +5,7 @@
 // 其余模块(canvas/capsule/editor/style)只调这里的函数,不直接碰宿主对象。
 import { resolveProduceInput } from '../src/produce-input.js'
 import { workTitle } from '../src/work.js'
-import { fetchStyleMaterial, getDesk, linkWorkSession, setDesk, toast } from './desk.js'
+import { fetchStyleMaterial, getDesk, linkWorkSession, toast } from './desk.js'
 import { t } from './i18n.js'
 
 const PRESET_WRITING = 'writing'
@@ -22,9 +22,6 @@ export function setComposer(handle) {
   composer = handle && typeof handle.setDraft === 'function' ? handle : null
 }
 
-export function getComposer() {
-  return composer
-}
 
 /** dock 挂载时登记自己的矩形;卸载时传 null。 */
 export function registerDockRect(getter) {
@@ -37,10 +34,9 @@ export function overDock(x, y) {
   return Boolean(rect) && x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
 }
 
-/** index.jsx 能力检测:uiWorkspace 可用就记下来,capabilities.session 同步进 desk store。 */
+/** index.jsx 能力检测:uiWorkspace 可用就记下来。 */
 export function setSessionWorkspace(service) {
   workspace = typeof service?.startSession === 'function' ? service : null
-  setDesk({ capabilities: { session: Boolean(workspace) } })
 }
 
 function dispatchRefEvent(type, ids) {
@@ -247,7 +243,6 @@ export function addReferenceToCurrentSession(ids) {
   const payload = quotePayload(ids)
   const inserted = pushQuotes(composer, payload)
   if (!inserted) return toast(t('没有可引用的灵感'), { error: true })
-  setDesk({ related: null })
   toast(t('已添加到当前会话'))
   return { items, capsules, text: referenceContext(ids) }
 }
@@ -265,7 +260,6 @@ export function claimPendingReference(handle) {
   const inserted = pushQuotes(handle, pendingCreate.payload)
   if (inserted) {
     pendingCreate = null
-    setDesk({ related: null })
   }
   return inserted
 }

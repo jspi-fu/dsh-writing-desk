@@ -2,10 +2,9 @@
 // 从上到下:搜索 + 排序 / 缩略图那排(按排期先后,未排期的接在后面) / 卡片货架 / 类型切换 + 标签抽屉 + 新建。
 // 卡片点击是编辑,黑胶囊是创作入口;多选走封面左上圆钮,不再依赖右键。
 import React from 'react'
-import { Card, openCapture, openEditItem } from './card.jsx'
+import { Card, openCapture } from './card.jsx'
 import { CapsuleCard } from './capsule.jsx'
-import { clearSelection, dispatchOps, EMPTY_LIST, openCapsule, setDesk, useDesk } from './desk.js'
-import { createWork, openWork } from './desk.js'
+import { clearSelection, createWork, dispatchOps, EMPTY_LIST, openCapsule, openItem, openWork, setDesk, useDesk } from './desk.js'
 import { addReferenceToCurrentSession, copyReferenceForAI } from './session-link.js'
 import { t } from './i18n.js'
 import { Icon, IconButton, openMenuAt } from './ui.jsx'
@@ -329,7 +328,7 @@ export function Wall() {
   const allCapsuleIds = entries.filter(entry => entry.type === 'capsule').map(entry => entry.id)
   // 缩略图那排固定按排期先后走,不跟墙上的排序
   const rail = React.useMemo(() => railOrder(entries), [entries])
-  const openEntry = (entry) => { if (entry.type === 'capsule') openCapsule(entry.id); else openEditItem(entry.id) }
+  const openEntry = (entry) => { if (entry.type === 'capsule') openCapsule(entry.id); else openItem(entry.id) }
 
   // 卡到卡:把一张灵感拖到另一张上就合成胶囊,和「多选后点合成胶囊」是同一个 op
   const [mergeOver, setMergeOver] = React.useState(null)
@@ -365,6 +364,8 @@ export function Wall() {
 
   // 框选:从墙面的空白处按下拖动,碰到哪张卡就选哪张(按住 Shift 追加)。
   const wallRef = React.useRef(null)
+  const bandCleanup = React.useRef(null)
+  React.useEffect(() => () => bandCleanup.current?.(), [])
   const [band, setBand] = React.useState(null)
   const onWallPointerDown = (event) => {
     if (event.button !== 0 || !wallRef.current) return
@@ -392,12 +393,17 @@ export function Wall() {
       }
       setDesk({ selection: { items: [...itemsHit], capsules: [...capsulesHit] } })
     }
-    const onUp = () => {
+    const detach = () => {
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
+      bandCleanup.current = null
+    }
+    const onUp = () => {
+      detach()
       setBand(null)
       if (!active) setDesk({ selection: null })
     }
+    bandCleanup.current = detach
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
   }
@@ -468,7 +474,3 @@ export function Wall() {
     </div>
   )
 }
-
-// 兼容旧名字:首页就是灵感墙
-export const HomeView = Wall
-export default Wall

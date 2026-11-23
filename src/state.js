@@ -12,6 +12,12 @@ export const EVENTS = ['schedule', 'unschedule', 'setStatus']
 
 export const STATUSES = ['idea', 'outline', 'draft', 'ready', 'published']
 
+// 状态与素材种类的中文名:数据里存的始终是枚举值,这里只提供 t() 用的词条 key。
+// 与 STATUSES 一样放在这个 Host/Client 共用的纯模块里,别处不许再抄一份。
+export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
+
+export const KINDS = ['image', 'video', 'web', 'quote', 'note', 'file']
+
 /** 已排期:挂进了日历。是否已发布由作品的发布记录回答,不再压在这个字段上。 */
 export function isScheduled(item) {
   return Boolean(item.scheduledAt)

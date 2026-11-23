@@ -56,7 +56,8 @@
     "src",
     "dist",
     "assets",
-    "native",
+    "native/helper.bat",
+    "native/helper.mjs",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"

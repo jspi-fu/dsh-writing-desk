@@ -7,12 +7,11 @@ const BASE = 'writing-desk/'
 
 let snapshot = {
   state: null, canUndo: false, error: null,
-  view: 'home', workId: null, query: '', kindFilter: 'all', related: null,
+  view: 'home', workId: null, query: '', kindFilter: 'all',
   // 灵感墙自己的一行筛选:搜索、排序、标签抽屉,和内容页的 query 不共用
   wallQuery: '', wallSort: 'new', wallTagsOpen: false, capsuleAdd: null,
-  capsuleId: null, retag: null, tagFilter: null, selection: null, menu: null,
+  capsuleId: null, tagFilter: null, selection: null, menu: null,
   settings: null, settingsOpen: false, toast: null, capture: null, dialog: null,
-  capabilities: { session: false },
 }
 // getSnapshot 稳定性:useDesk 选择器缺字段时回落到这同一个数组引用,
 // 每次返回新 [] 会让 useSyncExternalStore 认为快照一直在变,触发 React #185 无限渲染
@@ -93,7 +92,8 @@ export async function refreshState() {
 export async function dispatchOps(ops, { label = t('操作'), undoable = true, silent = false, quiet = false } = {}) {
   try {
     const data = await request('ops', { ops, label, undoable })
-    setDesk({ state: data.state, canUndo: undoable || snapshot.canUndo })
+    // 整批失败时没有产生撤销记录,canUndo 保持原值——否则 Ctrl+Z 撤的是上一条无关操作
+    setDesk({ state: data.state, canUndo: data.errors?.length ? snapshot.canUndo : (undoable || snapshot.canUndo) })
     if (!quiet && data.errors?.length) toast(data.errors[0], { error: true })
     else if (!silent && data.receipts?.[0]) toast(data.receipts[0].text, { undo: undoable })
     return data
@@ -172,15 +172,6 @@ export function openMenu(at, items) {
 
 export function closeMenu() {
   setDesk({ menu: null })
-}
-
-// 批量改标签:先 diff 预览再应用,版本冲突时 Host 拒绝
-export function openRetag(ids) {
-  setDesk({ retag: { ids } })
-}
-
-export function closeRetag() {
-  setDesk({ retag: null })
 }
 
 // 画布多选:Shift+点选灵感或胶囊,凑一批引用到对话;清除后收回

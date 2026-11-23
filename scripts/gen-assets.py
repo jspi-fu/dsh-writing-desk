@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """生成示例卡片用的程序化配图与循环视频，输出到 assets/。不依赖任何外部素材。"""
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -9,7 +10,15 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets')
 os.makedirs(OUT, exist_ok=True)
-SONGTI = '/System/Library/Fonts/Supplemental/Songti.ttc'
+# macOS 系统字体是默认配方;其他平台用 WD_SONGTI / WD_DIDOT 指向等价字体,或干脆跳过绘制
+SONGTI = os.environ.get('WD_SONGTI', '/System/Library/Fonts/Supplemental/Songti.ttc')
+DIDOT = os.environ.get('WD_DIDOT', '/System/Library/Fonts/Supplemental/Didot.ttc')
+
+
+def load_font(path, size, index=0):
+    if not os.path.exists(path):
+        raise SystemExit(f'font not found: {path} — set WD_SONGTI / WD_DIDOT to a matching font, or run this on macOS')
+    return ImageFont.truetype(path, size, index=index)
 
 
 def rng(seed):
@@ -182,10 +191,10 @@ def emboss(w=760, h=760, en=False):
     img = Image.new('L', (w, h), 0)
     d = ImageDraw.Draw(img)
     if en:
-        font = ImageFont.truetype('/System/Library/Fonts/Supplemental/Didot.ttc', 280, index=0)
+        font = load_font(DIDOT, 280)
         d.text((w / 2, h / 2), 'Idea', fill=255, font=font, anchor='mm')
     else:
-        font = ImageFont.truetype(SONGTI, 240, index=0)
+        font = load_font(SONGTI, 240)
         for i, ch in enumerate('灵感'):
             d.text((90 + i * 290, 240 + i * 60), ch, fill=255, font=font)
     mask = np.asarray(img.filter(ImageFilter.GaussianBlur(5)), np.float32) / 255
@@ -272,8 +281,8 @@ def poster(w=720, h=960):
 def poster_en(w=720, h=960):
     img = Image.new('RGB', (w, h), '#101114')
     d = ImageDraw.Draw(img)
-    big = ImageFont.truetype('/System/Library/Fonts/Supplemental/Didot.ttc', 196, index=0)
-    small = ImageFont.truetype('/System/Library/Fonts/Supplemental/Didot.ttc', 36, index=0)
+    big = load_font(DIDOT, 196)
+    small = load_font(DIDOT, 36)
     d.text((44, 60), 'Slow', fill='#f1ece1', font=big)
     d.text((44, 330), 'writing', fill='#e7502d', font=big)
     d.line([48, 760, 672, 760], fill='#f1ece1', width=1)
@@ -282,6 +291,9 @@ def poster_en(w=720, h=960):
 
 
 def encode(frames_fn, name, w, h, n=96, fps=24):
+    if shutil.which('ffmpeg') is None:
+        print(name, 'mp4 skipped: ffmpeg not found on PATH')
+        return
     with tempfile.TemporaryDirectory() as tmp:
         for i in range(n):
             f = frames_fn(i / n)

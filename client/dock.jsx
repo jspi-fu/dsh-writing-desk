@@ -3,7 +3,7 @@
 // 引用签由宿主草稿插进去,接驳条自己不再画签条,整个浮层唯一的「作者时刻」。
 import React from 'react'
 import { addReferenceToCurrentSession, claimPendingReference, endRefDrag, hasPendingReference, registerDockRect, setComposer } from './session-link.js'
-import { t } from './i18n.js'
+import { t, useLang } from './i18n.js'
 
 // 三态:dormant(近无) → listening(虚线行) → armed(实线内衬) → 落手回到 dormant。
 // 落手的表现交给「添加到当前会话」同一条路(引用签插进草稿),接驳条自己不再画签条。
@@ -44,6 +44,8 @@ function pointIn(rect, event) {
 }
 
 export function DockRail(props) {
+  // 接驳条与提醒横幅一样挂在主树之外可达,切换语言自己跟
+  useLang()
   const inputActions = props?.inputActions
   const useInput = props?.useInput
   // 草稿镜像:setDraft 是整段替换,追加前必须能读到现有文字。

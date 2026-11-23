@@ -5,7 +5,7 @@
 const hasText = value => typeof value === 'string' && value.trim().length > 0
 
 /** 发布记录的三态(ADR 0013):草稿 → 已投递(机器回执)→ 已发布(用户确认)。 */
-export const PUBLICATION_STATES = ['draft', 'submitted', 'published']
+const PUBLICATION_STATES = ['draft', 'submitted', 'published']
 export const PUBLICATION_LABEL = { draft: '草稿', submitted: '已投递', published: '已发布' }
 
 /** current 里允许写、允许冻结的字段;rev 与时间戳由写入口维护。 */
@@ -29,7 +29,7 @@ export function workTitle(work) {
 }
 
 /** 来源标题:第一条来源素材的标题;素材删了也还在(sourceSnapshot 留了快照)。 */
-export function sourceTitle(work) {
+function sourceTitle(work) {
   const first = (work?.sourceSnapshot ?? [])[0]
   return hasText(first?.title) ? first.title : ''
 }
@@ -42,11 +42,6 @@ export function worksOfItem(state, itemId) {
 /** 素材是否已用:只要任一作品引用它,就派生为已用(ADR 0013,不存布尔值)。 */
 export function isUsed(state, itemId) {
   return worksOfItem(state, itemId).length > 0
-}
-
-/** 胶囊是否已用:整张卡只要有成员被引用就算——胶囊是一张卡(ADR 0011/0013)。 */
-export function isCapsuleUsed(state, capsule) {
-  return (capsule?.itemIds ?? []).some(id => isUsed(state, id))
 }
 
 /** 当前稿与冻结的发布稿是否已经不一致——作品页据此标「有未发布改动」。 */
@@ -63,9 +58,19 @@ export function workOfId(state, workId) {
   return (state?.works ?? []).find(work => work.id === workId) ?? null
 }
 
-/** 作品引用的一组素材(含被删的:只剩 sourceSnapshot 里的快照)。 */
-export function sourceEntries(work) {
-  return work?.sourceSnapshot ?? []
+/** Work 的统一构造器:成稿(op)、演示数据、旧数据迁移共用同一份形状,加字段只改这里。 */
+export function makeWork({ id, sourceItemIds = [], sourceCapsuleIds = [], sourceSnapshot = [], current = {}, publication = { status: 'draft' }, sessionIds = [], createdAt, updatedAt = createdAt }) {
+  return {
+    id,
+    sourceItemIds: [...sourceItemIds],
+    sourceCapsuleIds: [...sourceCapsuleIds],
+    sourceSnapshot: sourceSnapshot.map(row => ({ ...row })),
+    current: { rev: 0, ...current },
+    publication: { ...publication },
+    sessionIds: [...sessionIds],
+    createdAt,
+    updatedAt,
+  }
 }
 
 /**

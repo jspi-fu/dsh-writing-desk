@@ -1,5 +1,6 @@
 // 首次安装自动分发的完整演示，与灵感示例共用 sample 标记和统一清理入口。
 import { currentLang, normalizeLang } from './i18n.js'
+import { makeWork as workFrom } from './work.js'
 
 const HOUR = 60 * 60 * 1000
 const A = name => `writing-desk/assets/${name}`
@@ -161,15 +162,16 @@ export function buildDemo(now, lang = currentLang()) {
   ]
 
   const makeWork = (id, sourceItemIds, sourceCapsuleIds, current, publication, updatedHours) => ({
-    id,
-    sourceItemIds,
-    sourceCapsuleIds,
-    sourceSnapshot: snapshot(items, sourceItemIds),
-    current: { ...current, rev: 1 },
-    publication,
-    sessionIds: [],
-    createdAt: at(base, updatedHours - 4),
-    updatedAt: at(base, updatedHours),
+    ...workFrom({
+      id,
+      sourceItemIds,
+      sourceCapsuleIds,
+      sourceSnapshot: snapshot(items, sourceItemIds),
+      current: { ...current, rev: 1 },
+      publication,
+      createdAt: at(base, updatedHours - 4),
+      updatedAt: at(base, updatedHours),
+    }),
     sample: true,
     demo: true,
   })

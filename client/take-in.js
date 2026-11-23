@@ -2,7 +2,7 @@
 // 落点决定去向：拖到日历某天即排那天，拖进胶囊浮层即成成员，落到别处即新建在灵感墙。
 import { dispatchOps, getDesk, previewUrl, report, toast, uploadFile } from './desk.js'
 import { t } from './i18n.js'
-import { fmtDate } from './util.js'
+import { fileTitle, fmtDate } from './util.js'
 
 // 去重键：文件名 + 字节数 + 修改时间三项全对才算同一份文件。
 // 墙面数据不存后两项，所以登记表留在浏览器里；超出条数就丢最早的。
@@ -11,9 +11,6 @@ const TAKEN_MAX = 500
 // 剪贴板里的位图没有真文件名（浏览器给 image.png 这种），也就没法用它判重
 const SCREENSHOT_NAME = /^image\.(png|jpe?g|webp|gif)$/i
 
-function fileTitle(name) {
-  return String(name || '').replace(/\.[^.]+$/, '') || String(name || '')
-}
 
 function fileKey(file) {
   return [file.name ?? '', file.size ?? 0, file.lastModified ?? 0].join('\u0000')

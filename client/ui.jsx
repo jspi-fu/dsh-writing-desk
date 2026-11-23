@@ -14,31 +14,22 @@ const PATHS = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   scatter: 'M4 5h6v7H4zM13 4h7v5h-7zM6 15h5v5H6zM14 12h6v8h-6z',
   wall: 'M4 4h7v10H4zM13 4h7v6h-7zM4 16h7v4H4zM13 12h7v8h-7z',
-  list: 'M4 6h16M4 12h16M4 18h16',
-  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c.8-3.4 3.6-5.5 7-5.5s6.2 2.1 7 5.5',
   spark: 'M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z',
   pen: 'M4 20l1-4L16 5l3 3L8 19zM14 7l3 3',
   film: 'M4 5h16v14H4zM8 5v14M16 5v14M4 9.5h4M4 14.5h4M16 9.5h4M16 14.5h4',
   branch: 'M6 4v8a4 4 0 0 0 4 4h6M6 4a2 2 0 1 0 0 .01M18 16a2 2 0 1 0 0 .01M6 12a4 4 0 0 1 4-4h6M18 8a2 2 0 1 0 0 .01',
   trash: 'M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13',
-  pin: 'M9 4h6l-1 6 3 3v2H7v-2l3-3zM12 15v5',
   link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
   copy: 'M9 9h10v11H9zM5 15V4h10',
   upload: 'M12 16V5M7 10l5-5 5 5M5 19h14',
   calendar: 'M5 6h14v14H5zM5 10h14M9 3.5v4M15 3.5v4',
-  zoomIn: 'M12 6v12M6 12h12',
-  zoomOut: 'M6 12h12',
-  target: 'M12 4v3M12 17v3M4 12h3M17 12h3M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z',
   play: 'M8 5.5v13l11-6.5z',
-  undo: 'M8 6L4 10l4 4M4 10h10a5 5 0 0 1 0 10h-3',
   bolt: 'M13 3L5 14h6l-1 7 8-11h-6z',
   refresh: 'M19 8a8 8 0 0 0-14-1L4 9M5 16a8 8 0 0 0 14 1l1-2M4 4v5h5M20 20v-5h-5',
   edit: 'M4 20l1-4L16 5l3 3L8 19z',
-  eye: 'M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12zM12 9.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z',
   upRight: 'M7 17L17 7M8 7h9v9',
   image: 'M4 5h16v14H4zM4 16l5-4.5 4 3.5 3-2.5 4 3.5M15.5 9.5a1 1 0 1 0 0 .01',
   clock: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16zM12 8v4l3 2',
-  expand: 'M14 5h5v5M10 19H5v-5M19 5l-6 6M5 19l6-6',
   save: 'M12 4v11M7 11l5 5 5-5M5 20h14',
   folder: 'M4 7h6l2 2h10v10H4z',
   more: 'M5 12h.01M12 12h.01M19 12h.01',
@@ -236,7 +227,7 @@ export function FormDialog() {
         })}
         <div className="md-form-foot">
           {dialog.onDelete ? <button type="button" className="md-btn is-danger" onClick={() => { dialog.onDelete(); close() }}>{t('删除')}</button> : null}
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
           <button type="submit" className="md-btn is-primary">{dialog.submitLabel ?? t('保存')}</button>
         </div>
@@ -253,16 +244,6 @@ export function Toast() {
       {toast.undo ? <Icon name="check" size={14} /> : null}
       <span>{toast.text}</span>
       {toast.undo ? <button type="button" onClick={undo}>{t('撤销')}</button> : null}
-    </div>
-  )
-}
-
-export function Empty({ title, hint, action }) {
-  return (
-    <div className="md-empty">
-      <p className="md-empty-title">{title}</p>
-      {hint ? <p>{hint}</p> : null}
-      {action}
     </div>
   )
 }

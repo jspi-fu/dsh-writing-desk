@@ -1,13 +1,12 @@
 // dsh-writing-desk 浏览器半片：侧栏入口 + main 全局面板。
 // 成稿主战场在 DSH 创作会话(ADR 0006):这里注册看板、校样浮层与素材接驳条。
 import React from 'react'
-import { HomeView } from './canvas.jsx'
+import { Wall as HomeView } from './wall.jsx'
 import { CapsuleAdd, CapsuleView } from './capsule.jsx'
 import { ContentView } from './content.jsx'
 import { captureUrl, dispatchOps, EMPTY_LIST, loadDesk, previewUrl, report, setDesk, toast, undo, uploadFile, useDesk } from './desk.js'
 import { DockRail } from './dock.jsx'
 import { WorkEditor } from './work-editor.jsx'
-import { RetagDialog } from './retag.jsx'
 import { StyleView } from './style.jsx'
 import { ScheduleView } from './schedule.jsx'
 import { ScheduleBox } from './schedule-form.jsx'
@@ -18,7 +17,8 @@ import { attachTakeIn } from './take-in.js'
 import css from './styles.css'
 import { lang, t, useLang } from './i18n.js'
 import { updateUrl, useVersionInfo } from './version.js'
-import { absoluteUrl, categoryOf, coverOf } from './util.js'
+import { absoluteUrl, categoryOf, coverOf, extOf, fileTitle } from './util.js'
+import { tagShelf } from './tags.js'
 import { Dialog, FormDialog, Icon, IconButton, Menu, Toast } from './ui.jsx'
 
 const PANEL_ID = 'writing-desk'
@@ -110,9 +110,6 @@ function CoverField({ src, autoSrc, busy, onPick, onAuto }) {
   )
 }
 
-function cleanFileName(name) {
-  return String(name || '').replace(/\.[^.]+$/, '') || String(name || '')
-}
 
 function CaptureDialog() {
   const capture = useDesk(s => s.capture)
@@ -133,11 +130,7 @@ function CaptureDialog() {
   const autoTitle = React.useRef('')
   const coverInput = React.useRef(null)
   const fileInput = React.useRef(null)
-  const tagShelf = React.useMemo(() => {
-    const counts = new Map()
-    for (const item of items) for (const tag of item.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
-    return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || (a.tag < b.tag ? -1 : a.tag > b.tag ? 1 : 0))
-  }, [items])
+  const shelf = React.useMemo(() => tagShelf(items), [items])
 
   // 打开时把现有内容铺进字段:编辑页签不再切换,新增总是落在笔记。
   // 只在「打开另一条 / 新开一次」时播种:items 每次写操作都会换新数组,
@@ -215,7 +208,7 @@ function CaptureDialog() {
   // 文件页签不限个数与合计体积(单个上限由宿主给)；选择器和拖进来走同一条路
   const pushFiles = (picked) => {
     if (!picked.length) return
-    setRows(list => [...list, ...picked.map((file, index) => ({ key: `${file.name}:${file.size}:${list.length + index}`, file, title: cleanFileName(file.name), body: '' }))])
+    setRows(list => [...list, ...picked.map((file, index) => ({ key: `${file.name}:${file.size}:${list.length + index}`, file, title: fileTitle(file.name), body: '' }))])
   }
   const takeFiles = (event) => {
     const picked = [...(event.target.files ?? [])]
@@ -268,7 +261,7 @@ function CaptureDialog() {
           const info = await uploadFile(row.file)
           await dispatchOps([{
             op: 'add_item', kind: info.kind,
-            title: row.title.trim() || cleanFileName(row.file.name),
+            title: row.title.trim() || fileTitle(row.file.name),
             body: row.body.trim() || undefined,
             tags,
             media: { src: info.src, name: row.file.name },
@@ -345,7 +338,7 @@ function CaptureDialog() {
               <div className="md-file-list">
                 {rows.map(row => (
                   <div className="md-file-row" key={row.key}>
-                    <span className="md-file-badge">{fileExt(row.file.name) || <Icon name="folder" size={16} />}</span>
+                    <span className="md-file-badge">{extOf(row.file.name) || <Icon name="folder" size={16} />}</span>
                     <div className="md-file-fields">
                       <input value={row.title} aria-label={t('标题')} onChange={e => patchRow(row.key, { title: e.target.value })} placeholder={t('标题')} />
                       <textarea rows={2} value={row.body} aria-label={t('说明')} onChange={e => patchRow(row.key, { body: e.target.value })} placeholder={t('这条素材用在哪里、为什么值得留（可留空）')} />
@@ -355,7 +348,7 @@ function CaptureDialog() {
                 ))}
               </div>
             ) : null}
-            <TagField value={tags} onChange={setTags} suggestions={tagShelf} />
+            <TagField value={tags} onChange={setTags} suggestions={shelf} />
           </>
         ) : (
           <>
@@ -400,12 +393,12 @@ function CaptureDialog() {
                 <textarea rows={6} required={!editing && tab === 'note'} value={text} onChange={e => setText(e.target.value)} placeholder={editingCategory === 'file' ? t('这条素材用在哪里、为什么值得留。') : t('想到什么就写什么。')} />
               </label>
             )}
-            <TagField value={tags} onChange={setTags} suggestions={tagShelf} />
+            <TagField value={tags} onChange={setTags} suggestions={shelf} />
           </>
         )}
         <div className="md-form-foot">
           {editing ? <button type="button" className="md-btn is-danger" onClick={remove}><Icon name="trash" size={13} />{t('删除这条灵感')}</button> : null}
-          <span style={{ flex: 1 }} />
+          <span className="md-grow" />
           <button type="button" className="md-btn" onClick={close}>{t('取消')}</button>
           <button type="submit" className="md-btn is-primary" disabled={busy || !!conflict || (tab === 'file' && !editing && !rows.length)}>
             {busy ? t('保存中…') : editing ? t('保存') : t('放到灵感墙')}
@@ -416,10 +409,6 @@ function CaptureDialog() {
   )
 }
 
-function fileExt(name) {
-  const match = /\.([a-z0-9]{1,8})$/i.exec(String(name || ''))
-  return match ? match[1].toUpperCase() : ''
-}
 
 function UpdateBadge() {
   const info = useVersionInfo()
@@ -437,7 +426,7 @@ function SampleBadge() {
     .some(key => s.state[key]?.some(row => row.sample)))
   if (!hasSample) return null
   return (
-    <button type="button" className="md-sample" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }} aria-label={t('清空示例数据')} title={t('清空全部示例数据，保留你的内容')} onClick={() => setDesk({
+    <button type="button" className="md-sample" aria-label={t('清空示例数据')} title={t('清空全部示例数据，保留你的内容')} onClick={() => setDesk({
       dialog: {
         title: t('清空示例数据'),
         submitLabel: t('清空'),
@@ -498,8 +487,7 @@ function Desk() {
               </button>
             ))}
           </nav>
-          <span style={{ flex: 1 }} />
-          {canUndo ? <IconButton icon="undo" label={t('撤销上一步')} onClick={undo} /> : null}
+          <span className="md-grow" />
           {ready ? <UpdateBadge /> : null}
           {ready ? <SampleBadge /> : null}
           <IconButton icon="gear" label={t('设置')} onClick={() => setDesk({ settingsOpen: true })} />
@@ -514,7 +502,6 @@ function Desk() {
       <FormDialog />
       {ready ? <CapsuleView /> : null}
       {ready ? <CapsuleAdd /> : null}
-      {ready ? <RetagDialog /> : null}
       {ready ? <SettingsDialog /> : null}
       {/* 作品编辑器由 desk store 的 workId 门控,常挂载——内容页作品卡与签收栏都点开它 */}
       <WorkEditor />

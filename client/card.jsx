@@ -3,7 +3,7 @@
 // 与参考的三处刻意不同:点卡是编辑入口(不打开原网页)、卡片没有星标、
 // 黑胶囊打开的是创作模式而不是聊天。JSX 走 classic 运行时,React import 必须留。
 import React from 'react'
-import { createWork, dispatchOps, openWork, setDesk, toggleSelect } from './desk.js'
+import { createWork, dispatchOps, openItem, openWork, setDesk, toggleSelect } from './desk.js'
 import { t } from './i18n.js'
 import { Icon, openMenuAt } from './ui.jsx'
 import { absoluteUrl, categoryOf, coverOf, fileExtOf, fileOf, fileNameOf, itemIcon } from './util.js'
@@ -11,14 +11,9 @@ import { addReferenceToCurrentSession, copyReferenceForAI, endRefDrag, startRefD
 
 const CATEGORY_WORD = { note: '笔记', link: '链接', file: '文件' }
 
-/** 新建灵感:对话框默认落在笔记页签。 */
+/** 新建灵感:对话框默认落在笔记页签。编辑灵感走 desk.js 的 openItem——点卡=编辑只有这一个入口。 */
 export function openCapture(tab = 'note') {
   setDesk({ capture: { mode: 'create', tab } })
-}
-
-/** 编辑灵感:和新增用同一个对话框,带出现有字段。 */
-export function openEditItem(id) {
-  setDesk({ capture: { mode: 'edit', id } })
 }
 
 function hostOf(url) {
@@ -80,7 +75,7 @@ function SiteRow({ item, category }) {
  * 灵感卡片。点击整卡进编辑对话框;封面左上圆钮是多选,右上垃圾桶删除(可撤销);
  * 底部黑胶囊点击直接进创作会话,右侧小箭头展开「复制给 AI / 添加到当前会话」。
  */
-export function Card({ item: raw, selected = false, compact = false, bare = false, onOpen = openEditItem, dragIds }) {
+export function Card({ item: raw, selected = false, compact = false, bare = false, onOpen = openItem, dragIds }) {
   const category = categoryOf(raw)
   const cover = coverOf(raw)
   const pick = (event) => {

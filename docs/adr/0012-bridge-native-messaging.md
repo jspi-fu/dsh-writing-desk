@@ -54,7 +54,7 @@ Status: implemented(2026-11-19 grill 会话定案,2026-11-20 工单 #11 实现;�
 
 ## 代码影响
 
-- 主仓库:新增顶层 `native/`(helper.bat/helper.mjs,不进 files);`src/` 增 NM 注册器与消化层 URL 去重;设置页桥接区块改配对状态;`src/publish.js` 删命令字符串。
+- 主仓库:新增顶层 `native/`(helper.bat/helper.mjs;npm 包只收录这两个文件,运行时生成的 NM manifest 不进包);`src/` 增 NM 注册器与消化层 URL 去重;设置页桥接区块改配对状态;`src/publish.js` 删命令字符串。
 - extension/(GPL vendored):manifest 增 `key` 与 `nativeMessaging`;`src/bridge` WS 客户端换 NM 客户端(长端口 + 短请求 + 分片);删 token 存储与粘贴 UI;删 `packages/cli`。
 - 文档:README/README.en 删 CLI 章节;ADR 0009/0010 状态标注;GLOSSARY 更新。
 

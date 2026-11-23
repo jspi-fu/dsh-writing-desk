@@ -1,17 +1,16 @@
 import { EN } from './en/index.js'
 import { lang, t } from './i18n.js'
-// 状态枚举与 Host 共用 src/state.js 的唯一定义(纯模块,经 esbuild 打包进浏览器半片)
-import { STATUSES } from '../src/state.js'
+// 共享表只从 src 的纯模块拿唯一定义(经 esbuild 打包进浏览器半片,未用的导出会被摇掉):
+// 状态、平台与风格分类都是「加一个要改几处」的清单,不再在 client 各抄一份。
+import { PLATFORMS } from '../src/platforms.js'
+import { STYLE_CATEGORIES } from '../src/style-presets.js'
+import { STATUS_LABEL } from '../src/state.js'
 
-export { STATUSES }
+export { PLATFORMS, STATUS_LABEL, STYLE_CATEGORIES }
 
-// 这些表只放中文原文，显示时再用 t() 翻译
-export const STATUS_LABEL = { idea: '灵感', outline: '大纲', draft: '草稿', ready: '待发布', published: '已发布' }
-export const KIND_LABEL = { image: '图片', video: '视频', web: '网页', quote: '金句', note: '笔记', file: '文件' }
 // 灵感墙的三个分类(参考项目的货架口径):笔记 / 文件 / 链接。原有五种 kind 归到这里,
 // 金句已从新建入口撤掉,老数据按笔记显示,不删内容。
 export const KIND_CATEGORY = { note: 'note', quote: 'note', image: 'file', video: 'file', web: 'link', file: 'file' }
-export const CATEGORY_LABEL = { note: '笔记', file: '文件', link: '链接' }
 export function categoryOf(item) {
   return KIND_CATEGORY[item?.kind] ?? 'note'
 }
@@ -32,18 +31,8 @@ export function itemIcon(item) {
   return 'folder'
 }
 
-export const PLATFORMS = ['公众号', '小红书', '知乎']
-/** 下拉框里的平台顺序。 */
-export function platformChoices() {
-  return PLATFORMS
-}
-export const STYLE_CATEGORIES = ['科技数码', '旅行探店', 'Vlog 生活', '观点认知', '干货教程', '种草测评', '情感故事', '热点资讯']
-
 export function styleIcon(style) {
   return style?.icon || '✍️'
-}
-export const PLATFORM_URL = {
-  公众号: 'https://mp.weixin.qq.com/', 小红书: 'https://creator.xiaohongshu.com/publish/publish', 知乎: 'https://zhuanlan.zhihu.com/write',
 }
 
 export function hash(text) {
@@ -54,26 +43,6 @@ export function hash(text) {
   }
   return h >>> 0
 }
-
-export const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-/** 把弹簧响应采样成 CSS linear() 缓动，WAAPI 和 CSS 都能用。 */
-export function springEasing(stiffness = 170, damping = 20, mass = 1) {
-  const w0 = Math.sqrt(stiffness / mass)
-  const zeta = damping / (2 * Math.sqrt(stiffness * mass))
-  const wd = w0 * Math.sqrt(Math.max(1 - zeta * zeta, 1e-4))
-  const at = t => 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + ((zeta * w0) / wd) * Math.sin(wd * t))
-  let duration = 0.1
-  while (duration < 4 && (Math.abs(at(duration) - 1) > 0.002 || Math.abs(at(duration + 0.05) - 1) > 0.002)) duration += 0.05
-  const points = []
-  const N = 36
-  for (let i = 0; i <= N; i += 1) points.push(Number(at((i / N) * duration).toFixed(4)))
-  points[N] = 1
-  return { easing: `linear(${points.join(',')})`, duration: Math.round(duration * 1000) }
-}
-
-export const SPRING_SOFT = springEasing(120, 16)
-export const SPRING_SNAP = springEasing(260, 24)
 
 export function dayKey(date) {
   const d = new Date(date)
@@ -102,8 +71,9 @@ export function fmtWhen(iso) {
   return `${fmtDate(iso)} ${fmtTime(iso)}`
 }
 
-export function relativeDay(iso) {
-  const diff = Math.round((new Date(dayKey(iso)) - new Date(dayKey(new Date()))) / 86400000)
+export function relativeDay(iso, { now = new Date(), due = false } = {}) {
+  const diff = Math.round((new Date(dayKey(iso)) - new Date(dayKey(now))) / 86400000)
+  if (diff === 0 && due) return t('已到点')
   if (diff === 0) return t('今天')
   if (diff === 1) return t('明天')
   if (diff === 2) return t('后天')
@@ -171,10 +141,20 @@ export function fileOf(item) {
   return item?.media?.src ?? null
 }
 
+/** 扩展名(大写):卡片类型字、文件徽标共用;带查询串的地址也认。 */
+export function extOf(name) {
+  const match = /\.([a-z0-9]{1,8})(?:\?|$)/i.exec(String(name ?? ''))
+  return match ? match[1].toUpperCase() : ''
+}
+
 /** 文件扩展名(大写),卡片的默认封面与站点行都拿它当类型字。 */
 export function fileExtOf(item) {
-  const match = /\.([a-z0-9]{1,8})(?:\?|$)/i.exec(item?.media?.src ?? '')
-  return match ? match[1].toUpperCase() : ''
+  return extOf(item?.media?.src ?? '')
+}
+
+/** 文件名去掉扩展名当标题;没有扩展名原样返回。收下与编辑对话框共用。 */
+export function fileTitle(name) {
+  return String(name || '').replace(/\.[^.]+$/, '') || String(name || '')
 }
 
 export function fileNameOf(item) {

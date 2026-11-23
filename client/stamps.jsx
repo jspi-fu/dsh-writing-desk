@@ -1,10 +1,10 @@
-// 邮票灵感日历：每天一张邮票，逼自己多记一点。
+// 邮票灵感日历：排期页的日格邮票。首屏已是整面灵感墙,这里只剩日历格子的邮票。
 import React from 'react'
 import { openCapture } from './card.jsx'
-import { openItem, setDesk, useDesk } from './desk.js'
+import { setDesk, useDesk } from './desk.js'
 import { t } from './i18n.js'
 import { Icon } from './ui.jsx'
-import { computeStreak, dayKey, hash, posterOf, isIdea } from './util.js'
+import { dayKey, hash, posterOf, isIdea } from './util.js'
 
 export function useDayMap() {
   const items = useDesk(s => s.state.items)
@@ -20,11 +20,6 @@ export function useDayMap() {
   }, [items])
 }
 
-function coverOf(list) {
-  // 优先用当天带图的内容做邮票
-  return list.find(item => posterOf(item)) ?? list[0]
-}
-
 export function Stamp({ list, today, onOpen, label }) {
   if (!list?.length) {
     return (
@@ -33,38 +28,12 @@ export function Stamp({ list, today, onOpen, label }) {
       </button>
     )
   }
-  const cover = coverOf(list)
+  const cover = list.find(item => posterOf(item)) ?? list[0]
   const poster = posterOf(cover)
   return (
     <button type="button" className={`md-stamp ${poster ? '' : `is-type tone-${hash(cover.id) % 6}`}`} aria-label={t('{label}：{title}，共 {n} 条', { label, title: cover.title, n: list.length })} title={cover.title} onClick={onOpen}>
       {poster ? <img src={poster} alt="" loading="lazy" draggable={false} /> : <span>{cover.title.slice(0, 1)}</span>}
       {list.length > 1 ? <i>{list.length}</i> : null}
     </button>
-  )
-}
-
-/** 首屏文字下方：最近十天的邮票。 */
-export function MiniStamps() {
-  const items = useDesk(s => s.state.items)
-  const days = useDayMap()
-  const streak = computeStreak(items)
-  const now = new Date()
-  const cells = []
-  for (let i = 9; i >= 0; i -= 1) {
-    const d = new Date(now)
-    d.setDate(d.getDate() - i)
-    cells.push(d)
-  }
-  return (
-    <div className="md-ministamps">
-      <div className="md-ministamps-row">
-        {cells.map((d) => {
-          const key = dayKey(d)
-          const list = days.get(key)
-          return <Stamp key={key} list={list} today={key === dayKey(now)} label={t('{m}月{d}日', { m: d.getMonth() + 1, d: d.getDate(), mon: d.toLocaleString('en-US', { month: 'short' }) })} onOpen={() => openItem(coverOf(list).id)} />
-        })}
-      </div>
-      <button type="button" className="md-ministamps-more" onClick={() => setDesk({ view: 'schedule' })} title={t('打开灵感日历')} aria-label={t('打开灵感日历，已连续记录 {n} 天', { n: streak })}><Icon name="calendar" size={14} /></button>
-    </div>
   )
 }

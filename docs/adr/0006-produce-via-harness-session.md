@@ -73,7 +73,7 @@ Status: accepted(2026-11-18 目标指令定案;双视角设计评审 + Wechatwri
 ## 代码影响
 
 - 删除:`src/produce.js`、`src/ai.js`、`src/images.js`、`src/image-tool.js`、`client/produce.jsx`、`client/cover.js`(videoCover 合成)、host 的 produce*/settings-test 路由、settings 生图字段、分镜残余(0005 清单)、相关测试与 mock。
-- 新增:`src/desk-tools.js`(read/write/add_rule/add_style 四个工具)、`src/craft-skill.js`(writing-desk-craft 内容)、state.js 新事件与快照、ops.js 的 update_production 扩展(cover/images/intent/review 白名单)、client 的 `dock.jsx`(接驳条)、`proof.jsx`(校样浮层)、content 相位与签收栏。
+- 新增:`src/desk-tools.js`(read/write/add_rule/add_style 四个工具;后并入 `src/preset-tool.js`,本节按当时命名记录)、`src/craft-skill.js`(writing-desk-craft 内容)、state.js 新事件与快照、ops.js 的 update_production 扩展(cover/images/intent/review 白名单)、client 的 `dock.jsx`(接驳条)、`proof.jsx`(校样浮层)、content 相位与签收栏。
 - 改造:`preset-tool.js`、`preset-skill.js`(多 skill provider)、`editor.jsx`(去「去成稿」,加引用到对话)、`card.jsx`/`capsule.jsx`(可拖引用)、`content.jsx`、`styles.css`、`client/en/*`、README。
 
 ## 回滚

@@ -6,7 +6,8 @@ import { hasUnpublishedChange, workHasText, workState, workTitle, PUBLICATION_LA
 const MAX_ARTICLE = 20_000
 const MAX_TRANSCRIPT = 20_000
 const MAX_MATERIAL = 90_000
-const MIN_WORK_BUDGET = 16_000
+// 6 篇上限(host 侧收口)× 每篇下限 ≤ MAX_MATERIAL,下限才守得住
+const MIN_WORK_BUDGET = 14_000
 const MAX_MESSAGE = 4_000
 const MAX_RULES = 10
 

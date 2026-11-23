@@ -3,7 +3,7 @@
 // 只要还有成员没排期就露这张卡；拖到日历＝整张胶囊（含已排期的成员）一起排到那天,
 // 把一张卡压到另一张上＝合成胶囊。
 import React from 'react'
-import { awaitingSchedule, isScheduled } from '../src/state.js'
+import { awaitingSchedule } from '../src/state.js'
 import { selectScheduleFocus } from '../src/schedule-focus.js'
 import { dispatchOps, EMPTY_LIST, openCapsule, openItem, useDesk } from './desk.js'
 import focusCss from './schedule-focus.css'
@@ -256,19 +256,6 @@ function TrayCapsule({ capsule, members, pending, merge, drop }) {
   )
 }
 
-// 焦点是只读的常驻导航，不参与到点提醒回执，也不会触发成稿或发布。
-// 过去和将来都按绝对距离参选；派生条不单独出现，胶囊无论多少成员都只占一个主体。
-function focusRelative(focus, now) {
-  const days = Math.round((new Date(dayKey(focus.scheduledAt)) - new Date(dayKey(now))) / 86400000)
-  if (days === 0 && focus.timestamp <= now.getTime()) return t('已到点')
-  if (days === 0) return t('今天')
-  if (days === 1) return t('明天')
-  if (days === 2) return t('后天')
-  if (days === -1) return t('昨天')
-  if (days < 0 && days > -8) return t('{n}天前', { n: -days })
-  return fmtDate(focus.scheduledAt)
-}
-
 function FocusArtwork({ focus }) {
   const isCapsule = focus.type === 'capsule'
   const shown = isCapsule ? focus.members.slice(0, 4) : [focus.item]
@@ -341,7 +328,7 @@ function ScheduleFocus({ items, capsules }) {
   const dayMark = focus ? String(new Date(focus.timestamp).getDate()).padStart(2, '0') : ''
 
   return (
-    <section className={`md-schedule-focus ${focus ? 'has-focus' : 'is-empty'}`} aria-label={t('排期焦点')}>
+    <section className={`md-schedule-focus ${focus ? 'has-focus' : 'is-empty'}`} aria-label={t('下一条')}>
       {focus ? (
         <button ref={focusCardRef} type="button" className={`md-schedule-focus-card${rippleActive ? ' is-ripple-active' : ''}`} onClick={() => isCapsule ? openCapsule(focus.id) : openItem(focus.id)}>
           <span className="md-schedule-focus-day" aria-hidden="true">{dayMark}</span>
@@ -349,8 +336,8 @@ function ScheduleFocus({ items, capsules }) {
             {Array.from({ length: 6 }, (_, index) => <span key={index} style={{ '--ripple-index': index }} />)}
           </span>
           <span className="md-schedule-focus-head">
-            <span><Icon name="calendar" size={14} />{t('排期焦点')}<span className="md-schedule-focus-edition" aria-hidden="true">SCHEDULE</span></span>
-            <span className={`md-schedule-focus-relative ${focus.timestamp <= now.getTime() ? 'is-due' : ''}`}>{focusRelative(focus, now)}</span>
+            <span><Icon name="calendar" size={14} />{t('下一条')}<span className="md-schedule-focus-edition" aria-hidden="true">SCHEDULE</span></span>
+            <span className={`md-schedule-focus-relative ${focus.timestamp <= now.getTime() ? 'is-due' : ''}`}>{relativeDay(focus.scheduledAt, { now, due: focus.timestamp <= now.getTime() })}</span>
           </span>
           <FocusArtwork focus={focus} />
           <span className="md-schedule-focus-body">
@@ -365,7 +352,7 @@ function ScheduleFocus({ items, capsules }) {
       ) : (
         <div className="md-schedule-focus-empty">
           <header className="md-schedule-focus-head">
-            <span><Icon name="calendar" size={14} />{t('排期焦点')}</span>
+            <span><Icon name="calendar" size={14} />{t('下一条')}</span>
           </header>
           <div className="md-schedule-focus-empty-content">
             <Icon name="calendar" size={24} />
@@ -385,8 +372,6 @@ function Rail({ state, items, capsules }) {
   const [mergeOver, setMergeOver] = React.useState(null)
   // 待排期区只放「还没被作品用掉的素材」:成稿动作把素材用掉后由作品接管(ADR 0013),
   // 同一批素材想再做一版就回灵感墙再点成稿,托盘不再替它留位置。
-  const upcoming = items.filter(i => isScheduled(i) && new Date(i.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt))
-  const next = upcoming[0]
   const byId = new Map(items.map(item => [item.id, item]))
   const capsuleById = new Map(capsules.map(row => [row.id, row]))
   // 胶囊成员不在托盘里单条出现(与灵感墙同一口径)
@@ -474,14 +459,7 @@ function Rail({ state, items, capsules }) {
 
   return (
     <aside className="md-rail-col">
-      {next ? (
-        <button type="button" className="md-next" onClick={() => openItem(next.id)}>
-          <span className="md-next-top"><span>{t('下一条')}</span><span>{relativeDay(next.scheduledAt)}</span></span>
-          <b>{fmtTime(next.scheduledAt)}</b>
-          <p>{next.title}</p>
-          <span className="md-next-foot">{next.platform ? `${t(next.platform)} · ` : ''}{t(STATUS_LABEL[next.status])} · {fmtDate(next.scheduledAt)}</span>
-        </button>
-      ) : null}
+      <ScheduleFocus items={items} capsules={capsules} />
       <section
         className={`md-tile md-tray ${over ? 'is-over' : ''}`}
         aria-label={t('待排期')}
@@ -535,7 +513,6 @@ export function ScheduleView() {
       <style>{focusCss}</style>
       <div className="md-schedule">
         <Calendar items={items} capsules={capsules} />
-        <ScheduleFocus items={items} capsules={capsules} />
         <Rail state={state} items={items} capsules={capsules} />
       </div>
     </div>
