@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { copyFile, mkdir, readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { BRIDGE_ADAPTERS } from './platforms.js'
+import { isDispatchTarget, readDispatchTargets } from './targets.js'
 import { bridgeStatus, digestInbox, digestReceipts, touchHeartbeat, writeCatalog, writePublishTask } from './bridge.js'
 import { defaultExportDir, resolveExportDir, saveProduction } from './export.js'
 import { exportPublishPackage } from './publish.js'
@@ -322,6 +322,8 @@ async function route(ctx, store, desk, req, res) {
     if (path === 'settings') return json(res, 200, { ...publicSettings(await desk.settings.read()), defaultExportDir: defaultExportDir() })
     // 设置页的桥接区块(ADR 0012):NM 配对状态由注册器写进 bridge/native.json,这里只读。
     if (path === 'bridge/status') return json(res, 200, await bridgeStatus())
+    // 发布对话框的投递目标(ADR 0017):扩展上报的登录态/自建站快照,缺失时返回 null。
+    if (path === 'bridge/targets') return json(res, 200, { targets: await readDispatchTargets() })
     // 设置页的迁移入口:只读概览,不落库。迁移本身走下面的 POST migrate。
     if (path === 'migrate/preview') {
       try {
@@ -445,9 +447,10 @@ case 'pick-folder': {
       return json(res, 200, { ...exported, state: next })
     }
     // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手分片下发浏览器扩展。
-    // 平台只放行桥适配器清单里的;投递本身不改状态,回执经 digestReceipts 落 publication.dispatches。
+    // 平台只放行静态适配器清单与当前快照里的自建站;投递本身不改状态,回执经 digestReceipts 落 publication.dispatches。
     case 'work/dispatch': {
-      const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p))
+      const targets = await readDispatchTargets()
+      const platforms = (Array.isArray(body.platforms) ? body.platforms : []).filter(p => isDispatchTarget(p, targets))
       if (!platforms.length) return json(res, 400, { error: tr('至少选一个可投递的平台') })
       const { exported, next, work } = await exportWorkPackage(store, desk, body.id)
       const articleMd = await readFile(exported.articlePath, 'utf8')

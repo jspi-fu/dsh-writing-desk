@@ -281,3 +281,36 @@ test('registerVendor 注册命令形状(独立断言,便于扩 vendor 清单时�
   await registerVendor('Google\\Chrome', 'C:/manifest.json', async (cmd, args) => { runs.push([cmd, args]) })
   assert.deepEqual(runs[0], ['reg', ['add', 'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\app.dswritesync.plugin', '/ve', '/t', 'REG_SZ', '/d', 'C:/manifest.json', '/f']])
 })
+
+test('投递目标快照:写 targets.json,只留白名单字段', async () => {
+  const core = newCore()
+  const response = await core.handlers.targets({
+    at: '2026-11-24T00:00:00.000Z',
+    platforms: [{ id: 'zhihu', name: '知乎', authenticated: true, extra: 'drop' }],
+    cms: [{
+      id: 'cms_wordpress_12345678', type: 'wordpress', name: '我的博客',
+      url: 'https://blog.example.com', username: 'me', connected: true, password: 'secret',
+    }],
+    hidden: ['weixin'],
+  })
+  assert.equal(response.ok, true)
+  const snapshot = JSON.parse(await readFile(paths.targets, 'utf8'))
+  assert.deepEqual(snapshot.platforms, [{ id: 'zhihu', name: '知乎', authenticated: true }])
+  assert.deepEqual(snapshot.cms, [{
+    id: 'cms_wordpress_12345678', type: 'wordpress', name: '我的博客',
+    url: 'https://blog.example.com', username: 'me', connected: true,
+  }])
+  assert.deepEqual(snapshot.hidden, ['weixin'])
+  assert.equal(JSON.stringify(snapshot).includes('secret'), false)
+})
+
+test('投递目标快照:坏 id 与未知 CMS 类型被丢弃', async () => {
+  const core = newCore()
+  await core.handlers.targets({
+    platforms: [{ id: '../etc/passwd', name: 'bad' }],
+    cms: [{ id: 'cms_bad', type: 'ghost', name: 'bad' }],
+  })
+  const snapshot = JSON.parse(await readFile(paths.targets, 'utf8'))
+  assert.deepEqual(snapshot.platforms, [])
+  assert.deepEqual(snapshot.cms, [])
+})

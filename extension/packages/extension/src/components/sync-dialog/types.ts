@@ -35,27 +35,3 @@ export interface PlatformProgress {
 }
 
 export type DialogStatus = 'loading' | 'idle' | 'syncing' | 'completed' | 'failed' | 'cancelled'
-
-export interface SyncDialogProps {
-  // Data
-  article: Article | null
-  platforms: Platform[]
-  status: DialogStatus
-  selectedPlatforms: string[]
-  results: SyncResult[]
-  platformProgress: Map<string, PlatformProgress>
-  error: string | null
-
-  // Actions
-  onTogglePlatform: (id: string) => void
-  onSelectAll: () => void
-  onDeselectAll: () => void
-  onStartSync: () => void
-  onRetryFailed: () => void
-  onReset: () => void
-  onCancel?: () => void
-
-  // Optional
-  onClose?: () => void
-  className?: string
-}

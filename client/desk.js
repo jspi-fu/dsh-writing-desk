@@ -257,6 +257,17 @@ export async function exportForPublish(id) {
   }
 }
 
+// 投递目标(ADR 0017):扩展上报的登录态与自建站快照;读不到就返回 null,
+// 发布对话框退回静态平台表。只读,不写 Store。
+export async function fetchDispatchTargets() {
+  try {
+    const data = await request('bridge/targets')
+    return data?.targets ?? null
+  } catch {
+    return null
+  }
+}
+
 // 一键投递(ADR 0009/0012):发布包导出后把任务写进 outbox,本地助手(NM)分片下发浏览器扩展,
 // 扩展只到草稿箱;回执由 host 消化成 item.dispatches,状态仍由用户确认。
 export async function dispatchPublish(id, platforms) {

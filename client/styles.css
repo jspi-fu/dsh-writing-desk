@@ -2007,3 +2007,12 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 @media (max-width: 560px) {
   .md-board-page { padding-left: 10px; padding-right: 10px; }
 }
+
+/* 投递目标分组(ADR 0017):平台与自建站分开,未登录/未连接的收在「更多」里 */
+.md-dispatch-groups { display: flex; flex-direction: column; gap: 10px; }
+.md-dispatch-group { display: flex; flex-direction: column; gap: 4px; }
+.md-dispatch-group-title { color: var(--ink3); font-size: 11.5px; letter-spacing: .02em; }
+.md-dispatch-picks .md-chip:disabled { opacity: .42; cursor: not-allowed; }
+.md-dispatch-picks .md-chip:disabled:hover { color: var(--ink3); background: transparent; }
+.md-dispatch-more { align-self: flex-start; color: var(--ink3); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.md-dispatch-more:hover { color: var(--ink); }

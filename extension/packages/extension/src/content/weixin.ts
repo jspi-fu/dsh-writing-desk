@@ -1,179 +1,13 @@
 /**
- * 微信公众号文章页 Content Script
- * FAB 按钮 → 打开 SyncDialog iframe overlay
+ * 微信公众号文章页 Content Script(ADR 0017)
+ *
+ * 只保留提取与预处理:通用提取器明确把公众号页交给这里,所以不能连脚本一起删。
+ * 页面上的同步 FAB 与 iframe 对话框已退役,收录入口在侧栏。
  */
-
 import { htmlToMarkdownNative, type PreprocessConfig } from '@wechatsync/core'
 import { preprocessContentDOM, preprocessForPlatform, backupAndSimplifyCodeBlocks, restoreCodeBlocks } from '../lib/content-processor'
-import { createSyncFab } from '../lib/fab'
-import { initI18n, t } from '../lib/i18n'
 
 ;(() => {
-
-initI18n()
-
-let dialogIframe: HTMLIFrameElement | null = null
-let dialogContainer: HTMLElement | null = null
-
-function injectSyncButton() {
-  const articleContent = document.querySelector('#js_content')
-  if (!articleContent) return
-  if (document.querySelector('#wechatsync-fab')) return
-
-  const fab = createSyncFab({
-    onClick: () => openSyncDialog(),
-  })
-
-  document.body.appendChild(fab)
-}
-
-/**
- * Open sync dialog iframe overlay.
- * Shows loading indicator immediately, then swaps to dialog when ready.
- */
-async function openSyncDialog() {
-  if (dialogContainer) return
-
-  // 1. Show loading overlay immediately
-  dialogContainer = document.createElement('div')
-  dialogContainer.id = 'wechatsync-dialog-overlay'
-  dialogContainer.style.cssText = `
-    position: fixed; inset: 0; z-index: 2147483647;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.3);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `
-  dialogContainer.addEventListener('click', (e) => {
-    if (e.target === dialogContainer) closeSyncDialog()
-  })
-
-  const loadingEl = document.createElement('div')
-  loadingEl.style.cssText = `
-    background: white; padding: 20px 32px; border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-    display: flex; align-items: center; gap: 12px;
-  `
-  loadingEl.innerHTML = `
-    <div style="width:20px;height:20px;border:3px solid #e5e5e5;border-top-color:#07c160;border-radius:50%;animation:wcs-spin 0.8s linear infinite;"></div>
-    <span style="font-size:14px;color:#333;">${t('正在提取文章...')}</span>
-    <style>@keyframes wcs-spin { to { transform: rotate(360deg); } }</style>
-  `
-  dialogContainer.appendChild(loadingEl)
-  document.body.appendChild(dialogContainer)
-
-  // 2. Extract article + load platforms + hidden config in parallel
-  const [article, platformResp, hiddenResult] = await Promise.all([
-    Promise.resolve(extractWeixinArticle()),
-    chrome.runtime.sendMessage({ type: 'CHECK_ALL_AUTH' }).catch(() => ({ platforms: [] })),
-    chrome.storage.local.get('hiddenPlatforms').catch(() => ({ hiddenPlatforms: [] })),
-  ])
-
-  if (!article) {
-    closeSyncDialog()
-    return
-  }
-
-  const hiddenSet = new Set<string>(hiddenResult.hiddenPlatforms || [])
-  const platforms = (platformResp.platforms || []).filter((p: any) => !hiddenSet.has(p.id))
-
-  // 3. Swap loading for iframe
-  if (!dialogContainer) return // closed during loading
-  loadingEl.remove()
-
-  dialogIframe = document.createElement('iframe')
-  dialogIframe.src = chrome.runtime.getURL('src/sync-dialog/index.html')
-  dialogIframe.style.cssText = `
-    width: 400px; height: 520px; border: none;
-    border-radius: 12px; overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  `
-  dialogContainer.appendChild(dialogIframe)
-
-  // 4. Send data when iframe is ready
-  const handleReady = (event: MessageEvent) => {
-    try {
-      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-      if (data.type === 'SYNC_DIALOG_READY') {
-        window.removeEventListener('message', handleReady)
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'INIT_DATA',
-          article,
-          platforms,
-        }), '*')
-      }
-    } catch { /* ignore */ }
-  }
-  window.addEventListener('message', handleReady)
-}
-
-function closeSyncDialog() {
-  if (dialogContainer) {
-    dialogContainer.remove()
-    dialogContainer = null
-    dialogIframe = null
-  }
-}
-
-// Listen to messages from iframe
-window.addEventListener('message', (event) => {
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-
-    if (data.type === 'CLOSE_SYNC_DIALOG') {
-      closeSyncDialog()
-    } else if (data.type === 'START_SYNC') {
-      // Forward sync request to background
-      const syncId = data.syncId
-      ;(async () => {
-        try {
-          const response = await chrome.runtime.sendMessage({
-            type: 'SYNC_ARTICLE',
-            payload: {
-              article: data.article,
-              platforms: data.platforms,
-              source: 'weixin',
-              syncId,
-            },
-          })
-          // Forward completion to iframe
-          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-            type: 'SYNC_COMPLETE',
-            results: response.results,
-            rateLimitWarning: response.rateLimitWarning,
-            syncId,
-          }), '*')
-        } catch (error) {
-          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-            type: 'SYNC_ERROR',
-            error: (error as Error).message,
-            syncId,
-          }), '*')
-        }
-      })()
-    }
-  } catch { /* ignore */ }
-})
-
-// Forward progress messages from background to iframe
-chrome.runtime.onMessage.addListener((message) => {
-  if (!dialogIframe) return
-
-  if (message.type === 'SYNC_PROGRESS') {
-    dialogIframe.contentWindow?.postMessage(JSON.stringify({
-      type: 'SYNC_PROGRESS',
-      result: message.payload?.result,
-      syncId: message.syncId,
-    }), '*')
-  }
-  if (message.type === 'SYNC_DETAIL_PROGRESS') {
-    dialogIframe.contentWindow?.postMessage(JSON.stringify({
-      type: 'SYNC_DETAIL_PROGRESS',
-      progress: message.payload,
-      syncId: message.syncId,
-    }), '*')
-  }
-})
-
 // Respond to popup's article extraction request and preprocessing
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'EXTRACT_ARTICLE') {
@@ -238,12 +72,5 @@ function extractWeixinArticle() {
     restoreCodeBlocks(codeBlockBackups)
     throw e
   }
-}
-
-// Inject on page load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', injectSyncButton)
-} else {
-  injectSyncButton()
 }
 })()

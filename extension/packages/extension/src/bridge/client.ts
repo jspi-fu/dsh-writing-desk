@@ -23,6 +23,7 @@ import {
 } from './transport'
 import { DeliveryPipeline } from './delivery'
 import { TaskPresenter } from './task-presentation'
+import type { DispatchTargetSnapshot } from '../lib/targets'
 
 /** 工作台目录（desk.catalog 的 payload）。 */
 export interface DeskCatalog {
@@ -135,6 +136,14 @@ export class BridgeClient {
   async getCatalog(): Promise<DeskCatalog> {
     const response = await this.transport.request<Record<string, unknown>>('catalog')
     return this.normalizeCatalog(response)
+  }
+
+  /**
+   * 上报投递目标快照(ADR 0017):平台登录态 + 自建站账户元数据,不含凭证。
+   * 助手原子写 bridge/targets.json,工作台发布对话框读它渲染菜单。
+   */
+  async saveTargets(snapshot: DispatchTargetSnapshot): Promise<void> {
+    await this.transport.request('targets', snapshot as unknown as Record<string, unknown>)
   }
 
   /**

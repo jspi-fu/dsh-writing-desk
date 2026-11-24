@@ -400,6 +400,7 @@ const handlers = {
     if (!platform) throw new Error(tr('投递缺少平台'))
     const entry = {
       platform,
+      ...(typeof dispatch.label === 'string' && dispatch.label.trim() ? { label: dispatch.label.trim().slice(0, 60) } : {}),
       ok: dispatch.ok === true,
       at: now,
       ...(typeof dispatch.url === 'string' && dispatch.url ? { url: dispatch.url } : {}),

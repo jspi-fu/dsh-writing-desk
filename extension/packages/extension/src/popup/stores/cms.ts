@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { createLogger } from '../../lib/logger'
+import { cmsAccountId } from '../../lib/cms-id'
 
 const logger = createLogger('CMSStore')
 
@@ -47,7 +48,7 @@ export const useCMSStore = create<CMSState>((set) => ({
       // 直接从 storage 读取，避免 Zustand state 未加载导致覆盖
       const storage = await chrome.storage.local.get('cmsAccounts')
       const accounts: CMSAccount[] = storage.cmsAccounts || []
-      const id = `cms_${Date.now()}`
+      const id = cmsAccountId({ type: accountData.type, url: accountData.url, username: accountData.username })
 
       const newAccount: CMSAccount = {
         id,

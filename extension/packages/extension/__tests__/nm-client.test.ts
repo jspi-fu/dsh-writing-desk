@@ -157,8 +157,20 @@ describe('NM client:任务下发', () => {
     expect(article.markdown).toContain('# 正文标题')
     expect(article.markdown).toContain('data:image/png;base64,UE5HREFUQQ==')
     expect(article.markdown).not.toContain('(images/cover.png)')
-    // 投递即弹对话框(ADR 0010 沿用):无已开页面时开 396x560 同步窗口
-    expect(chromeMock.windows.create).toHaveBeenCalled()
+    // ADR 0017:没有已打开的侧栏时不弹窗,投递收据由工作台呈现
+    expect(chromeMock.windows.create).not.toHaveBeenCalled()
+  })
+
+  it('已打开的侧栏收到 /dispatch 导航与任务已排队消息', async () => {
+    chromeMock.runtime.getContexts = vi.fn(async () => ([
+      { contextType: 'SIDE_PANEL', documentUrl: 'chrome-extension://abc/src/popup/index.html' },
+    ]))
+    install(createResponder())
+    await makeBridge().processPendingTasks()
+
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'PANEL_NAVIGATE', path: '/dispatch' })
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'SYNC_TASK_QUEUED' })
+    expect(chromeMock.windows.create).not.toHaveBeenCalled()
   })
 
   it('单分片失败自动重试,重试成功后任务继续', async () => {

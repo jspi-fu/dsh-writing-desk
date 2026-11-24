@@ -16,8 +16,7 @@ import { applyOps, newId } from './ops.js'
 import { readPairing } from './pairing.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
-// 投递平台清单是纯数据:与 extension 适配器对齐的唯一来源在 platforms.js
-import { BRIDGE_ADAPTERS } from './platforms.js'
+import { isDispatchTarget, readDispatchTargets, targetLabel, targetsPath } from './targets.js'
 import { isHttpUrl } from './url.js'
 
 export function bridgePaths() {
@@ -28,6 +27,7 @@ export function bridgePaths() {
     outbox: join(root, 'outbox'),
     receipts: join(root, 'receipts'),
     catalog: join(root, 'catalog.json'),
+    targets: targetsPath(),
     heartbeat: join(root, 'heartbeat'),
   }
 }
@@ -269,6 +269,8 @@ export async function digestInbox(store, filesDir) {
  */
 export async function digestReceipts(store) {
   const paths = await ensureBridgeDirs()
+  // 快照决定哪些自建站 id 可信;缺失时只认静态 DSL 表。
+  const targets = await readDispatchTargets()
   let names = []
   try {
     names = (await readdir(paths.receipts)).filter(name => /^dispatch-[\w-]+\.json$/.test(name))
@@ -286,7 +288,7 @@ export async function digestReceipts(store) {
       const results = Array.isArray(payload.results) ? payload.results.slice(0, 10) : []
       const ops = []
       for (const row of results) {
-        if (!row || typeof row.platform !== 'string' || !Object.hasOwn(BRIDGE_ADAPTERS, row.platform)) continue
+        if (!row || !isDispatchTarget(row.platform, targets)) continue
         const url = typeof row.url === 'string' && row.url ? row.url : null
         const safeUrl = url && isHttpUrl(url) ? url : null
         ops.push({
@@ -294,6 +296,7 @@ export async function digestReceipts(store) {
           id: payload.itemId,
           dispatch: {
             platform: row.platform,
+            label: text(row.platformName, 60) || targetLabel(row.platform, targets),
             ok: row.ok === true,
             ...(safeUrl ? { url: safeUrl } : {}),
             ...(row.ok !== true && typeof row.error === 'string' ? { error: row.error.slice(0, 200) } : {}),
@@ -331,6 +334,7 @@ export async function digestReceipts(store) {
  */
 export async function writePublishTask(task) {
   const paths = await ensureBridgeDirs()
+  const targets = await readDispatchTargets()
   const operationId = randomUUID()
   const payload = {
     kind: 'publish',
@@ -339,7 +343,7 @@ export async function writePublishTask(task) {
     title: text(task.title, 200) ?? '',
     articleMd: text(task.articleMd, 200000) ?? '',
     images: task.images ?? {},
-    platforms: (Array.isArray(task.platforms) ? task.platforms : []).filter(p => Object.hasOwn(BRIDGE_ADAPTERS, p)),
+    platforms: (Array.isArray(task.platforms) ? task.platforms : []).filter(p => isDispatchTarget(p, targets)),
   }
   if (!payload.platforms.length) throw new Error(tr('没有可投递的平台'))
   const file = join(paths.outbox, `publish-${operationId}.json`)

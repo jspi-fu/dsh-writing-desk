@@ -37,6 +37,8 @@ export interface ContentResponse extends NmResponse {
 /** 逐平台投递结果(performSync 行)→ 投递箱回执行。 */
 export interface DispatchResultRow {
   platform: string
+  /** 自建站账户名;工作台历史用它,账户删掉后仍读得懂 */
+  platformName?: string
   ok: boolean
   url?: string
   error?: string
@@ -91,8 +93,9 @@ export function mapDispatchResults(
   return platforms.map((platform) => {
     const row = list.find((candidate: unknown) =>
       typeof candidate === 'object' && candidate !== null && (candidate as { platform?: unknown }).platform === platform)
-    const typed = row as { success?: unknown; postUrl?: unknown; error?: unknown } | undefined
+    const typed = row as { success?: unknown; postUrl?: unknown; error?: unknown; platformName?: unknown } | undefined
     const mapped: DispatchResultRow = { platform, ok: typed?.success === true }
+    if (typeof typed?.platformName === 'string' && typed.platformName) mapped.platformName = typed.platformName.slice(0, 100)
     if (typeof typed?.postUrl === 'string' && typed.postUrl) mapped.url = typed.postUrl
     if (typed?.success !== true) {
       mapped.error = typeof typed?.error === 'string' && typed.error ? typed.error : 'no result'

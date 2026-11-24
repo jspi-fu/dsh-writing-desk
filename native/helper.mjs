@@ -44,6 +44,7 @@ export function mailboxPaths(env = process.env) {
     outbox: path.join(root, 'outbox'),
     receipts: path.join(root, 'receipts'),
     catalog: path.join(root, 'catalog.json'),
+    targets: path.join(root, 'targets.json'),
     heartbeat: path.join(root, 'heartbeat'),
     log: path.join(root, 'helper.log'),
   }
@@ -70,6 +71,51 @@ export async function writeJsonAtomic(file, value) {
 /** 只允许安全字符进文件名,防止把 operationId 拼出目录穿越。 */
 export function safeOperationId(value) {
   return typeof value === 'string' && /^[\w-]{1,200}$/.test(value) ? value : null
+}
+
+/**
+ * 投递目标快照(ADR 0017):扩展上报「哪些平台已登录、哪些自建站已连接」,
+ * 工作台据此渲染发布菜单。只保留白名单字段——密码与 cookie 不在协议里。
+ */
+export function sanitizeTargetSnapshot(body) {
+  if (!isPlainObject(body)) return null
+  const safeId = value => (typeof value === 'string' && /^[\w-]{1,80}$/.test(value) ? value : '')
+  const text = (value, cap) => (typeof value === 'string' ? value.slice(0, cap) : '')
+  const cmsTypes = new Set(['wordpress', 'typecho', 'metaweblog'])
+
+  const platforms = []
+  for (const row of Array.isArray(body.platforms) ? body.platforms : []) {
+    if (!isPlainObject(row)) continue
+    const id = safeId(row.id)
+    if (!id) continue
+    platforms.push({ id, name: text(row.name, 100) || id, authenticated: row.authenticated === true })
+    if (platforms.length >= 50) break
+  }
+
+  const cms = []
+  for (const row of Array.isArray(body.cms) ? body.cms : []) {
+    if (!isPlainObject(row) || !cmsTypes.has(row.type)) continue
+    const id = safeId(row.id)
+    if (!id) continue
+    cms.push({
+      id,
+      type: row.type,
+      name: text(row.name, 100) || id,
+      url: text(row.url, 500),
+      username: text(row.username, 200),
+      connected: row.connected === true,
+    })
+    if (cms.length >= 50) break
+  }
+
+  const hidden = [...new Set((Array.isArray(body.hidden) ? body.hidden : []).map(safeId).filter(Boolean))].slice(0, 50)
+
+  return {
+    at: typeof body.at === 'string' ? body.at.slice(0, 40) : new Date().toISOString(),
+    platforms,
+    cms,
+    hidden,
+  }
 }
 
 /** argv 里扫 origin(Windows 上 --parent-window 在前,顺序不作假设)。 */
@@ -265,6 +311,15 @@ export function createCore({ paths = mailboxPaths(), now = Date.now, startedAt =
 
     async tasks() {
       return { ok: true, tasks: await listTasks() }
+    },
+
+    /** 投递目标快照:只写 targets.json,工作台读它渲染发布菜单。 */
+    async targets(body) {
+      const snapshot = sanitizeTargetSnapshot(body)
+      if (!snapshot) return { ok: false, error: 'payload required' }
+      await ensureDirs()
+      await writeJsonAtomic(paths.targets, snapshot)
+      return { ok: true }
     },
 
     /** 原子 rename 认领;已在处理中的任务原样返回元数据(重连续传)。 */

@@ -90,7 +90,6 @@ export default defineConfig(({ mode }) => {
     rollupOptions: {
       input: {
         popup: resolve(__dirname, 'src/popup/index.html'),
-        'sync-dialog': resolve(__dirname, 'src/sync-dialog/index.html'),
         preprocessor: resolve(__dirname, 'src/preprocessor/index.html'),
       },
     },

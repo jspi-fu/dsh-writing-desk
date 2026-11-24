@@ -4,7 +4,7 @@
 import React from 'react'
 import { BRIDGE_ADAPTERS } from '../src/platforms.js'
 import { PUBLICATION_LABEL, workHasText, workState, workTitle } from '../src/work.js'
-import { closeWork, deleteWork, dispatchPublish, EMPTY_LIST, exportForPublish, getDesk, openWork, publishWork, revealWorkFiles, saveWorkFiles, toast, useDesk } from './desk.js'
+import { closeWork, deleteWork, dispatchPublish, EMPTY_LIST, exportForPublish, fetchDispatchTargets, getDesk, openWork, publishWork, revealWorkFiles, saveWorkFiles, toast, useDesk } from './desk.js'
 import { plural, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { LearnFromWorksDialog } from './learn-from-works.jsx'
@@ -19,7 +19,8 @@ const FORMS = [
 ]
 
 // 投递平台从 src/platforms.js 的 BRIDGE_ADAPTERS 派生(唯一来源),不再手工镜像。
-const DISPATCH_TARGETS = Object.entries(BRIDGE_ADAPTERS).map(([id, label]) => ({ id, label }))
+// 自建站是动态目标,来自扩展上报的 targets 快照(ADR 0017)。
+const DSL_TARGETS = Object.entries(BRIDGE_ADAPTERS).map(([id, label]) => ({ id, label, kind: 'dsl' }))
 
 /** 投递状态行:publication.dispatches 里的逐平台结果。 */
 function DispatchList({ dispatches }) {
@@ -28,7 +29,7 @@ function DispatchList({ dispatches }) {
       {(dispatches ?? []).map((row, index) => (
         <li key={`${row.platform}-${index}`}>
           <span className={`md-dot ${row.ok ? 'is-ok' : 'is-fail'}`} aria-hidden="true" />
-          <span className="md-dispatch-platform">{t(DISPATCH_TARGETS.find(target => target.id === row.platform)?.label ?? row.platform)}</span>
+          <span className="md-dispatch-platform">{t(row.label ?? DSL_TARGETS.find(target => target.id === row.platform)?.label ?? row.platform)}</span>
           {row.ok
             ? (row.url ? <a href={row.url} target="_blank" rel="noreferrer">{t('打开草稿')}</a> : <span className="md-muted">{t('已到草稿箱')}</span>)
             : <span className="md-dispatch-error">{row.error ?? t('投递失败')}</span>}
@@ -43,7 +44,16 @@ function DispatchList({ dispatches }) {
 function PublishDialog({ work, onClose }) {
   const [picks, setPicks] = React.useState([])
   const [busy, setBusy] = React.useState(false)
+  const [targets, setTargets] = React.useState(null)
+  const [showMore, setShowMore] = React.useState(false)
   const dispatches = work.publication?.dispatches ?? []
+
+  React.useEffect(() => {
+    let live = true
+    fetchDispatchTargets().then(next => { if (live) setTargets(next) })
+    return () => { live = false }
+  }, [])
+
   const toggle = (id) => setPicks(current => current.includes(id) ? current.filter(row => row !== id) : [...current, id])
   const send = async () => {
     if (!picks.length) return
@@ -56,18 +66,65 @@ function PublishDialog({ work, onClose }) {
     onClose()
     await publishWork(work.id)
   }
+
+  // 快照缺失时退回静态表(扩展没连过/还没上报):仍然能投递 DSL 平台。
+  const hidden = new Set(targets?.hidden ?? [])
+  const authed = new Map((targets?.platforms ?? []).map(row => [row.id, row.authenticated === true]))
+  const dslStatus = (id) => !targets ? 'ready' : authed.get(id) ? 'ready' : 'login'
+  const mainTargets = [
+    ...DSL_TARGETS.filter(target => dslStatus(target.id) === 'ready' && !hidden.has(target.id)),
+    ...(targets?.cms ?? []).filter(site => site.connected).map(site => ({ id: site.id, label: site.name, kind: 'cms' })),
+  ]
+  const moreTargets = [
+    ...DSL_TARGETS.filter(target => !mainTargets.some(row => row.id === target.id))
+      .map(target => ({ ...target, disabled: dslStatus(target.id) !== 'ready' })),
+    ...(targets?.cms ?? []).filter(site => !site.connected)
+      .map(site => ({ id: site.id, label: site.name, kind: 'cms', disabled: true })),
+  ]
+
+  const chip = (target) => (
+    <button type="button" key={target.id}
+      className={`md-chip ${picks.includes(target.id) ? 'is-active' : ''}`}
+      aria-pressed={picks.includes(target.id)}
+      disabled={target.disabled}
+      title={target.disabled ? (target.kind === 'cms' ? t('站点未连接,请在扩展账号页检查') : t('平台未登录,请在扩展账号页登录')) : undefined}
+      onClick={() => toggle(target.id)}>{t(target.label)}</button>
+  )
+
   return (
     <Dialog title={t('发布')} onClose={onClose}>
       <div className="md-form">
         <div className="md-field">
           <span>{t('投递到浏览器扩展(只到草稿箱)')}</span>
-          <div className="md-dispatch-picks" role="group" aria-label={t('选择平台')}>
-            {DISPATCH_TARGETS.map(target => (
-              <button type="button" key={target.id} className={`md-chip ${picks.includes(target.id) ? 'is-active' : ''}`}
-                aria-pressed={picks.includes(target.id)} onClick={() => toggle(target.id)}>{t(target.label)}</button>
-            ))}
-            <button type="button" className="md-btn is-small is-primary" onClick={send}
-              disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
+          <div className="md-dispatch-groups">
+            <div className="md-dispatch-group">
+              <span className="md-dispatch-group-title">{t('平台')}</span>
+              <div className="md-dispatch-picks" role="group" aria-label={t('选择平台')}>
+                {mainTargets.filter(target => target.kind === 'dsl').map(chip)}
+                <button type="button" className="md-btn is-small is-primary" onClick={send}
+                  disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
+              </div>
+            </div>
+            {mainTargets.some(target => target.kind === 'cms') && (
+              <div className="md-dispatch-group">
+                <span className="md-dispatch-group-title">{t('自建站')}</span>
+                <div className="md-dispatch-picks" role="group" aria-label={t('选择自建站')}>
+                  {mainTargets.filter(target => target.kind === 'cms').map(chip)}
+                </div>
+              </div>
+            )}
+            {moreTargets.length > 0 && (
+              <div className="md-dispatch-group">
+                <button type="button" className="md-dispatch-more" aria-expanded={showMore} onClick={() => setShowMore(value => !value)}>
+                  {showMore ? t('收起') : t('更多')}
+                </button>
+                {showMore && (
+                  <div className="md-dispatch-picks" role="group" aria-label={t('更多投递目标')}>
+                    {moreTargets.map(chip)}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {dispatches.length ? <DispatchList dispatches={dispatches} /> : null}
         </div>

@@ -250,6 +250,51 @@ test('发布回执落成作品 dispatches,投递不改发布状态', async () =>
   assert.ok(!(await readdir(paths.receipts)).includes('dispatch-r1.json'))
 })
 
+test('投递目标快照让自建站可投递,回执记下站点显示名', async () => {
+  const paths = bridgePaths()
+  await mkdir(paths.root, { recursive: true })
+  await writeFile(paths.targets, JSON.stringify({
+    at: '2026-11-24T00:00:00.000Z',
+    platforms: [{ id: 'zhihu', name: '知乎', authenticated: true }],
+    cms: [{
+      id: 'cms_wordpress_12345678', type: 'wordpress', name: '我的博客',
+      url: 'https://blog.example.com', username: 'me', connected: true,
+    }],
+    hidden: [],
+  }))
+
+  const task = await writePublishTask({
+    itemId: 'it_cms',
+    title: '自建站稿',
+    articleMd: '# 正文',
+    images: {},
+    platforms: ['zhihu', 'cms_wordpress_12345678', 'cms_unknown_00000000', 'unknown-platform'],
+  })
+  const raw = JSON.parse(await readFile(task.file, 'utf8'))
+  assert.deepEqual(raw.platforms, ['zhihu', 'cms_wordpress_12345678'])
+
+  // 回执里的自建站 id 按快照放行,并带上账户名供历史展示
+  const state0 = await store.read()
+  const work0 = state0.works.find(row => row.current.title === '投递目标')
+  await writeFile(join(paths.receipts, 'dispatch-r-cms.json'), JSON.stringify({
+    operationId: 'r-cms',
+    itemId: work0.id,
+    results: [{
+      platform: 'cms_wordpress_12345678',
+      platformName: '改名后的博客',
+      ok: true,
+      url: 'https://blog.example.com/wp-admin/post.php?post=1',
+    }],
+  }))
+  await digestReceipts(store)
+  const state = await store.read()
+  const work = state.works.find(row => row.id === work0.id)
+  const row = work.publication.dispatches.find(dispatch => dispatch.platform === 'cms_wordpress_12345678')
+  assert.equal(row.ok, true)
+  // 回执自带的显示名优先于快照,账户改名/删除后历史仍读得懂
+  assert.equal(row.label, '改名后的博客')
+})
+
 test('回执里的非 http(s) 草稿链接被剥掉', async () => {
   const state0 = await store.read()
   const work0 = state0.works.find(row => row.current.title === '投递目标')

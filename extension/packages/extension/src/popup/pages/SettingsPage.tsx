@@ -85,7 +85,6 @@ export function SettingsPage() {
     dshActive: false,
     lastError: null,
   })
-  const [floatingButtonEnabled, setFloatingButtonEnabled] = useState(false)
   const [deepCleanEnabled, setDeepCleanEnabled] = useState(false)
   const [allPlatforms, setAllPlatforms] = useState<PlatformInfo[]>([])
   const [hiddenPlatforms, setHiddenPlatforms] = useState<Set<string>>(new Set())
@@ -110,9 +109,8 @@ export function SettingsPage() {
     })
 
     chrome.storage.local.get(
-      ['floatingButtonEnabled', 'deepCleanEnabled', HIDDEN_PLATFORMS_KEY],
+      ['deepCleanEnabled', HIDDEN_PLATFORMS_KEY],
       result => {
-        setFloatingButtonEnabled(result.floatingButtonEnabled ?? false)
         setDeepCleanEnabled(result.deepCleanEnabled ?? false)
         setHiddenPlatforms(new Set(result[HIDDEN_PLATFORMS_KEY] || []))
       }
@@ -121,18 +119,22 @@ export function SettingsPage() {
     // 先渲染缓存，再等登录态检查回包
     chrome.storage.local.get('platformListCache', result => {
       if (result.platformListCache?.length) {
-        setAllPlatforms(prev => prev.length ? prev : result.platformListCache.map((p: any) => ({
-          id: p.id, name: p.name, icon: p.icon, isAuthenticated: p.isAuthenticated,
-        })))
+        setAllPlatforms(prev => prev.length ? prev : result.platformListCache
+          .filter((p: any) => p.sourceType !== 'cms')
+          .map((p: any) => ({
+            id: p.id, name: p.name, icon: p.icon, isAuthenticated: p.isAuthenticated,
+          })))
       }
     })
     chrome.runtime.sendMessage(
       { type: 'CHECK_ALL_AUTH', payload: { forceRefresh: false } },
       response => {
         if (response?.platforms?.length) {
-          setAllPlatforms(response.platforms.map((p: any) => ({
-            id: p.id, name: p.name, icon: p.icon, isAuthenticated: p.isAuthenticated,
-          })))
+          setAllPlatforms(response.platforms
+            .filter((p: any) => p.sourceType !== 'cms')
+            .map((p: any) => ({
+              id: p.id, name: p.name, icon: p.icon, isAuthenticated: p.isAuthenticated,
+            })))
         }
       }
     )
@@ -149,10 +151,8 @@ export function SettingsPage() {
     }
   }, [])
 
-  const toggleFloatingButton = () => {
-    const next = !floatingButtonEnabled
-    setFloatingButtonEnabled(next)
-    chrome.storage.local.set({ floatingButtonEnabled: next })
+  const refreshTargets = () => {
+    chrome.runtime.sendMessage({ type: 'REFRESH_TARGETS' }).catch(() => {})
   }
 
   const toggleDeepClean = () => {
@@ -169,20 +169,20 @@ export function SettingsPage() {
       } else {
         next.add(platformId)
       }
-      chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: Array.from(next) })
+      chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: Array.from(next) }).then(refreshTargets)
       return next
     })
   }
 
   const showAllPlatforms = () => {
     setHiddenPlatforms(new Set())
-    chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: [] })
+    chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: [] }).then(refreshTargets)
   }
 
   const hideAllPlatforms = () => {
     const all = new Set(allPlatforms.map(p => p.id))
     setHiddenPlatforms(all)
-    chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: Array.from(all) })
+    chrome.storage.local.set({ [HIDDEN_PLATFORMS_KEY]: Array.from(all) }).then(refreshTargets)
   }
 
   // 按当前列表过滤计算，避免 hiddenPlatforms 含已下线平台时计数偏小甚至为负
@@ -317,7 +317,7 @@ export function SettingsPage() {
             </div>
           </Section>
 
-          <Section title={t('同步设置')}>
+          <Section title={t('投递设置')}>
             <button
               type="button"
               onClick={() => setView('platforms')}
@@ -342,22 +342,10 @@ export function SettingsPage() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium">{t('深度格式清理')}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('同步前通过 Markdown 清理格式，可能损失部分排版')}
+                  {t('投递前通过 Markdown 清理格式，可能损失部分排版')}
                 </p>
               </div>
               <Switch checked={deepCleanEnabled} label={t('深度格式清理')} onChange={toggleDeepClean} />
-            </div>
-          </Section>
-
-          <Section title={t('网页功能')}>
-            <div className="flex min-h-[56px] items-center gap-3 px-4 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{t('悬浮同步按钮')}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {t('在网页右下角显示快捷同步按钮')}
-                </p>
-              </div>
-              <Switch checked={floatingButtonEnabled} label={t('悬浮同步按钮')} onChange={toggleFloatingButton} />
             </div>
           </Section>
 

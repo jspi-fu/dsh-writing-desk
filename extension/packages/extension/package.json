@@ -2,7 +2,7 @@
   "name": "@wechatsync/extension",
   "version": "2.0.10",
   "private": true,
-  "description": "DSwritesync 私有分支：收进网页并同步文章到 19 个平台，支持 WordPress 等自建站",
+  "description": "DSwritesync 私有分支：收录网页并把作品投递到平台草稿箱，支持 WordPress 等自建站",
   "license": "GPL-3.0",
   "type": "module",
   "scripts": {

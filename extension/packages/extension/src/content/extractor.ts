@@ -16,7 +16,6 @@ import { extractArticle as extractWithReader, ReaderResult } from '../lib/reader
 import { htmlToMarkdownNative, type PreprocessConfig } from '@wechatsync/core'
 import { createLogger } from '../lib/logger'
 import { preprocessContentDOM, preprocessForPlatform, backupAndSimplifyCodeBlocks, restoreCodeBlocks, type PreprocessResult } from '../lib/content-processor'
-import { createSyncFab } from '../lib/fab'
 import { initI18n, t } from '../lib/i18n'
 
 initI18n()
@@ -999,51 +998,6 @@ function extractWithSelectors(): ExtractedArticle | null {
     },
   }
 }
-
-// ========== 悬浮按钮 ==========
-
-let floatingButton: HTMLDivElement | null = null
-
-function injectFloatingButton() {
-  if (floatingButton) return
-  // 微信公众号页面已有专属悬浮按钮，不重复注入
-  if (window.location.hostname === 'mp.weixin.qq.com') return
-
-  const btn = createSyncFab({
-    onClick: () => {
-      chrome.runtime.sendMessage({ type: 'TRIGGER_SYNC' })
-    },
-  })
-  btn.setAttribute('data-wechatsync-ui', '')
-
-  document.body.appendChild(btn)
-  floatingButton = btn as HTMLDivElement
-}
-
-function removeFloatingButton() {
-  if (floatingButton) {
-    floatingButton.remove()
-    floatingButton = null
-  }
-}
-
-// 初始化：读取设置决定是否注入
-chrome.storage.local.get('floatingButtonEnabled', (result) => {
-  if (result.floatingButtonEnabled) {
-    injectFloatingButton()
-  }
-})
-
-// 监听设置变化，实时响应
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.floatingButtonEnabled) {
-    if (changes.floatingButtonEnabled.newValue) {
-      injectFloatingButton()
-    } else {
-      removeFloatingButton()
-    }
-  }
-})
 
 // ========== Loading 提示 ==========
 

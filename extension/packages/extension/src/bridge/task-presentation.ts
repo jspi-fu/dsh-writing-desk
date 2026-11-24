@@ -8,8 +8,6 @@ import { createLogger } from '../lib/logger'
 const logger = createLogger('TaskPresenter')
 
 const PENDING_SYNC_TASK_KEY = 'pendingSyncTask'
-const SYNC_TASK_WINDOW_WIDTH = 396
-const SYNC_TASK_WINDOW_HEIGHT = 560
 
 // 工作台投递的同步任务：performSync 前写入 storage，供同步页恢复
 export interface PendingSyncTask {
@@ -54,48 +52,16 @@ async function hasOpenExtensionPage(): Promise<boolean> {
 }
 
 /**
- * pendingSyncTask 已写入 storage：有已打开的同步页就通知它重读，
- * 否则开一个 396x560 的同步任务窗口。打开失败不影响同步本身。
+ * pendingSyncTask 已写入 storage:有已打开的侧栏就通知它重读并切到投递页。
+ * 没有页面时不弹窗——工作是工作台发起的,收据在那边,扩展不抢焦点(ADR 0017)。
  */
 async function presentSyncTask(): Promise<void> {
-  if (await hasOpenExtensionPage()) {
-    // The side panel/tab may be on Capture or another route. Navigate it to
-    // Sync so its mount recovers pendingSyncTask; the queued message covers the
-    // case where the Sync route is already mounted.
-    chrome.runtime.sendMessage({ type: 'PANEL_NAVIGATE', path: '/sync' }).catch(() => {})
-    chrome.runtime.sendMessage({ type: 'SYNC_TASK_QUEUED' }).catch(() => {})
-    return
-  }
-
-  const width = SYNC_TASK_WINDOW_WIDTH
-  const height = SYNC_TASK_WINDOW_HEIGHT
-  let left: number | undefined
-  let top: number | undefined
-  try {
-    const currentWindow = await chrome.windows.getCurrent()
-    if (typeof currentWindow.left === 'number' && typeof currentWindow.width === 'number') {
-      left = Math.round(currentWindow.left + (currentWindow.width - width) / 2)
-    }
-    if (typeof currentWindow.top === 'number' && typeof currentWindow.height === 'number') {
-      top = Math.round(currentWindow.top + (currentWindow.height - height) / 2)
-    }
-  } catch {
-    // 拿不到窗口位置时交给浏览器决定
-  }
-
-  try {
-    await chrome.windows.create({
-      url: `${chrome.runtime.getURL('src/popup/index.html')}#/sync`,
-      type: 'popup',
-      width,
-      height,
-      left,
-      top,
-      focused: true,
-    })
-  } catch (error) {
-    logger.warn('Failed to open sync task window:', error)
-  }
+  if (!await hasOpenExtensionPage()) return
+  // The side panel may be on Capture or another route; navigate it to Dispatch
+  // so its mount recovers pendingSyncTask; the queued message covers the case
+  // where the Dispatch route is already mounted.
+  chrome.runtime.sendMessage({ type: 'PANEL_NAVIGATE', path: '/dispatch' }).catch(() => {})
+  chrome.runtime.sendMessage({ type: 'SYNC_TASK_QUEUED' }).catch(() => {})
 }
 
 export class TaskPresenter {

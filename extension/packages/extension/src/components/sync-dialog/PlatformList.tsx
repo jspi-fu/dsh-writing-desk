@@ -86,7 +86,7 @@ export function PlatformList({
           <>
             <div className="flex items-center gap-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" strokeWidth={1.6} />
-              <span className="text-sm font-medium">{t('同步中')}</span>
+              <span className="text-sm font-medium">{t('投递中')}</span>
             </div>
             <span className="text-sm tabular-nums text-muted-foreground">
               {results.length}/{selectedPlatforms.length}
@@ -96,7 +96,7 @@ export function PlatformList({
         {isFinished && (
           <>
             <span className="text-sm font-medium">
-              {status === 'completed' ? t('同步完成') : status === 'failed' ? t('同步失败') : t('已取消')}
+              {status === 'completed' ? t('投递完成') : status === 'failed' ? t('投递失败') : t('已取消')}
             </span>
             <div className="flex items-center gap-2">
               {successCount > 0 && (

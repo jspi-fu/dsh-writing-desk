@@ -1,6 +1,6 @@
 # DSwritesync:以 Wechatsync 上游为基座重写扩展与 CLI
 
-Status: accepted(2026-11-19 grill 会话逐项定案;取代 ADR 0009 的扩展/CLI 实现路径,采集与投递的数据契约、「dispatches ≠ 已发布」红线不变)。**「CLI / 本地服务」实现路径 superseded by ADR 0012(2026-11-19):接入面改为 Native Messaging 自动配对,CLI 与 WS/token 退役**;vendored fork、扩展形态、收进/同步/投递契约仍以本文为准
+Status: accepted(2026-11-19 grill 会话逐项定案;取代 ADR 0009 的扩展/CLI 实现路径,采集与投递的数据契约、「dispatches ≠ 已发布」红线不变)。**「CLI / 本地服务」实现路径 superseded by ADR 0012(2026-11-19):接入面改为 Native Messaging 自动配对,CLI 与 WS/token 退役**;**扩展功能范围 superseded by ADR 0017(2026-11-24):独立同步、历史、CMS 与页面入口删除,扩展收敛为工作台浏览器端**;vendored fork、GPL 边界、配对与收录/投递契约仍以本文为准
 
 ## 背景
 

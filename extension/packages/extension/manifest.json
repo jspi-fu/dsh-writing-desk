@@ -64,7 +64,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*", "src/sync-dialog/index.html"],
+      "resources": ["assets/*"],
       "matches": ["<all_urls>"]
     }
   ]

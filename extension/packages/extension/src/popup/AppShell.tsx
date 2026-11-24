@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react'
-import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { HomeNew } from './pages/HomeNew'
+import { DispatchPage } from './pages/Dispatch'
 import { AccountsPage } from './pages/Accounts'
-import { HistoryPage } from './pages/History'
 import { StashPage } from './pages/StashPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { useI18n } from './LocaleProvider'
 
 const TABS = [
   { path: '/', label: '收录' },
-  { path: '/sync', label: '同步' },
+  { path: '/dispatch', label: '投递' },
   { path: '/accounts', label: '账号' },
-  { path: '/history', label: '历史' },
 ]
 
 type ConnectionState = 'unknown' | 'off' | 'waiting' | 'on'
@@ -91,14 +89,19 @@ export function AppShell() {
     document.title = `${pageName} · DSwritesync`
   }, [pageName])
 
-  // The FAB asks the service worker to open /sync; a freshly opened panel may
-  // read the route from storage, an already-open one gets the message.
+  // The FAB used to ask the service worker to open /sync; older storage may
+  // still hold that path. Normalise it to the dispatch route.
+  const normalizeRoute = (route: unknown): string | null => {
+    if (typeof route !== 'string' || !route.startsWith('/')) return null
+    return route === '/sync' || route === '/history' ? '/dispatch' : route
+  }
+
   useEffect(() => {
     ;(async () => {
       try {
         const result = await chrome.storage.local.get('panelRoute')
-        const route = result.panelRoute
-        if (typeof route === 'string' && route.startsWith('/')) {
+        const route = normalizeRoute(result.panelRoute)
+        if (route) {
           chrome.storage.local.remove('panelRoute')
           navigate(route, { replace: true })
         }
@@ -108,10 +111,11 @@ export function AppShell() {
     })()
 
     const listener = (message: { type?: string; path?: string }) => {
-      if (message?.type === 'PANEL_NAVIGATE' && typeof message.path === 'string') {
-        chrome.storage.local.remove('panelRoute')
-        navigate(message.path)
-      }
+      if (message?.type !== 'PANEL_NAVIGATE') return
+      const route = normalizeRoute(message.path)
+      if (!route) return
+      chrome.storage.local.remove('panelRoute')
+      navigate(route)
     }
     chrome.runtime.onMessage.addListener(listener)
     return () => chrome.runtime.onMessage.removeListener(listener)
@@ -157,9 +161,10 @@ export function AppShell() {
       <main className="min-h-0 flex-1 overflow-hidden">
         <Routes>
           <Route path="/" element={<StashPage />} />
-          <Route path="/sync" element={<HomeNew />} />
+          <Route path="/dispatch" element={<DispatchPage />} />
+          <Route path="/sync" element={<Navigate to="/dispatch" replace />} />
+          <Route path="/history" element={<Navigate to="/dispatch" replace />} />
           <Route path="/accounts" element={<AccountsPage />} />
-          <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<StashPage />} />
         </Routes>

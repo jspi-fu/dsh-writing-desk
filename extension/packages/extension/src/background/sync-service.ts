@@ -28,8 +28,6 @@ export interface SyncResult {
   error?: string
 }
 
-export type SyncHistoryStatus = 'syncing' | 'completed' | 'failed' | 'cancelled'
-
 export interface ActiveSyncState {
   syncId: string
   status: 'syncing' | 'completed' | 'failed' | 'cancelled'
@@ -45,22 +43,9 @@ export interface ActiveSyncState {
   startTime: number
 }
 
-interface SyncHistoryItem {
-  id: string
-  status: SyncHistoryStatus
-  title: string
-  cover?: string
-  platforms: string[]
-  results: SyncResult[]
-  startTime: number
-  endTime?: number
-}
-
 interface SyncOptions {
-  skipHistory?: boolean
   source?: string
   syncId?: string
-  allSelectedPlatforms?: string[]
 }
 
 export interface SyncProgressCallbacks {
@@ -70,7 +55,6 @@ export interface SyncProgressCallbacks {
 }
 
 export const SYNC_STATE_KEY = 'activeSyncState'
-const MAX_HISTORY_ITEMS = 25
 
 export const BADGE_COLORS = {
   syncing: '#3B82F6',
@@ -137,67 +121,6 @@ export async function clearSyncState() {
   await chrome.action.setBadgeText({ text: '' })
 }
 
-async function createHistoryItem(
-  syncId: string,
-  article: { title: string; cover?: string },
-  platforms: string[]
-): Promise<void> {
-  try {
-    const storage = await chrome.storage.local.get('syncHistory')
-    const existingHistory: SyncHistoryItem[] = storage.syncHistory || []
-
-    const historyItem: SyncHistoryItem = {
-      id: syncId,
-      status: 'syncing',
-      title: article.title || t('未知文章'),
-      cover: article.cover,
-      platforms,
-      results: [],
-      startTime: Date.now(),
-    }
-
-    const newHistory = [historyItem, ...existingHistory].slice(0, MAX_HISTORY_ITEMS)
-    await chrome.storage.local.set({ syncHistory: newHistory })
-    logger.info('History created:', syncId, historyItem.title)
-  } catch (error) {
-    logger.error('Failed to create history:', error)
-  }
-}
-
-async function updateHistoryItem(
-  syncId: string,
-  status: SyncHistoryStatus,
-  results: SyncResult[],
-  allPlatformMetas: Array<{ id: string; name: string }>
-): Promise<void> {
-  try {
-    const storage = await chrome.storage.local.get('syncHistory')
-    const existingHistory: SyncHistoryItem[] = storage.syncHistory || []
-
-    const resultsWithNames = results.map(r => ({
-      ...r,
-      platformName: r.platformName || allPlatformMetas.find(p => p.id === r.platform)?.name || r.platform,
-    }))
-
-    const updatedHistory = existingHistory.map(item => {
-      if (item.id === syncId) {
-        return {
-          ...item,
-          status,
-          results: resultsWithNames,
-          endTime: Date.now(),
-        }
-      }
-      return item
-    })
-
-    await chrome.storage.local.set({ syncHistory: updatedHistory })
-    logger.info('History updated:', syncId, status)
-  } catch (error) {
-    logger.error('Failed to update history:', error)
-  }
-}
-
 export async function performSync(
   article: {
     title: string
@@ -212,7 +135,7 @@ export async function performSync(
   options: SyncOptions = {},
   callbacks: SyncProgressCallbacks = {}
 ): Promise<{ results: SyncResult[]; syncId: string }> {
-  const { skipHistory = false, source = 'bridge', syncId: passedSyncId, allSelectedPlatforms } = options
+  const { source = 'bridge', syncId: passedSyncId } = options
   const { onResult, onImageProgress, onDetailProgress } = callbacks
 
   const allPlatformMetas = getAllPlatformMetas()
@@ -248,15 +171,11 @@ export async function performSync(
       html: normalizedArticle.html,
       markdown: normalizedArticle.markdown,
     },
-    selectedPlatforms: allSelectedPlatforms || platforms,
+    selectedPlatforms: platforms,
     results: [],
     startTime: Date.now(),
   }
   await saveSyncState(syncState)
-
-  if (!skipHistory) {
-    await createHistoryItem(syncId, normalizedArticle, platforms)
-  }
 
   const sourcePlatform = article.source?.platform
   const { deepCleanEnabled = false } = await chrome.storage.local.get('deepCleanEnabled')
@@ -430,7 +349,7 @@ export async function performSync(
 
   const successCount = allResults.filter(r => r.success).length
   const failedCount = allResults.length - successCount
-  const finalStatus: SyncHistoryStatus =
+  const finalStatus: ActiveSyncState['status'] =
     allResults.length === 0 && platforms.length > 0
       ? 'failed'
       : failedCount === allResults.length && allResults.length > 0
@@ -439,10 +358,6 @@ export async function performSync(
 
   syncState.status = finalStatus
   await saveSyncState(syncState)
-
-  if (!skipHistory) {
-    await updateHistoryItem(syncId, finalStatus, allResults, allPlatformMetas)
-  }
 
   return { results: allResults, syncId }
 }

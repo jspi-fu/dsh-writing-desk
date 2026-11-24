@@ -132,12 +132,17 @@ export function AccountsPage() {
     loadPlatforms()
   }, [])
 
+  const refreshTargets = () => {
+    chrome.runtime.sendMessage({ type: 'REFRESH_TARGETS' }).catch(() => {})
+  }
+
   const deleteCmsAccount = async (id: string) => {
     const storage = await chrome.storage.local.get('cmsAccounts')
     const updated = (storage.cmsAccounts || []).filter((a: CMSAccount) => a.id !== id)
     await chrome.storage.local.set({ cmsAccounts: updated })
     await chrome.storage.local.remove(`cms_pwd_${id}`)
     setCmsAccounts(updated)
+    refreshTargets()
   }
 
   const handleSubmitCMS = async (e: React.FormEvent) => {
@@ -152,6 +157,7 @@ export function AccountsPage() {
         setStep('list')
         setConfig({ url: '', username: '', password: '', name: '' })
         setSelectedCMS(null)
+        refreshTargets()
       } else {
         setError(result.error || '添加失败')
       }

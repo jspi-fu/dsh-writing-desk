@@ -1,20 +1,16 @@
 /**
- * 微信公众号后台编辑器页面 Content Script
- * FAB 按钮 → 打开 SyncDialog iframe overlay
+ * 微信公众号后台编辑器页面 Content Script(ADR 0017)
+ *
+ * 只保留提取:通用提取器把公众号后台页交给这里。页面上的「同步助手」FAB 与
+ * iframe 对话框已退役,收录入口在侧栏。
  */
 import { createLogger } from '../lib/logger'
 import { htmlToMarkdownNative } from '@wechatsync/core'
 import { preprocessContentString, backupAndSimplifyCodeBlocks, restoreCodeBlocks } from '../lib/content-processor'
-import { initI18n, onLanguageChange, t } from '../lib/i18n'
 
 const logger = createLogger('WeixinEditor')
 
 ;(() => {
-
-initI18n()
-
-let dialogIframe: HTMLIFrameElement | null = null
-let dialogContainer: HTMLElement | null = null
 
 function isEditorPage(): boolean {
   const url = window.location.href
@@ -22,199 +18,7 @@ function isEditorPage(): boolean {
          (url.includes('action=edit') || url.includes('appmsg_edit'))
 }
 
-function injectSyncPanel() {
-  if (document.querySelector('#wechatsync-editor-fab')) return
-
-  const fab = document.createElement('button')
-  fab.id = 'wechatsync-editor-fab'
-  fab.title = t('同步助手')
-  fab.innerHTML = `
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="white">
-      <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-    </svg>
-  `
-  fab.style.cssText = `
-    position: fixed;
-    right: 20px;
-    bottom: 80px;
-    z-index: 2147483647;
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #07c160 0%, #06ad56 100%);
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 4px 12px rgba(7, 193, 96, 0.4);
-    transition: all 0.2s;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `
-  fab.addEventListener('mouseenter', () => {
-    fab.style.transform = 'scale(1.05)'
-    fab.style.boxShadow = '0 6px 16px rgba(7, 193, 96, 0.5)'
-  })
-  fab.addEventListener('mouseleave', () => {
-    fab.style.transform = 'scale(1)'
-    fab.style.boxShadow = '0 4px 12px rgba(7, 193, 96, 0.4)'
-  })
-
-  fab.addEventListener('click', () => openSyncDialog())
-
-  const unsubscribe = onLanguageChange(() => {
-    if (!fab.isConnected) {
-      unsubscribe()
-      return
-    }
-    fab.title = t('同步助手')
-  })
-
-  document.body.appendChild(fab)
-}
-
-async function openSyncDialog() {
-  if (dialogContainer) return
-
-  // 1. Show loading overlay immediately
-  dialogContainer = document.createElement('div')
-  dialogContainer.id = 'wechatsync-dialog-overlay'
-  dialogContainer.style.cssText = `
-    position: fixed; inset: 0; z-index: 2147483647;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.3);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  `
-  dialogContainer.addEventListener('click', (e) => {
-    if (e.target === dialogContainer) closeSyncDialog()
-  })
-
-  const loadingEl = document.createElement('div')
-  loadingEl.style.cssText = `
-    background: white; padding: 20px 32px; border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-    display: flex; align-items: center; gap: 12px;
-  `
-  loadingEl.innerHTML = `
-    <div style="width:20px;height:20px;border:3px solid #e5e5e5;border-top-color:#07c160;border-radius:50%;animation:wcs-spin 0.8s linear infinite;"></div>
-    <span style="font-size:14px;color:#333;">${t('正在提取文章...')}</span>
-    <style>@keyframes wcs-spin { to { transform: rotate(360deg); } }</style>
-  `
-  dialogContainer.appendChild(loadingEl)
-  document.body.appendChild(dialogContainer)
-
-  // 2. Extract article + load platforms + hidden config in parallel
-  const [article, platformResp, hiddenResult] = await Promise.all([
-    extractArticle(),
-    chrome.runtime.sendMessage({ type: 'CHECK_ALL_AUTH' }).catch(() => ({ platforms: [] })),
-    chrome.storage.local.get('hiddenPlatforms').catch(() => ({ hiddenPlatforms: [] })),
-  ])
-
-  if (!article) {
-    closeSyncDialog()
-    return
-  }
-
-  const hiddenSet = new Set<string>(hiddenResult.hiddenPlatforms || [])
-  const platforms = (platformResp.platforms || []).filter((p: any) => !hiddenSet.has(p.id))
-
-  // 3. Swap loading for iframe
-  if (!dialogContainer) return
-  loadingEl.remove()
-
-  dialogIframe = document.createElement('iframe')
-  dialogIframe.src = chrome.runtime.getURL('src/sync-dialog/index.html')
-  dialogIframe.style.cssText = `
-    width: 400px; height: 520px; border: none;
-    border-radius: 12px; overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-  `
-  dialogContainer.appendChild(dialogIframe)
-  document.body.appendChild(dialogContainer)
-
-  const handleReady = (event: MessageEvent) => {
-    try {
-      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-      if (data.type === 'SYNC_DIALOG_READY') {
-        window.removeEventListener('message', handleReady)
-        dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-          type: 'INIT_DATA',
-          article,
-          platforms,
-        }), '*')
-      }
-    } catch { /* ignore */ }
-  }
-  window.addEventListener('message', handleReady)
-}
-
-function closeSyncDialog() {
-  if (dialogContainer) {
-    dialogContainer.remove()
-    dialogContainer = null
-    dialogIframe = null
-  }
-}
-
-// Listen to messages from iframe
-window.addEventListener('message', (event) => {
-  try {
-    const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data
-
-    if (data.type === 'CLOSE_SYNC_DIALOG') {
-      closeSyncDialog()
-    } else if (data.type === 'START_SYNC') {
-      const syncId = data.syncId
-      ;(async () => {
-        try {
-          const response = await chrome.runtime.sendMessage({
-            type: 'SYNC_ARTICLE',
-            payload: {
-              article: data.article,
-              platforms: data.platforms,
-              source: 'weixin-editor',
-              syncId,
-            },
-          })
-          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-            type: 'SYNC_COMPLETE',
-            results: response.results,
-            rateLimitWarning: response.rateLimitWarning,
-            syncId,
-          }), '*')
-        } catch (error) {
-          dialogIframe?.contentWindow?.postMessage(JSON.stringify({
-            type: 'SYNC_ERROR',
-            error: (error as Error).message,
-            syncId,
-          }), '*')
-        }
-      })()
-    }
-  } catch { /* ignore */ }
-})
-
-// Forward progress messages from background to iframe
-chrome.runtime.onMessage.addListener((message) => {
-  if (!dialogIframe) return
-
-  if (message.type === 'SYNC_PROGRESS') {
-    dialogIframe.contentWindow?.postMessage(JSON.stringify({
-      type: 'SYNC_PROGRESS',
-      result: message.payload?.result,
-      syncId: message.syncId,
-    }), '*')
-  }
-  if (message.type === 'SYNC_DETAIL_PROGRESS') {
-    dialogIframe.contentWindow?.postMessage(JSON.stringify({
-      type: 'SYNC_DETAIL_PROGRESS',
-      progress: message.payload,
-      syncId: message.syncId,
-    }), '*')
-  }
-})
-
-// Respond to popup's article extraction and panel expansion
+// Respond to popup's article extraction request
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'EXTRACT_ARTICLE' && isEditorPage()) {
     ;(async () => {
@@ -224,11 +28,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ article: null })
       }
     })()
-    return true
-  }
-  if (message.type === 'EXPAND_SYNC_PANEL') {
-    openSyncDialog()
-    sendResponse({ success: true })
     return true
   }
 })
@@ -356,17 +155,4 @@ async function fetchArticleByApi(appmsgid: string): Promise<any | null> {
     return null
   }
 }
-
-// Initialize
-function init() {
-  if (!isEditorPage()) return
-  const inject = () => setTimeout(injectSyncPanel, 1500)
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', inject)
-  } else {
-    inject()
-  }
-}
-
-init()
 })()

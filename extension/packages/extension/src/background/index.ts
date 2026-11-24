@@ -3,7 +3,6 @@ import {
   checkAllPlatformsAuth,
   checkPlatformAuth,
   getAllPlatformMetas,
-  cancelSync,
   getPlatformPreprocessConfigs,
 } from '../adapters'
 import * as wordpressAdapter from '../adapters/cms/wordpress'
@@ -11,14 +10,11 @@ import * as metaweblogAdapter from '../adapters/cms/metaweblog'
 import { startBridgeClient, bridgeClient, getBridgeStatus, type CapturePayload } from '../bridge/client'
 import { createLogger } from '../lib/logger'
 import { initI18n, t } from '../lib/i18n'
-import { checkSyncFrequency, recordSync } from '../lib/rate-limit'
+import { migrateCmsAccountIds } from '../lib/cms-accounts'
+import { buildTargetSnapshot } from '../lib/targets'
 import {
-  performSync,
-  generateSyncId,
-  saveSyncState,
   clearSyncState,
   SYNC_STATE_KEY,
-  type ActiveSyncState,
 } from './sync-service'
 
 const logger = createLogger('Background')
@@ -32,10 +28,8 @@ type MessageAction =
   | { type: 'GET_PLATFORMS' }
   | { type: 'CHECK_ALL_AUTH'; payload?: { forceRefresh?: boolean } }
   | { type: 'CHECK_AUTH'; payload: { platformId: string } }
-  | { type: 'SYNC_ARTICLE'; payload: { article: any; platforms: string[]; allSelectedPlatforms?: string[]; skipHistory?: boolean; source?: string; syncId?: string } }
-  | { type: 'OPEN_SYNC_PAGE'; path?: string }
   | { type: 'TEST_CMS_CONNECTION'; payload: { type: CMSType; url: string; username: string; password: string } }
-  | { type: 'SYNC_TO_CMS'; payload: { accountId: string; article: any } }
+  | { type: 'REFRESH_TARGETS' }
   | { type: 'BRIDGE_STATUS' }
   | { type: 'BRIDGE_WATCH_START' }
   | { type: 'BRIDGE_WATCH_STOP' }
@@ -44,10 +38,7 @@ type MessageAction =
   | { type: 'STASH_SAVE'; payload: CapturePayload }
   | { type: 'GET_SYNC_STATE' }
   | { type: 'CLEAR_SYNC_STATE' }
-  | { type: 'UPDATE_SYNC_STATUS'; payload: { status: 'syncing' | 'completed' } }
-  | { type: 'CANCEL_SYNC' }
   | { type: 'GET_PREPROCESS_CONFIGS'; platforms: string[] }
-  | { type: 'TRIGGER_SYNC' }
 
 /**
  * 消息处理
@@ -73,34 +64,11 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'CHECK_ALL_AUTH': {
-      const forceRefresh = message.payload?.forceRefresh ?? false
-      const dslPlatforms = await checkAllPlatformsAuth(forceRefresh)
-
-      // 为 DSL 平台添加 sourceType
-      const dslWithType = dslPlatforms.map((p: any) => ({
-        ...p,
-        sourceType: 'dsl' as const,
-      }))
-
-      // 同时加载 CMS 账户
-      const cmsStorage = await chrome.storage.local.get('cmsAccounts')
-      const cmsAccounts = cmsStorage.cmsAccounts || []
-      const cmsPlatforms = cmsAccounts
-        .filter((a: any) => a.isConnected)
-        .map((a: any) => ({
-          id: a.id,
-          name: a.name,
-          icon: getCmsIcon(a.type),
-          homepage: a.url,
-          isAuthenticated: true,
-          username: a.username,
-          sourceType: 'cms' as const,
-          cmsType: a.type,
-        }))
-
-      const allPlatforms = [...dslWithType, ...cmsPlatforms]
-      // 缓存完整平台列表，供 popup 启动时立即渲染
-      chrome.storage.local.set({ platformListCache: allPlatforms }).catch(() => {})
+      const allPlatforms = await collectPlatforms(message.payload?.forceRefresh ?? false)
+      // 缓存完整平台列表，供 popup 启动时立即渲染;同时把登录态快照写给工作台。
+      // 快照走 fire-and-forget:助手没装/没连时不能让侧栏等 NM 超时。
+      await chrome.storage.local.set({ platformListCache: allPlatforms }).catch(() => {})
+      void syncTargets().catch(error => logger.debug('Target snapshot unavailable:', error))
       return { platforms: allPlatforms }
     }
 
@@ -110,58 +78,8 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       return { auth }
     }
 
-    case 'SYNC_ARTICLE': {
-      const { article, platforms, allSelectedPlatforms, skipHistory, source = 'popup', syncId: passedSyncId } = message.payload
-      const senderTabId = sender?.tab?.id
-
-      const rateLimitWarning = await checkSyncFrequency(platforms)
-
-      const syncId = passedSyncId || generateSyncId()
-
-      const sendProgress = (msg: Record<string, unknown>) => {
-        const msgWithSyncId = { ...msg, syncId }
-        chrome.runtime.sendMessage(msgWithSyncId).catch(() => {})
-        if (senderTabId) {
-          chrome.tabs.sendMessage(senderTabId, msgWithSyncId).catch(() => {})
-        }
-      }
-
-      const { results: allResults } = await performSync(
-        article,
-        platforms,
-        {
-          skipHistory,
-          source,
-          syncId,
-          allSelectedPlatforms,
-          // 预处理统一走 performSync 内部的 sendPreprocessMessage
-          // （活动标签页 → 全部标签页 → 临时标签页三级 fallback）
-        },
-        {
-          onResult: (result) => {
-            sendProgress({ type: 'SYNC_PROGRESS', payload: { result } })
-          },
-          onImageProgress: (platform, current, total) => {
-            sendProgress({ type: 'IMAGE_PROGRESS', payload: { platform, current, total } })
-          },
-          onDetailProgress: (progress) => {
-            sendProgress({ type: 'SYNC_DETAIL_PROGRESS', payload: progress })
-          },
-        }
-      )
-
-      const successfulPlatforms = allResults
-        .filter(r => r.success)
-        .map(r => r.platform)
-      if (successfulPlatforms.length > 0) {
-        recordSync(successfulPlatforms).catch(() => {})
-      }
-
-      return { results: allResults, rateLimitWarning, syncId }
-    }
-
-    case 'OPEN_SYNC_PAGE': {
-      await openSyncWindow(message.path || '')
+    case 'REFRESH_TARGETS': {
+      await syncTargets()
       return { success: true }
     }
 
@@ -186,93 +104,6 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
         }
         return result
       } catch (error) {
-        return { success: false, error: (error as Error).message }
-      }
-    }
-
-    case 'SYNC_TO_CMS': {
-      const { accountId, article } = message.payload
-
-      try {
-        // 获取账户信息
-        const storage = await chrome.storage.local.get(['cmsAccounts', `cms_pwd_${accountId}`])
-        const accounts = storage.cmsAccounts || []
-        const account = accounts.find((a: any) => a.id === accountId)
-
-        if (!account) {
-          return { success: false, error: t('账户不存在') }
-        }
-
-        const password = storage[`cms_pwd_${accountId}`]
-        if (!password) {
-          return { success: false, error: t('密码未找到，请重新添加账户') }
-        }
-
-        const credentials = {
-          url: account.url,
-          username: account.username,
-          password,
-        }
-
-        let result
-        switch (account.type) {
-          case 'wordpress':
-            result = await wordpressAdapter.publish(credentials, article, { draftOnly: true })
-            break
-          case 'typecho':
-            result = await metaweblogAdapter.publishToTypecho(credentials, article, { draftOnly: true })
-            break
-          case 'metaweblog':
-            result = await metaweblogAdapter.publish(credentials, article, { draftOnly: true })
-            break
-          default:
-            return { success: false, error: t('不支持的 CMS 类型') }
-        }
-
-        // 更新同步状态（用于 popup 恢复）
-        const currentState = await chrome.storage.local.get(SYNC_STATE_KEY)
-        const syncState = currentState[SYNC_STATE_KEY] as ActiveSyncState | undefined
-        if (syncState) {
-          const cmsResult = {
-            platform: accountId,
-            platformName: account.name,
-            success: result.success,
-            postUrl: result.postUrl,
-            draftOnly: true,
-            error: result.error,
-          }
-          syncState.results.push(cmsResult)
-          await saveSyncState(syncState)
-        }
-
-        // 记录同步频率
-        if (result.success) {
-          recordSync([accountId]).catch(() => {})
-        }
-
-        return {
-          platform: account.name,
-          success: result.success,
-          postUrl: result.postUrl,
-          postId: result.postId,
-          error: result.error,
-          draftOnly: true,
-          timestamp: Date.now(),
-        }
-      } catch (error) {
-        // 更新同步状态（记录失败）
-        const currentState = await chrome.storage.local.get(SYNC_STATE_KEY)
-        const syncState = currentState[SYNC_STATE_KEY] as ActiveSyncState | undefined
-        if (syncState) {
-          const cmsResult = {
-            platform: accountId,
-            platformName: accountId,
-            success: false,
-            error: (error as Error).message,
-          }
-          syncState.results.push(cmsResult)
-          await saveSyncState(syncState)
-        }
         return { success: false, error: (error as Error).message }
       }
     }
@@ -336,23 +167,6 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       return { success: true }
     }
 
-    case 'UPDATE_SYNC_STATUS': {
-      const { status } = message.payload
-      const currentState = await chrome.storage.local.get(SYNC_STATE_KEY)
-      const syncState = currentState[SYNC_STATE_KEY] as ActiveSyncState | undefined
-      if (syncState) {
-        syncState.status = status
-        await saveSyncState(syncState)
-      }
-      return { success: true }
-    }
-
-    case 'CANCEL_SYNC': {
-      const cancelled = cancelSync()
-      logger.info('Sync cancelled:', cancelled)
-      return { success: cancelled }
-    }
-
     case 'GET_PREPROCESS_CONFIGS': {
       // 获取平台预处理配置（供 content script 使用）
       await initAdapters()
@@ -365,75 +179,9 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
       return { configs }
     }
 
-    case 'TRIGGER_SYNC': {
-      // FAB on regular article pages: open the side panel on /sync. The side
-      // panel API only opens on a user gesture, so a failed call falls back to
-      // a small popup window on the same route.
-      const tabId = sender?.tab?.id
-      // 不 await：sidePanel.open 需要尽量贴着用户手势调用
-      const routeReady = chrome.storage.local.set({ panelRoute: '/sync' }).catch(() => {})
-
-      if (tabId !== undefined) {
-        try {
-          await chrome.sidePanel.open({ tabId })
-          await routeReady
-          chrome.runtime.sendMessage({ type: 'PANEL_NAVIGATE', path: '/sync' }).catch(() => {})
-          return { success: true, mode: 'sidepanel' }
-        } catch (error) {
-          logger.debug('Side panel open failed, falling back to sync window:', error)
-          await routeReady
-          await chrome.storage.local.remove('panelRoute')
-        }
-      }
-
-      // The fallback window's active tab is the panel itself, so carry the
-      // article over through storage before opening it.
-      if (tabId !== undefined) {
-        try {
-          const response = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_ARTICLE' })
-          if (response?.article) {
-            await chrome.storage.local.set({ pendingArticle: response.article })
-          }
-        } catch {
-          // Page not extractable; the sync page shows its empty state.
-        }
-      }
-
-      await openSyncWindow('/sync')
-      return { success: true, mode: 'window' }
-    }
-
     default:
       return { error: 'Unknown message type' }
   }
-}
-
-/**
- * Open the popup page as a compact 396x560 window (fallback when the side
- * panel cannot be opened programmatically).
- */
-async function openSyncWindow(path = '') {
-  const url = chrome.runtime.getURL('src/popup/index.html') + (path ? `#${path}` : '')
-  const width = 396
-  const height = 560
-
-  const currentWindow = await chrome.windows.getCurrent()
-  const left = currentWindow.left !== undefined && currentWindow.width !== undefined
-    ? Math.round(currentWindow.left + (currentWindow.width - width) / 2)
-    : undefined
-  const top = currentWindow.top !== undefined && currentWindow.height !== undefined
-    ? Math.round(currentWindow.top + (currentWindow.height - height) / 2)
-    : undefined
-
-  await chrome.windows.create({
-    url,
-    type: 'popup',
-    width,
-    height,
-    left,
-    top,
-    focused: true,
-  })
 }
 
 // CMS 图标
@@ -592,15 +340,38 @@ chrome.runtime.onInstalled.addListener(async details => {
   await initAdapters()
 })
 
-// WS 桥时代的存储全部退役(ADR 0012):token/开关/地址不再有任何意义,一次性清掉。
-const LEGACY_BRIDGE_KEYS = ['mcpEnabled', 'mcpToken', 'mcpServerUrl', 'bridgeEnabled', 'bridgeToken', 'bridgeServerUrl'] as const
+// 退役存储(ADR 0012/0017):WS 桥的 token/开关/地址、悬浮按钮开关、手工同步
+// 历史与待同步文章都不再有任何意义,一次性清掉。
+const LEGACY_STORAGE_KEYS = [
+  'mcpEnabled', 'mcpToken', 'mcpServerUrl',
+  'bridgeEnabled', 'bridgeToken', 'bridgeServerUrl',
+  'floatingButtonEnabled', 'syncHistory', 'pendingArticle', 'selectedPlatforms',
+] as const
 
 async function migrateLegacyBridgeSettings(): Promise<void> {
-  await chrome.storage.local.remove([...LEGACY_BRIDGE_KEYS]).catch(() => {})
+  await chrome.storage.local.remove([...LEGACY_STORAGE_KEYS]).catch(() => {})
 }
 
-// 启动:清旧键,踢一次任务拉取(alarm 未注册前的第一拍)
-migrateLegacyBridgeSettings().finally(() => startBridgeClient())
+// 启动:清旧键、迁移 CMS 稳定 id,踢一次任务拉取(alarm 未注册前的第一拍),
+// 并把当前登录态/自建站快照写给工作台(ADR 0017)。
+migrateLegacyBridgeSettings()
+  .then(() => migrateCmsAccountIds())
+  .catch(() => {})
+  .finally(() => {
+    startBridgeClient()
+    void syncTargets().catch(error => logger.debug('Target snapshot unavailable:', error))
+  })
+
+/** 把 platformListCache / cmsAccounts / hiddenPlatforms 折算成投递目标快照,经助手上报。 */
+async function syncTargets(): Promise<void> {
+  const storage = await chrome.storage.local.get(['platformListCache', 'cmsAccounts', 'hiddenPlatforms'])
+  const snapshot = buildTargetSnapshot({
+    platforms: storage.platformListCache,
+    cmsAccounts: storage.cmsAccounts,
+    hidden: storage.hiddenPlatforms,
+  })
+  await bridgeClient.saveTargets(snapshot)
+}
 
 // SW 休眠期的投递兜底:30 秒一次一次性拉(alarm 下限 0.5 分钟)
 const BRIDGE_POLL_ALARM = 'bridge-poll'
@@ -617,11 +388,39 @@ chrome.alarms.onAlarm.addListener(alarm => {
 async function preCheckPlatformsAuth() {
   logger.info(' Pre-checking platform auth...')
   try {
-    await checkAllPlatformsAuth(false) // 使用缓存，不强制刷新
+    const allPlatforms = await collectPlatforms(false) // 使用缓存，不强制刷新
+    await chrome.storage.local.set({ platformListCache: allPlatforms }).catch(() => {})
+    void syncTargets().catch(error => logger.debug('Target snapshot unavailable:', error))
     logger.info(' Pre-check completed')
   } catch (error) {
     logger.error(' Pre-check failed:', error)
   }
+}
+
+/** DSL 登录态 + 已连接 CMS 账户,合成侧栏与快照共用的平台列表。 */
+async function collectPlatforms(forceRefresh: boolean) {
+  const dslPlatforms = await checkAllPlatformsAuth(forceRefresh)
+  const dslWithType = dslPlatforms.map((p: any) => ({
+    ...p,
+    sourceType: 'dsl' as const,
+  }))
+
+  const cmsStorage = await chrome.storage.local.get('cmsAccounts')
+  const cmsAccounts = cmsStorage.cmsAccounts || []
+  const cmsPlatforms = cmsAccounts
+    .filter((a: any) => a.isConnected)
+    .map((a: any) => ({
+      id: a.id,
+      name: a.name,
+      icon: getCmsIcon(a.type),
+      homepage: a.url,
+      isAuthenticated: true,
+      username: a.username,
+      sourceType: 'cms' as const,
+      cmsType: a.type,
+    }))
+
+  return [...dslWithType, ...cmsPlatforms]
 }
 
 // 浏览器启动时预检查

@@ -72,3 +72,13 @@ extension/
 - 上游 Wechatsync 没有「工作台桥」这一层;ADR 0010 阶段的桥是 CLI(`dswritesync serve`,WS 9527 + 握手 token),2026-11-20 起整体退役。
 - 现行接入面:浏览器扩展 ↔ 本地助手(`native/helper.mjs`,主仓库 MIT 自研)经 Chrome Native Messaging(host `app.dswritesync.plugin`);扩展侧 `src/bridge/` 的 NM 客户端与 `BRIDGE_*` 消息面按协议事实与助手对齐,不拷贝任何上游或 StashDock 代码。
 - 上游 `packages/cli` 目录随退役删除;WS/HTTP 端口、token、auth.json 概念不复存在,投递箱文件契约(inbox/outbox/receipts、原子 rename 认领、operationId 回执)不变。
+
+## 收敛为工作台浏览器端(2026-11-24,ADR 0017)
+
+扩展不再保留 Wechatsync 的独立产品面,只做「收录」与「投递执行」。合并上游时不要把下列内容带回来:
+
+- 页面注入:`src/lib/fab.ts`、`src/sync-dialog/`(iframe 页面)、`src/components/sync-dialog/SyncDialog.tsx`,以及 `content/weixin.ts`、`content/weixin-editor.ts` 里的 FAB 与对话框 UI。两个公众号 content script 保留 `EXTRACT_ARTICLE` / `PREPROCESS_FOR_PLATFORMS` 处理器——通用提取器明确把公众号页交给它们。
+- 独立同步:`SYNC_ARTICLE`、`TRIGGER_SYNC`、`OPEN_SYNC_PAGE`、`SYNC_TO_CMS` 消息,手工同步的平台选择/重试,以及 `lib/rate-limit.ts`(只服务于手工同步)。投递任务由工作台经 outbox 下发,`DeliveryPipeline` 直接调 `performSync`。
+- 历史页:`popup/pages/History.tsx` 与 `syncHistory` 持久化;`popup/pages/HomeNew.tsx` 改为 `Dispatch.tsx`,只呈现工作台任务进度。
+- 新增(本仓库自研,非上游):`lib/cms-id.ts`(自建站稳定 id)、`lib/cms-accounts.ts`(旧 `cms_<时间戳>` id 迁移)、`lib/targets.ts`(投递目标快照)。`background` 经本地助手把平台登录态与自建站元数据写进 `bridge/targets.json`。
+- `src/platforms.js` 的静态表仍是 DSL 适配器的唯一来源;自建站 id 由扩展生成,工作台只接受 `targets.json` 里出现过的 id。

@@ -1,6 +1,6 @@
 {
   "appDesc": {
-    "message": "收进网页并同步文章到 19 个平台，支持 WordPress 等自建站"
+    "message": "收录网页并把作品投递到平台草稿箱，支持 WordPress 等自建站"
   },
   "actionTitle": {
     "message": "打开 DSwritesync"

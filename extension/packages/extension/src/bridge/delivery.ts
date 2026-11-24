@@ -111,9 +111,9 @@ export class DeliveryPipeline {
     } catch (error) {
       const message = ((error as Error).message || String(error)).slice(0, 200)
       logger.warn(`Task failed (${operationId}):`, message)
-      // 回执行逐平台失败:宿主 digestReceipts 按 BRIDGE_ADAPTERS 过滤,平台名不在
-      // 清单里的行会被剥掉,不能用通配符占位。平台名拿不到时不写回执,留在
-      // .claiming 里交给助手的 stale 认领恢复(它读得到任务文件里的平台清单)。
+      // 回执行逐平台失败:宿主 digestReceipts 按静态适配器表 ∪ 快照里的自建站 id
+      // 过滤,平台名不在清单里的行会被剥掉,不能用通配符占位。平台名拿不到时不写
+      // 回执,留在 .claiming 里交给助手的 stale 认领恢复(它读得到任务文件里的平台清单)。
       const platforms = Array.isArray(meta.platforms) ? meta.platforms.filter(p => typeof p === 'string') : []
       if (!platforms.length) return
       await this.writeDispatchReceipt(operationId, meta.itemId, platforms.map(platform => ({ platform, ok: false, error: message }))).catch(() => {})
