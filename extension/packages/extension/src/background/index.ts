@@ -354,14 +354,14 @@ async function migrateLegacyBridgeSettings(): Promise<void> {
   await chrome.storage.local.remove([...LEGACY_STORAGE_KEYS]).catch(() => {})
 }
 
-// 启动:清旧键、迁移 CMS 稳定 id,踢一次任务拉取(alarm 未注册前的第一拍),
-// 并把当前登录态/自建站快照写给工作台(ADR 0017)。
+// 启动:清旧键、迁移 CMS 稳定 id,踢一次任务拉取(alarm 未注册前的第一拍)。
+// 目标快照由 preCheckPlatformsAuth 在登录态就绪后写——不能先用空缓存写一份,
+// 工作台会把存在的快照当权威,空平台列表会把菜单里的 DSL 全打进「更多」。
 migrateLegacyBridgeSettings()
   .then(() => migrateCmsAccountIds())
   .catch(() => {})
   .finally(() => {
     startBridgeClient()
-    void syncTargets().catch(error => logger.debug('Target snapshot unavailable:', error))
   })
 
 /** 把 platformListCache / cmsAccounts / hiddenPlatforms 折算成投递目标快照,经助手上报。 */

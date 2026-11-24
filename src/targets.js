@@ -37,10 +37,14 @@ export async function readDispatchTargets() {
   return { at: snapshot.at, platforms, cms: snapshot.cms, hidden: snapshot.hidden }
 }
 
+/** 静态 DSL 平台的 id:显示名由 platforms.js 提供,不需要写进历史。 */
+export function isStaticDispatchTarget(id) {
+  return typeof id === 'string' && Object.hasOwn(BRIDGE_ADAPTERS, id)
+}
+
 /** 平台 id 是否可投递:静态 DSL 表 ∪ 当前快照里的自建站 id。 */
 export function isDispatchTarget(id, targets) {
-  if (typeof id !== 'string' || !id) return false
-  if (Object.hasOwn(BRIDGE_ADAPTERS, id)) return true
+  if (isStaticDispatchTarget(id)) return true
   return Array.isArray(targets?.cms) && targets.cms.some(site => site.id === id)
 }
 

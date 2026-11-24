@@ -144,6 +144,8 @@ const EN: Record<string, string> = {
   '平台状态加载失败': 'Failed to load platform status',
   '重试': 'Retry',
   '未登录': 'Not signed in',
+  '未连接': 'Not connected',
+  '测试连接': 'Test connection',
   '添加': 'Add',
   '删除': 'Delete',
   '暂无自建站点': 'No self-hosted sites yet',

@@ -239,6 +239,7 @@ test('发布回执落成作品 dispatches,投递不改发布状态', async () =>
   assert.equal(work.publication.dispatches.length, 2)
   assert.equal(work.publication.dispatches[0].platform, 'zhihu')
   assert.equal(work.publication.dispatches[0].ok, true)
+  assert.equal(work.publication.dispatches[0].label, undefined, 'DSL 显示名由静态表提供,不写进历史')
   assert.equal(work.publication.dispatches[1].ok, false)
   assert.equal(work.publication.dispatches[1].error, '未登录')
   // 成功投递只推到「已投递」,发布仍等用户确认

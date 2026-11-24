@@ -222,6 +222,14 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       const pendingTask = await readPendingSyncTask()
       const sameTask = !!(syncState && pendingTask && pendingTask.syncId === syncState.syncId)
 
+      // 新任务优先:pendingTask 与旧 activeSyncState 的 syncId 不同时,旧状态是上一次
+      // 投递。若先采用旧状态,它的 currentSyncId 会把新任务的进度消息全部过滤掉。
+      if (pendingTask && !sameTask) {
+        set(pendingTaskState(pendingTask))
+        await chrome.storage.local.remove(PENDING_SYNC_TASK_KEY)
+        return
+      }
+
       if (syncState) {
         set({
           status: syncState.status,

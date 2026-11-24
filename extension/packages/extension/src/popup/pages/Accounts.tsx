@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ArrowLeft, Globe, Loader2, Plus, Trash2, Check, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Globe, Loader2, Plus, Trash2, Check, X, RefreshCw, ChevronRight } from 'lucide-react'
 import { platformDisplayName } from '@/lib/platform-names'
 import { translateAdapterError } from '@/lib/i18n'
 import { Button } from '../components/ui/Button'
@@ -19,6 +19,8 @@ interface CMSAccount {
   name: string
   type: string
   url: string
+  isConnected?: boolean
+  lastError?: string
 }
 
 const cmsOptions: { id: CMSType; name: string; description: string; icon?: string }[] = [
@@ -74,7 +76,7 @@ function PlatformRow({ platform, isLast }: { platform: PlatformStatus; isLast: b
 
 export function AccountsPage() {
   const { t } = useI18n()
-  const { addAccount } = useCMSStore()
+  const { addAccount, testConnection } = useCMSStore()
 
   const [platforms, setPlatforms] = useState<PlatformStatus[]>([])
   const [platformsLoading, setPlatformsLoading] = useState(true)
@@ -89,6 +91,7 @@ export function AccountsPage() {
   const [error, setError] = useState('')
   // 删除自建站点(连密码一起删)走两步确认:点垃圾桶进入确认态,防误触即永久丢失
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null)
+  const [testingId, setTestingId] = useState<string | null>(null)
 
   const mapPlatforms = (list: any[]): PlatformStatus[] =>
     list
@@ -142,6 +145,16 @@ export function AccountsPage() {
     await chrome.storage.local.set({ cmsAccounts: updated })
     await chrome.storage.local.remove(`cms_pwd_${id}`)
     setCmsAccounts(updated)
+    refreshTargets()
+  }
+
+  // 测试已有站点:连接状态写回 storage,工作台的自建站目标随之更新
+  const testCmsAccount = async (id: string) => {
+    setTestingId(id)
+    await testConnection(id)
+    const storage = await chrome.storage.local.get('cmsAccounts')
+    setCmsAccounts(storage.cmsAccounts || [])
+    setTestingId(null)
     refreshTargets()
   }
 
@@ -318,12 +331,16 @@ export function AccountsPage() {
                     key={account.id}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-card"
                   >
-                    <span className="w-5 h-5 rounded-full bg-status-published/10 flex items-center justify-center flex-shrink-0">
-                      <Check className="w-3 h-3 text-status-published"  strokeWidth={1.6} />
+                    <span className={`w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 ${account.isConnected ? 'bg-status-published/10' : 'bg-status-danger/10'}`}>
+                      {account.isConnected
+                        ? <Check className="w-3 h-3 text-status-published"  strokeWidth={1.6} />
+                        : <X className="w-3 h-3 text-status-danger"  strokeWidth={1.6} />}
                     </span>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm truncate">{account.name}</p>
-                      <p className="text-[11px] text-muted-foreground truncate">{account.url}</p>
+                      <p className={`text-[11px] truncate ${account.isConnected ? 'text-muted-foreground' : 'text-status-danger'}`}>
+                        {account.isConnected ? account.url : (account.lastError || t('未连接'))}
+                      </p>
                     </div>
                     {confirmingDelete === account.id ? (
                       <span className="flex items-center gap-1.5 flex-shrink-0">
@@ -341,13 +358,24 @@ export function AccountsPage() {
                         </button>
                       </span>
                     ) : (
-                      <button
-                        onClick={() => setConfirmingDelete(account.id)}
-                        aria-label={t('删除')}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-muted transition-colors flex-shrink-0"
-                      >
-                        <Trash2 className="w-3.5 h-3.5"  strokeWidth={1.6} />
-                      </button>
+                      <span className="flex items-center gap-0.5 flex-shrink-0">
+                        <button
+                          onClick={() => void testCmsAccount(account.id)}
+                          disabled={testingId === account.id}
+                          aria-label={t('测试连接')}
+                          title={t('测试连接')}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${testingId === account.id ? 'animate-spin' : ''}`}  strokeWidth={1.6} />
+                        </button>
+                        <button
+                          onClick={() => setConfirmingDelete(account.id)}
+                          aria-label={t('删除')}
+                          className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-muted transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5"  strokeWidth={1.6} />
+                        </button>
+                      </span>
                     )}
                   </div>
                 ))}

@@ -16,7 +16,7 @@ import { applyOps, newId } from './ops.js'
 import { readPairing } from './pairing.js'
 import { dshHome } from './store.js'
 import { tr } from './i18n.js'
-import { isDispatchTarget, readDispatchTargets, targetLabel, targetsPath } from './targets.js'
+import { isDispatchTarget, isStaticDispatchTarget, readDispatchTargets, targetLabel, targetsPath } from './targets.js'
 import { isHttpUrl } from './url.js'
 
 export function bridgePaths() {
@@ -296,7 +296,10 @@ export async function digestReceipts(store) {
           id: payload.itemId,
           dispatch: {
             platform: row.platform,
-            label: text(row.platformName, 60) || targetLabel(row.platform, targets),
+            // DSL 的显示名由静态表提供;只有自建站需要把账户名记进历史
+            ...(isStaticDispatchTarget(row.platform)
+              ? {}
+              : { label: text(row.platformName, 60) || targetLabel(row.platform, targets) }),
             ok: row.ok === true,
             ...(safeUrl ? { url: safeUrl } : {}),
             ...(row.ok !== true && typeof row.error === 'string' ? { error: row.error.slice(0, 200) } : {}),
