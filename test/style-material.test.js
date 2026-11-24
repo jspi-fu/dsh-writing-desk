@@ -136,3 +136,23 @@ test('buildStylePrompt 没有可读作品时仍返回空材料与提示', () => 
   assert.deepEqual(missing, [])
   assert.match(prompt, /<material>\n\n<\/material>/)
 })
+
+test('buildStylePrompt 把证据链三条硬门槛写进 prompt', () => {
+  const { prompt } = buildStylePrompt({ styles: [], skills: [] }, [work()], {}, {})
+  // 门槛一:两处原文出处,图片行/链接不算证据
+  assert.match(prompt, /门槛一·原文证据/)
+  assert.match(prompt, /至少给出 2 处/)
+  assert.match(prompt, /图片行/)
+  assert.match(prompt, /凑不满 2 处的,不要写成规则/)
+  // 门槛二:置信度分档 + 异质样本隔离
+  assert.match(prompt, /门槛二·置信度与样本隔离/)
+  assert.match(prompt, /confidence\(0~1\)/)
+  assert.match(prompt, /单列为异质样本/)
+  // 门槛三:事实底稿不进风格证据
+  assert.match(prompt, /门槛三·事实与风格分离/)
+  assert.match(prompt, /绝不能写进常用词或规则/)
+  // 规则结构:硬规则/软范式 + 落库字段
+  assert.match(prompt, /kind=hard/)
+  assert.match(prompt, /kind=soft/)
+  assert.match(prompt, /confidence 按门槛二填/)
+})

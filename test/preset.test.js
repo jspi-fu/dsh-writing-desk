@@ -199,13 +199,21 @@ test('writing_desk_add_rule 以 proposed 落库等确认;add_style 默认设为�
     tools.apply(ctx)
     const addRule = registered.find(row => row.name === 'writing_desk_add_rule')
     const addStyle = registered.find(row => row.name === 'writing_desk_add_style')
-    await addRule.execute({ name: '初稿写短些', rule: '你通常把初稿删到六成,以后控制得更紧凑。', evidence: '来自 3 次改稿' })
+    await addRule.execute({ name: '初稿写短些', rule: '你通常把初稿删到六成,以后控制得更紧凑。', evidence: '《甲》发布稿:删到六成;《乙》创作对话:再紧凑一点', kind: 'soft', confidence: 0.72 })
     let state = await store.read()
     const skill = state.skills.find(row => row.name === '初稿写短些')
     assert.equal(skill.status, 'proposed', '提案等用户确认,不直接生效')
     assert.equal(skill.source, '创作会话')
-    // 名字与正文缺一不可
+    assert.equal(skill.kind, 'soft', '硬/软范式随提案落库')
+    assert.equal(skill.confidence, 0.72, '置信度随提案落库')
+    assert.match(skill.evidence, /《甲》.*《乙》/, '证据链可放宽到两处原文')
+    // 名字与正文缺一不可;kind 只接受硬/软两种
     await assert.rejects(addRule.execute({ name: '只有名字' }), /名字和正文/)
+    await assert.rejects(addRule.execute({ name: 'x', rule: 'y', kind: 'weird' }), /kind/)
+    const clipped = await addRule.execute({ name: '越界置信度', rule: 'z', confidence: 9 })
+    assert.equal(clipped.proposed, true)
+    state = await store.read()
+    assert.equal(state.skills.find(row => row.name === '越界置信度').confidence, 1)
     await addStyle.execute({ name: '测试腔', summary: '短句、说人话', tone: '克制', words: ['那天', 3] })
     state = await store.read()
     const style = state.styles.find(row => row.name === '测试腔')
@@ -285,10 +293,17 @@ test('rules skill get 读出实时规则与风格;示例与未确认的提议不
   assert.match(definition.content, /同一选题优先在一个平台首发。/)
   assert.doesNotMatch(definition.content, /示例不算风格/)
   assert.doesNotMatch(definition.content, /用户没确认的不算/)
+  // 证据链上屏:硬/软、置信度、原文依据都随规则正文给出,并带"怎么用"完成判据
+  assert.match(definition.content, /硬规则·置信度低/)
+  assert.match(definition.content, /依据:数据复盘/)
+  assert.match(definition.content, /怎么用这些规则/)
+  assert.match(definition.content, /读完就按上面的优先级动笔/)
   // 规则是 get 时实时读的:写入新规则后,同一个 provider 立刻给出新正文
-  applyOps(state, [{ op: 'add_skill', name: '新规则', rule: '标题要有动词。', status: 'active' }])
+  applyOps(state, [{ op: 'add_skill', name: '新规则', rule: '标题要有动词。', status: 'active', kind: 'soft', confidence: 0.9, evidence: '《甲》发布稿:第一句;《乙》发布稿:第二句' }])
   const fresh = await provider.get(candidate, {})
   assert.match(fresh.content, /标题要有动词。/)
+  assert.match(fresh.content, /软范式·置信度高/)
+  assert.match(fresh.content, /《甲》发布稿:第一句;《乙》发布稿:第二句/)
 })
 
 test('rules skill 没有风格与规则时仍在,正文说明去哪里沉淀', async () => {
@@ -311,15 +326,15 @@ test('craft skill 是静态写作法:意图单、声纹双向清单、审读双�
   assert.equal(craft.name, 'writing-desk-craft')
   const definition = await provider.get(craft, {})
   assert.match(definition.content, /意图单/)
-  assert.match(definition.content, /不是问题/)
+  assert.match(definition.content, /活人感/)
   assert.match(definition.content, /Standards 轴|Standards/)
   assert.match(definition.content, /Intent 轴|Intent/)
   assert.match(definition.content, /停下/)
   assert.match(definition.content, /小红书/)
   assert.match(definition.content, /公众号/)
   assert.match(definition.content, /知乎/)
-  // 人工闸门写进条款:不许自动跑到底
-  assert.match(definition.content, /不要自己一路跑到底|未经用户确认/)
+  // 人工闸门是 leading word:每阶段停等确认,正向陈述而非禁令
+  assert.match(definition.content, /人工闸门/)
 })
 
 // ---------- host 半片接线(src/host.js) ----------

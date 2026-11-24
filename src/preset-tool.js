@@ -197,13 +197,15 @@ function writeTool(desk) {
 function addRuleTool(desk) {
   return {
     name: 'writing_desk_add_rule',
-    description: '把从改稿方向或数据里得出的写作规则提案存进图文创作台,等用户在风格页确认。不用于事实修正——事实问题直接告诉用户。',
+    description: '把从作品原文里反复观察到的写作规则提案存进图文创作台,等用户在风格页确认。每条至少两处原文出处,kind 区分硬规则/软范式,confidence 标置信度。不用于事实修正——事实问题直接告诉用户。',
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: '规则短名,不超过 12 字。' },
+        name: { type: 'string', description: '规则短名,不超过 20 字。' },
         rule: { type: 'string', description: '规则正文:以后每篇怎么做,一条一条写清楚。' },
-        evidence: { type: 'string', description: '依据(哪几次修改、哪篇数据),给用户判断用。' },
+        evidence: { type: 'string', description: '至少两处原文证据:每处写清作品名、位置(发布稿/创作对话/发布后改动)并原样摘录那句原文。图片行与链接不算证据。' },
+        kind: { type: 'string', enum: ['hard', 'soft'], description: 'hard=硬规则(每篇必做);soft=软范式(倾向,允许按场景例外)。默认 hard。' },
+        confidence: { type: 'number', minimum: 0, maximum: 1, description: '置信度 0~1:3 篇以上一致给 0.8+;2 篇给 0.6~0.8;仅 1 篇孤例给 0.5 以下。' },
       },
       required: ['name', 'rule'],
     },
@@ -221,8 +223,14 @@ function addRuleTool(desk) {
     async execute(args) {
       if (args === null || typeof args !== 'object') throw invalid('参数必须是对象')
       if (typeof args.name !== 'string' || !args.name.trim() || typeof args.rule !== 'string' || !args.rule.trim()) throw invalid('规则需要名字和正文')
+      if (args.kind !== undefined && args.kind !== 'hard' && args.kind !== 'soft') throw invalid('kind 只能是 hard 或 soft')
+      const fields = { op: 'add_skill', name: args.name.slice(0, 20), rule: args.rule.slice(0, 500), kind: args.kind ?? 'hard', source: '创作会话', status: 'proposed' }
+      if (typeof args.evidence === 'string') fields.evidence = args.evidence.slice(0, 1000)
+      if (typeof args.confidence === 'number' && Number.isFinite(args.confidence)) {
+        fields.confidence = Math.min(1, Math.max(0, args.confidence))
+      }
       await desk.store.mutate('会话提议规则', (draft) => {
-        const { errors } = applyOps(draft, [{ op: 'add_skill', name: args.name.slice(0, 20), rule: args.rule.slice(0, 500), ...(typeof args.evidence === 'string' ? { evidence: args.evidence.slice(0, 200) } : {}), source: '创作会话', status: 'proposed' }])
+        const { errors } = applyOps(draft, [fields])
         if (errors.length) throw new Error(errors[0])
         return draft
       })

@@ -138,6 +138,9 @@ test('exportSkill 不导出示例规则和示例人物', async () => {
     const body = await readFile(result.path, 'utf8')
     assert.match(body, /^---\nname: writing-desk-voice\n/)
     assert.match(body, /我的规则/)
+    // 导出的 Skill 也带"怎么用"和证据链口径,与实时 rules skill 同一份
+    assert.match(body, /怎么用这些规则/)
+    assert.match(body, /硬规则·置信度/)
     assert.doesNotMatch(body, /开头先给数字/)
     assert.doesNotMatch(body, /想入门的小林/)
   } finally {
@@ -418,7 +421,7 @@ test('参考内容：风格卡只留六个样句,写作要求带上逻辑与衔�
   const voice = styleToVoice(style)
   assert.match(voice, /逻辑：先讲反例/)
   assert.match(voice, /衔接：用「然后呢」接/)
-  assert.match(voice, /样句（学节奏，不要照抄）/)
+  assert.match(voice, /样句（学节奏，正文另写）/)
   applyOps(state, [{ op: 'set_style', id: receipts[0].target }])
   assert.equal(activeStyle(state).logic, '先讲反例')
 })

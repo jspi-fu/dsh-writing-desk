@@ -29,7 +29,7 @@ const CAPSULE_FIELDS = { name: 'text', itemIds: 'ids' }
 const PERSON_FIELDS = { name: 'text', role: 'text', note: 'text', traits: 'list', tone: 'num' }
 const ANGLE_FIELDS = { name: 'text', hook: 'text', prompt: 'text' }
 const STYLE_FIELDS = { name: 'text', icon: 'text', summary: 'text', tone: 'text', sentences: 'text', opening: 'text', structure: 'text', logic: 'text', story: 'text', flow: 'text', words: 'list', avoid: 'list', samples: 'list' }
-const SKILL_FIELDS = { name: 'text', rule: 'text', source: 'text', status: 'text', confidence: 'num', evidence: 'text' }
+const SKILL_FIELDS = { name: 'text', rule: 'text', source: 'text', status: 'text', kind: 'text', confidence: 'num', evidence: 'text' }
 
 let counter = 0
 export function newId(prefix = 'x') {
@@ -551,7 +551,7 @@ const handlers = {
     return { text: tr('之后按「{name}」的风格写', { name: style.name }) }
   },
   add_skill(state, op, now) {
-    const skill = { id: newId('s'), name: '', rule: '', source: tr('手动'), status: 'proposed', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }
+    const skill = { id: newId('s'), name: '', rule: '', source: tr('手动'), status: 'proposed', kind: 'hard', confidence: 0.5, createdAt: now, ...pick(SKILL_FIELDS, op) }
     if (!skill.name || !skill.rule) throw new Error(tr('Skill 需要名字和规则'))
     state.skills.unshift(skill)
     return { text: tr('沉淀规则「{name}」', { name: skill.name }), target: skill.id, kind: 'skill' }

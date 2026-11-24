@@ -2,6 +2,7 @@
 // 规则的沉淀(改稿对比、会话提炼)发生在 harness 侧,这里只负责写文件这一个出口。
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { formatRule, rulesGuide } from './skill-rules.js'
 import { activeStyle, styleToVoice } from './style.js'
 import { tr } from './i18n.js'
 
@@ -30,9 +31,10 @@ export async function exportSkill(state, home) {
     throw Object.assign(new Error(tr('还没有你自己的风格或规则。示例规则和模板不会被导出')), { status: 400 })
   }
   await mkdir(dir, { recursive: true })
-  const description = tr('作者的自媒体写作风格和规则。写选题、脚本、标题或封面文案时使用。')
+  const description = tr('作者本人的写作腔调与规则。动笔前加载,按作者的写法写。')
   const styleBlock = style ? `## ${tr('风格：{name}', { name: style.name })}\n\n${styleToVoice(style)}\n\n` : ''
-  const ruleBlock = rules.length ? `## ${tr('必须遵守的规则')}\n\n${rules.map(r => `- **${r.name}**${tr('：')}${r.rule}${r.evidence ? tr('（依据：{evidence}）', { evidence: r.evidence }) : ''}`).join('\n')}\n` : ''
+  // 与实时 rules skill 共用同一份分档与用法说明:导出的文件也带证据链和"怎么用",口径不会漂移。
+  const ruleBlock = rules.length ? `## ${tr('写作规则')}\n\n${rules.map(rule => formatRule(rule, tr)).join('\n')}\n\n${rulesGuide(tr)}` : ''
   const body = `---\nname: ${name}\ndescription: ${description}\n---\n\n# ${tr('图文写作风格')}\n\n${tr('由「图文创作台」沉淀，更新于 {date}。', { date: new Date().toISOString().slice(0, 10) })}\n\n${styleBlock}${ruleBlock}`
   await writeFile(join(dir, 'SKILL.md'), body)
   return { name, path: join(dir, 'SKILL.md'), rules: rules.length, slug: slug(name, 'writing-desk') }

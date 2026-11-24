@@ -7,8 +7,8 @@ export function styleToVoice(style) {
   // 这段也会写进导出的 Skill 文件，英文界面时用英文标签
   const en = currentLang() === 'en'
   const [overall, tone, sentences, opening, structure, logic, story, flow, words, avoid, samples, sep] = en
-    ? ['Overall: ', 'Tone: ', 'Sentences: ', 'Opening: ', 'Structure: ', 'Reasoning: ', 'Storytelling: ', 'Transitions: ', 'Go-to words: ', 'Never: ', 'Sample lines (learn the rhythm, do not copy):', ', ']
-    : ['整体：', '语气：', '句式：', '开头：', '结构：', '逻辑：', '讲述：', '衔接：', '常用词：', '绝不要：', '样句（学节奏，不要照抄）：', '、']
+    ? ['Overall: ', 'Tone: ', 'Sentences: ', 'Opening: ', 'Structure: ', 'Reasoning: ', 'Storytelling: ', 'Transitions: ', 'Go-to words: ', 'Never: ', 'Sample lines (study the rhythm, write your own):', ', ']
+    : ['整体：', '语气：', '句式：', '开头：', '结构：', '逻辑：', '讲述：', '衔接：', '常用词：', '绝不要：', '样句（学节奏，正文另写）：', '、']
   const lines = [
     style.summary && `${overall}${style.summary}`,
     style.tone && `${tone}${style.tone}`,

@@ -3,6 +3,7 @@ import React from 'react'
 import { dispatchOps, EMPTY_LIST, exportSkills, harvestText, setDesk, useDesk } from './desk.js'
 import { openStyleSession } from './session-link.js'
 import { LearnFromWorksDialog } from './learn-from-works.jsx'
+import evidenceCss from './style-evidence.css'
 import { lang, t, useLang } from './i18n.js'
 import { Dialog, Icon, IconButton } from './ui.jsx'
 import { STYLE_CATEGORIES, hash, styleIcon } from './util.js'
@@ -129,20 +130,34 @@ export function StyleView() {
   const shown = category === '全部' ? categories : categories.filter(name => name === category)
   const proposed = skills.filter(s => s.status === 'proposed')
   const rules = skills.filter(s => s.status !== 'proposed')
-  const rule = skill => (
-    <li key={skill.id} className="md-rule">
-      <div>
-        <strong>{skill.name}</strong>
-        {/* 来源(工单 #10):「成稿反馈」的规则是从你对成稿的修改里沉淀的,一眼能认出来 */}
-        {skill.source ? <small className="md-rule-source">{skill.source}</small> : null}
-        <p>{skill.rule}</p>
-      </div>
-      {skill.status === 'proposed'
-        ? <button type="button" className="md-pill is-small is-primary" onClick={() => dispatchOps([{ op: 'update_skill', id: skill.id, status: 'active' }], { label: t('启用规则「{name}」', { name: skill.name }), silent: true })}>{t('启用')}</button>
-        : <button type="button" className="md-pill is-small" onClick={() => dispatchOps([{ op: 'update_skill', id: skill.id, status: 'proposed' }], { label: t('停用规则「{name}」', { name: skill.name }), silent: true })}>{t('停用')}</button>}
-      <IconButton icon="trash" label={t('删除规则「{name}」', { name: skill.name })} onClick={() => dispatchOps([{ op: 'delete_skill', id: skill.id }], { label: t('删除规则「{name}」', { name: skill.name }) })} />
-    </li>
-  )
+  // 证据链上屏:启用前先看得到硬/软、置信度与原文出处,别让用户盲目确认一条编造的规则。
+  const rule = skill => {
+    const number = typeof skill.confidence === 'number' && Number.isFinite(skill.confidence) ? skill.confidence : 0.5
+    const bandKey = number >= 0.8 ? 'high' : number >= 0.6 ? 'mid' : 'low'
+    const bandLabel = bandKey === 'high' ? t('高') : bandKey === 'mid' ? t('中') : t('低')
+    const kind = skill.kind === 'soft' ? t('软范式') : t('硬规则')
+    const evidence = typeof skill.evidence === 'string' ? skill.evidence.trim() : ''
+    return (
+      <li key={skill.id} className="md-rule">
+        <div>
+          <div className="md-rule-head">
+            <strong>{skill.name}</strong>
+            <span className={`md-rule-kind ${skill.kind === 'soft' ? 'is-soft' : ''}`}>{kind}</span>
+            <span className={`md-rule-conf is-${bandKey}`}>{t('置信度')}{bandLabel}</span>
+          </div>
+          {/* 来源(工单 #10):「成稿反馈」的规则是从你对成稿的修改里沉淀的,一眼能认出来 */}
+          {skill.source ? <small className="md-rule-source">{skill.source}</small> : null}
+          <p>{skill.rule}</p>
+          {evidence ? <small className="md-rule-evidence" title={evidence}>{evidence}</small> : null}
+          {skill.status === 'proposed' && evidence.length < 20 ? <small className="md-rule-warn">{t('依据不足，启用前请核对原文出处')}</small> : null}
+        </div>
+        {skill.status === 'proposed'
+          ? <button type="button" className="md-pill is-small is-primary" onClick={() => dispatchOps([{ op: 'update_skill', id: skill.id, status: 'active' }], { label: t('启用规则「{name}」', { name: skill.name }), silent: true })}>{t('启用')}</button>
+          : <button type="button" className="md-pill is-small" onClick={() => dispatchOps([{ op: 'update_skill', id: skill.id, status: 'proposed' }], { label: t('停用规则「{name}」', { name: skill.name }), silent: true })}>{t('停用')}</button>}
+        <IconButton icon="trash" label={t('删除规则「{name}」', { name: skill.name })} onClick={() => dispatchOps([{ op: 'delete_skill', id: skill.id }], { label: t('删除规则「{name}」', { name: skill.name }) })} />
+      </li>
+    )
+  }
   return (
     <div className="md-board-page">
       <div className="md-style-page">
