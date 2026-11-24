@@ -192,8 +192,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   deskTask: null,
 
   loadPlatforms: async () => {
-    const settled = ['syncing', 'completed', 'failed', 'cancelled'].includes(get().status)
-    if (!settled) set({ status: 'loading' })
+    const isSettled = () => ['syncing', 'completed', 'failed', 'cancelled'].includes(get().status)
+    if (!isSettled()) set({ status: 'loading' })
 
     // 先渲染缓存,再刷新登录态;投递页只需要名字/图标,不参与选择。
     try {
@@ -206,10 +206,10 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     try {
       const response = await chrome.runtime.sendMessage({ type: 'CHECK_ALL_AUTH' })
       const rows = Array.isArray(response?.platforms) ? response.platforms.map(toPlatform).filter(Boolean) as Platform[] : []
-      set(settled ? { platforms: rows } : { platforms: rows, status: 'idle' })
+      set(isSettled() ? { platforms: rows } : { platforms: rows, status: 'idle' })
     } catch (error) {
       logger.debug('Platform list unavailable:', error)
-      if (!settled) set({ status: 'idle' })
+      if (!isSettled()) set({ status: 'idle' })
     }
   },
 

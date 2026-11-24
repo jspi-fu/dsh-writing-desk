@@ -1,7 +1,7 @@
 /**
  * 任务呈现模块:pendingSyncTask storage 契约的唯一守门人。投递管线只说
- * stage/clear;storage 键、是否通知已开页面、PANEL_NAVIGATE/SYNC_TASK_QUEUED
- * 消息、396x560 窗口几何全部藏在实现内。
+ * stage/clear;storage 键、是否通知已打开的侧栏、PANEL_NAVIGATE/SYNC_TASK_QUEUED
+ * 消息都藏在实现内。
  */
 import { createLogger } from '../lib/logger'
 
@@ -9,7 +9,7 @@ const logger = createLogger('TaskPresenter')
 
 const PENDING_SYNC_TASK_KEY = 'pendingSyncTask'
 
-// 工作台投递的同步任务：performSync 前写入 storage，供同步页恢复
+// 工作台投递的任务:performSync 前写入 storage,供投递页恢复
 export interface PendingSyncTask {
   operationId?: string
   itemId?: string
@@ -28,9 +28,8 @@ export interface PendingSyncTask {
 type ExtensionContextInfo = { contextType: string; documentUrl?: string }
 
 /**
- * 是否已有扩展页面（侧栏或同步窗口）打开。HashRouter 的 hash 不参与
- * getContexts 的精确 URL 过滤，因此先取上下文再按 documentUrl 判断，
- * 避免侧栏开在 /capture 时误判为“没有页面”而重复开窗。
+ * 侧栏是否开着(ADR 0017:侧栏是唯一首页,不再有同步窗口)。HashRouter 的 hash
+ * 不参与 getContexts 的精确 URL 过滤,因此先取上下文再按 documentUrl 判断。
  */
 async function hasOpenExtensionPage(): Promise<boolean> {
   const runtime = chrome.runtime as unknown as {
@@ -41,7 +40,7 @@ async function hasOpenExtensionPage(): Promise<boolean> {
   if (typeof runtime.getContexts !== 'function') return false
   try {
     const contexts = await runtime.getContexts({
-      contextTypes: ['SIDE_PANEL', 'TAB', 'POPUP'],
+      contextTypes: ['SIDE_PANEL'],
     })
     return contexts.some(context =>
       typeof context.documentUrl === 'string'

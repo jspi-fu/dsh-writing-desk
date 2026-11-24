@@ -1,25 +1,14 @@
 // 投递目标快照(ADR 0017):扩展经本地助手写 bridge/targets.json,工作台只读。
-// 文件里只有「哪些平台已登录、哪些自建站已连接」,没有密码与 cookie;这里仍按
-// 不可信输入校验一遍,平台 id 必须落在静态表或快照的自建站清单里。
+// 文件里只有「哪些平台已登录、哪些自建站已连接」,没有密码与 cookie;形状校验
+// 与本地助手共用 targets-schema.js,这里只补宿主侧的白名单与显示名。
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { dshHome } from './store.js'
 import { BRIDGE_ADAPTERS } from './platforms.js'
+import { sanitizeTargetSnapshot } from './targets-schema.js'
 
 export function targetsPath() {
   return join(dshHome(), 'writing-desk', 'bridge', 'targets.json')
-}
-
-function isRecord(value) {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function safeId(value) {
-  return typeof value === 'string' && /^[\w-]{1,80}$/.test(value) ? value : ''
-}
-
-function text(value, cap) {
-  return typeof value === 'string' ? value.slice(0, cap) : ''
 }
 
 /**
@@ -34,34 +23,18 @@ export async function readDispatchTargets() {
   } catch {
     return null
   }
-  if (!isRecord(raw)) return null
+  const snapshot = sanitizeTargetSnapshot(raw)
+  if (!snapshot) return null
 
-  const platforms = []
-  for (const row of Array.isArray(raw.platforms) ? raw.platforms : []) {
-    if (!isRecord(row)) continue
-    const id = safeId(row.id)
-    if (!id || !Object.hasOwn(BRIDGE_ADAPTERS, id)) continue
-    platforms.push({ id, name: text(row.name, 100) || BRIDGE_ADAPTERS[id], authenticated: row.authenticated === true })
-  }
+  const platforms = snapshot.platforms
+    .filter(row => Object.hasOwn(BRIDGE_ADAPTERS, row.id))
+    .map(row => ({
+      id: row.id,
+      name: row.name || BRIDGE_ADAPTERS[row.id],
+      authenticated: row.authenticated,
+    }))
 
-  const cms = []
-  for (const row of Array.isArray(raw.cms) ? raw.cms : []) {
-    if (!isRecord(row) || !['wordpress', 'typecho', 'metaweblog'].includes(row.type)) continue
-    const id = safeId(row.id)
-    if (!id) continue
-    cms.push({
-      id,
-      type: row.type,
-      name: text(row.name, 100) || id,
-      url: text(row.url, 500),
-      username: text(row.username, 200),
-      connected: row.connected === true,
-    })
-  }
-
-  const hidden = [...new Set((Array.isArray(raw.hidden) ? raw.hidden : []).map(safeId).filter(Boolean))].slice(0, 50)
-
-  return { at: text(raw.at, 40), platforms, cms, hidden }
+  return { at: snapshot.at, platforms, cms: snapshot.cms, hidden: snapshot.hidden }
 }
 
 /** 平台 id 是否可投递:静态 DSL 表 ∪ 当前快照里的自建站 id。 */
@@ -74,5 +47,5 @@ export function isDispatchTarget(id, targets) {
 /** 回执/历史里的显示名:自建站用账户名,DSL 用静态表,都没有就退回 id。 */
 export function targetLabel(id, targets) {
   if (Object.hasOwn(BRIDGE_ADAPTERS, id)) return BRIDGE_ADAPTERS[id]
-  return targets?.cms?.find(site => site.id === id)?.name ?? id
+  return targets?.cms?.find(site => site.id === id)?.name || id
 }

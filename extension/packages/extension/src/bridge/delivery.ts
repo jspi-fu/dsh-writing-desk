@@ -141,7 +141,7 @@ export class DeliveryPipeline {
     return assembleShards(parts)
   }
 
-  /** 任务下发:沿用 ADR 0010 的投递即弹对话框行为,落 pendingSyncTask 并执行同步。 */
+  /** 任务下发:落 pendingSyncTask 并执行同步;侧栏开着时通知它切到投递页(ADR 0017)。 */
   private async dispatchArticle(
     task: TaskMeta,
     markdown: string,

@@ -10,6 +10,7 @@ import fsp from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import os from 'node:os'
+import { sanitizeTargetSnapshot } from '../src/targets-schema.js'
 
 /** NM host 名:注册表与扩展 connectNative/sendNativeMessage 共用的锚点。 */
 export const HOST_NAME = 'app.dswritesync.plugin'
@@ -71,51 +72,6 @@ export async function writeJsonAtomic(file, value) {
 /** 只允许安全字符进文件名,防止把 operationId 拼出目录穿越。 */
 export function safeOperationId(value) {
   return typeof value === 'string' && /^[\w-]{1,200}$/.test(value) ? value : null
-}
-
-/**
- * 投递目标快照(ADR 0017):扩展上报「哪些平台已登录、哪些自建站已连接」,
- * 工作台据此渲染发布菜单。只保留白名单字段——密码与 cookie 不在协议里。
- */
-export function sanitizeTargetSnapshot(body) {
-  if (!isPlainObject(body)) return null
-  const safeId = value => (typeof value === 'string' && /^[\w-]{1,80}$/.test(value) ? value : '')
-  const text = (value, cap) => (typeof value === 'string' ? value.slice(0, cap) : '')
-  const cmsTypes = new Set(['wordpress', 'typecho', 'metaweblog'])
-
-  const platforms = []
-  for (const row of Array.isArray(body.platforms) ? body.platforms : []) {
-    if (!isPlainObject(row)) continue
-    const id = safeId(row.id)
-    if (!id) continue
-    platforms.push({ id, name: text(row.name, 100) || id, authenticated: row.authenticated === true })
-    if (platforms.length >= 50) break
-  }
-
-  const cms = []
-  for (const row of Array.isArray(body.cms) ? body.cms : []) {
-    if (!isPlainObject(row) || !cmsTypes.has(row.type)) continue
-    const id = safeId(row.id)
-    if (!id) continue
-    cms.push({
-      id,
-      type: row.type,
-      name: text(row.name, 100) || id,
-      url: text(row.url, 500),
-      username: text(row.username, 200),
-      connected: row.connected === true,
-    })
-    if (cms.length >= 50) break
-  }
-
-  const hidden = [...new Set((Array.isArray(body.hidden) ? body.hidden : []).map(safeId).filter(Boolean))].slice(0, 50)
-
-  return {
-    at: typeof body.at === 'string' ? body.at.slice(0, 40) : new Date().toISOString(),
-    platforms,
-    cms,
-    hidden,
-  }
 }
 
 /** argv 里扫 origin(Windows 上 --parent-window 在前,顺序不作假设)。 */

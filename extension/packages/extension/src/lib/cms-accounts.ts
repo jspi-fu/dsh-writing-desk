@@ -3,7 +3,7 @@
  * 换 id,历史 dispatches 就指向死 id。启动时按 类型+地址+用户名 重算,密码键
  * `cms_pwd_*` 一起搬家;幂等,跑几次结果一样。
  */
-import { cmsAccountId, type CmsProtocol } from './cms-id'
+import { CMS_PROTOCOLS, cmsAccountId, type CmsProtocol } from './cms-id'
 
 interface StoredCmsAccount {
   id: string
@@ -15,7 +15,7 @@ interface StoredCmsAccount {
   lastError?: string
 }
 
-const PROTOCOLS = new Set<CmsProtocol>(['wordpress', 'typecho', 'metaweblog'])
+const PROTOCOLS = new Set<string>(CMS_PROTOCOLS)
 
 export async function migrateCmsAccountIds(): Promise<boolean> {
   const storage = await chrome.storage.local.get('cmsAccounts')
@@ -31,6 +31,7 @@ export async function migrateCmsAccountIds(): Promise<boolean> {
     const id = cmsAccountId({ type: account.type, url: account.url, username: account.username })
     if (seen.has(id)) {
       changed = true
+      await chrome.storage.local.remove(`cms_pwd_${account.id}`)
       continue
     }
     seen.add(id)

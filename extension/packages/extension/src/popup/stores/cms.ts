@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import { createLogger } from '../../lib/logger'
-import { cmsAccountId } from '../../lib/cms-id'
+import { cmsAccountId, type CmsProtocol } from '../../lib/cms-id'
 
 const logger = createLogger('CMSStore')
 
-export type CMSType = 'wordpress' | 'typecho' | 'metaweblog'
+export type CMSType = CmsProtocol
 
 export interface CMSAccount {
   id: string
@@ -49,6 +49,9 @@ export const useCMSStore = create<CMSState>((set) => ({
       const storage = await chrome.storage.local.get('cmsAccounts')
       const accounts: CMSAccount[] = storage.cmsAccounts || []
       const id = cmsAccountId({ type: accountData.type, url: accountData.url, username: accountData.username })
+      if (accounts.some(account => account.id === id)) {
+        return { success: false, error: '这个站点已经添加过了' }
+      }
 
       const newAccount: CMSAccount = {
         id,

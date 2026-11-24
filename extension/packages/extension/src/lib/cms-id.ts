@@ -4,7 +4,8 @@
  * 工作台的历史 dispatches 才不会被一次删除/重加指成死 id。
  */
 
-export type CmsProtocol = 'wordpress' | 'typecho' | 'metaweblog'
+export const CMS_PROTOCOLS = ['wordpress', 'typecho', 'metaweblog'] as const
+export type CmsProtocol = (typeof CMS_PROTOCOLS)[number]
 
 /** 站点地址归一:去 fragment/query/尾斜杠,host 小写;非法 URL 退回小写去尾斜杠。 */
 export function normalizeCmsUrl(raw: string): string {

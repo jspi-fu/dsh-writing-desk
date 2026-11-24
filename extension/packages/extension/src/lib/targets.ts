@@ -4,6 +4,8 @@
  * 密码与 cookie 永远不出扩展。
  */
 
+import { CMS_PROTOCOLS } from './cms-id'
+
 export interface DispatchTargetPlatform {
   id: string
   name: string
@@ -30,7 +32,7 @@ const MAX_PLATFORMS = 50
 const MAX_SITES = 50
 const MAX_HIDDEN = 50
 const SAFE_ID = /^[\w-]{1,80}$/
-const CMS_TYPES = new Set(['wordpress', 'typecho', 'metaweblog'])
+const CMS_TYPES = new Set<string>(CMS_PROTOCOLS)
 
 function str(value: unknown, cap: number): string {
   return typeof value === 'string' ? value.trim().slice(0, cap) : ''

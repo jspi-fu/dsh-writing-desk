@@ -188,7 +188,8 @@ npm pack                       # Build an installable tgz
 | --- | --- |
 | `client/` | UI: idea wall, works page, schedule, styles, work editor, dock rail |
 | `src/` | Host API, state machine, harness tools & skills, local storage, bridge mailboxes |
-| `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel (in `extension/packages/extension`) || `native/` | Local helper (helper.bat/helper.mjs) and the NM registrar: the browser extension reaches the bridge mailbox over Native Messaging; MIT in this repo |
+| `extension/` | DSwritesync: a GPL-3.0 vendored fork of Wechatsync 2.0.10 with a StashDock-style capture side panel (in `extension/packages/extension`) |
+| `native/` | Local helper (helper.bat/helper.mjs) and the NM registrar: the browser extension reaches the bridge mailbox over Native Messaging; MIT in this repo |
 | `scripts/` | Packaging, sandbox, sample assets, marketplace index |
 | `assets/` | Sample images and videos, drawn by `scripts/gen-assets.py` (the logo is hand-made; archive in `docs/logo-final/`) |
 

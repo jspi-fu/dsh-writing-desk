@@ -1,4 +1,4 @@
-import { Check, X, Loader2, ExternalLink, ChevronRight } from 'lucide-react'
+import { Check, X, Loader2, ExternalLink } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { translateAdapterError } from '@/lib/i18n'
 import { platformDisplayName } from '@/lib/platform-names'
@@ -7,34 +7,28 @@ import type { Platform, SyncResult, PlatformProgress, DialogStatus } from './typ
 
 interface PlatformListProps {
   platforms: Platform[]
-  selected: Set<string>
   status: DialogStatus
   results: SyncResult[]
   platformProgress: Map<string, PlatformProgress>
   selectedPlatforms: string[]
-  onToggle: (id: string) => void
-  onSelectAll: () => void
 }
 
+/**
+ * 投递进度列表(ADR 0017):只呈现工作台任务选中的平台,不再有勾选/全选。
+ * 进度与结果仍按 PlatformList 的既有分层渲染。
+ */
 export function PlatformList({
   platforms,
-  selected,
   status,
   results,
   platformProgress,
   selectedPlatforms,
-  onToggle,
-  onSelectAll,
 }: PlatformListProps) {
   const { t } = useI18n()
-  const isIdle = status === 'idle' || status === 'loading'
   const isSyncing = status === 'syncing'
   // 完成/失败/取消都是终态，共用完成态的汇总头部和结果行渲染
   const isFinished = status === 'completed' || status === 'failed' || status === 'cancelled'
 
-  const authenticatedPlatforms = platforms.filter(p => p.isAuthenticated)
-  const unauthenticatedPlatforms = platforms.filter(p => !p.isAuthenticated)
-  const selectedCount = selected.size
   const successCount = results.filter(r => r.success).length
   const failedCount = results.filter(r => !r.success).length
 
@@ -53,35 +47,14 @@ export function PlatformList({
     ? (selectedPlatforms.reduce((sum, id) => sum + stageWeight(id), 0) / selectedPlatforms.length) * 100
     : 0
 
-  // Idle: only authenticated platforms; syncing/completed: only selected
-  const visiblePlatforms = isIdle
-    ? authenticatedPlatforms
-    : selectedPlatforms
-        .map(id => platforms.find(p => p.id === id))
-        .filter(Boolean) as Platform[]
+  const visiblePlatforms = selectedPlatforms
+    .map(id => platforms.find(p => p.id === id))
+    .filter(Boolean) as Platform[]
 
   return (
     <div className="space-y-2">
       {/* Header */}
       <div className="flex items-center justify-between px-1">
-        {isIdle && (
-          <>
-            <span className="text-sm font-medium text-foreground">
-              {t('选择平台')}
-              <span className="ml-1.5 text-muted-foreground font-normal">
-                {selectedCount}/{authenticatedPlatforms.length}
-              </span>
-            </span>
-            {authenticatedPlatforms.length > 0 && (
-              <button
-                onClick={onSelectAll}
-                className="text-xs text-primary hover:underline"
-              >
-                {selectedCount === authenticatedPlatforms.length ? t('取消全选') : t('全选平台')}
-              </button>
-            )}
-          </>
-        )}
         {isSyncing && (
           <>
             <div className="flex items-center gap-2">
@@ -129,32 +102,20 @@ export function PlatformList({
         {visiblePlatforms.map(platform => {
           const result = results.find(r => r.platform === platform.id)
           const progress = platformProgress.get(platform.id)
-          const isSelected = selected.has(platform.id)
 
           return (
             <PlatformRow
               key={platform.id}
               platform={platform}
-              isSelected={isSelected}
-              isIdle={isIdle}
               isWaiting={isSyncing && !result && !progress}
               isInProgress={isSyncing && !result && !!progress}
               isSkipped={isFinished && !result}
               result={result || null}
               progress={progress || null}
-              onToggle={() => onToggle(platform.id)}
             />
           )
         })}
       </div>
-
-      {/* No platforms logged in */}
-      {isIdle && platforms.length > 0 && authenticatedPlatforms.length === 0 && (
-        <div className="text-center py-4">
-          <p className="text-sm text-muted-foreground">{t('还没有登录任何平台')}</p>
-          <p className="text-xs text-muted-foreground mt-1">{t('请先在浏览器中登录平台账号')}</p>
-        </div>
-      )}
     </div>
   )
 }
@@ -163,60 +124,36 @@ export function PlatformList({
 
 function PlatformRow({
   platform,
-  isSelected,
-  isIdle,
   isWaiting,
   isInProgress,
   isSkipped,
   result,
   progress,
-  onToggle,
 }: {
   platform: Platform
-  isSelected: boolean
-  isIdle: boolean
   isWaiting: boolean
   isInProgress: boolean
   isSkipped: boolean
   result: SyncResult | null
   progress: PlatformProgress | null
-  onToggle: () => void
 }) {
   const isDone = !!result
   const displayName = platformDisplayName(platform.id, platform.name)
 
-  const handleClick = () => {
-    if (!isIdle) return
-    if (platform.isAuthenticated) {
-      onToggle()
-    } else if (platform.homepage) {
-      chrome.tabs.create({ url: platform.homepage })
-    }
-  }
-
   return (
     <div
-      onClick={handleClick}
       className={cn(
         'flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-all duration-200',
-        isIdle && platform.isAuthenticated && 'cursor-pointer hover:bg-muted/60',
-        isIdle && !platform.isAuthenticated && 'cursor-pointer opacity-50 hover:opacity-70',
-        isIdle && isSelected && 'bg-primary/5',
         isDone && result?.success && 'bg-status-published/10',
         isDone && result && !result.success && 'bg-status-danger/10',
       )}
     >
-      {/* Status indicator */}
       <RowIndicator
-        isIdle={isIdle}
-        isSelected={isSelected}
-        isAuthenticated={platform.isAuthenticated}
         isWaiting={isWaiting || isSkipped}
         isInProgress={isInProgress}
         result={result}
       />
 
-      {/* Platform icon */}
       <img
         src={platform.icon}
         alt={displayName}
@@ -226,13 +163,9 @@ function PlatformRow({
         }}
       />
 
-      {/* Platform name */}
       <span className="text-sm flex-1 truncate">{displayName}</span>
 
-      {/* Right side info */}
       <RowInfo
-        platform={platform}
-        isIdle={isIdle}
         isWaiting={isWaiting}
         isInProgress={isInProgress}
         isSkipped={isSkipped}
@@ -243,19 +176,13 @@ function PlatformRow({
   )
 }
 
-// ── Left indicator (checkbox / spinner / check / x) ──
+// ── Left indicator (spinner / check / x) ──
 
 function RowIndicator({
-  isIdle,
-  isSelected,
-  isAuthenticated,
   isWaiting,
   isInProgress,
   result,
 }: {
-  isIdle: boolean
-  isSelected: boolean
-  isAuthenticated: boolean
   isWaiting: boolean
   isInProgress: boolean
   result: SyncResult | null
@@ -275,38 +202,21 @@ function RowIndicator({
     return <Loader2 className="w-4 h-4 animate-spin text-primary flex-shrink-0" strokeWidth={1.6} />
   }
   if (isWaiting) {
-    // 等待中的呼吸环:brief 承诺的「圆环呼吸变实心」;与未登录的静环靠动效区分
+    // 等待中的呼吸环:与终态的结果图标靠动效区分
     return <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/50 animate-pulse flex-shrink-0" />
   }
-  // Idle
-  if (!isAuthenticated) {
-    return <div className="w-4 h-4 rounded-full border-2 border-border flex-shrink-0" />
-  }
-  return (
-    <div className={cn(
-      'w-[18px] h-[18px] rounded border-2 transition-colors flex items-center justify-center flex-shrink-0',
-      isSelected
-        ? 'bg-primary border-primary'
-        : 'border-muted-foreground/40'
-    )}>
-      {isSelected && <Check className="w-3 h-3 text-primary-foreground" strokeWidth={1.6} />}
-    </div>
-  )
+  return <div className="w-4 h-4 rounded-full border-2 border-border flex-shrink-0" />
 }
 
-// ── Right side info (username / stage / link / error) ──
+// ── Right side info (stage / link / error) ──
 
 function RowInfo({
-  platform,
-  isIdle,
   isWaiting,
   isInProgress,
   isSkipped,
   result,
   progress,
 }: {
-  platform: Platform
-  isIdle: boolean
   isWaiting: boolean
   isInProgress: boolean
   isSkipped: boolean
@@ -330,7 +240,6 @@ function RowInfo({
             target="_blank"
             rel="noopener noreferrer"
             className="text-xs text-primary hover:underline flex items-center gap-0.5 whitespace-nowrap"
-            onClick={e => e.stopPropagation()}
           >
             {result.draftOnly ? t('草稿') : t('查看')}
             <ExternalLink className="w-3 h-3" strokeWidth={1.6} />
@@ -389,17 +298,5 @@ function RowInfo({
     return <span className="text-xs text-muted-foreground flex-shrink-0">{t('等待中')}</span>
   }
 
-  // Idle
-  if (!platform.isAuthenticated) {
-    return (
-      <span className="text-xs text-muted-foreground flex items-center gap-0.5 flex-shrink-0">
-        {t('去登录')} <ChevronRight className="w-3 h-3" strokeWidth={1.6} />
-      </span>
-    )
-  }
-  return (
-    <span className="text-xs text-muted-foreground truncate max-w-[80px] flex-shrink-0">
-      {platform.username || t('已登录')}
-    </span>
-  )
+  return null
 }

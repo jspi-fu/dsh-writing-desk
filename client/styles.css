@@ -2016,3 +2016,4 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-dispatch-picks .md-chip:disabled:hover { color: var(--ink3); background: transparent; }
 .md-dispatch-more { align-self: flex-start; color: var(--ink3); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .md-dispatch-more:hover { color: var(--ink); }
+.md-dispatch-send { display: flex; justify-content: flex-end; }

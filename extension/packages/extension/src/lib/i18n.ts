@@ -155,16 +155,6 @@ const EN: Record<string, string> = {
   '密码未找到，请重新添加账户': 'Password not found; add the account again',
   '连接失败': 'Connection failed',
 
-  // History page
-  '暂无同步历史': 'No sync history yet',
-  '最近 {count} 条记录': '{count} recent records',
-  '清空': 'Clear',
-  '同步中...': 'Syncing...',
-  '已取消': 'Cancelled',
-  '{count} 成功': '{count} succeeded',
-  '{count} 失败': '{count} failed',
-  '昨天 {time}': 'Yesterday {time}',
-
   // Dispatch page
   '来自工作台投递：{title}': 'From your desk: {title}',
   '还没有投递任务。在工作台发布对话框点「投递」，任务会出现在这里。': 'No dispatch tasks yet. Click "Dispatch" in the workbench publish dialog and the task will show up here.',
@@ -173,30 +163,11 @@ const EN: Record<string, string> = {
   '投递完成': 'Dispatch complete',
   '投递失败': 'Dispatch failed',
   '清除': 'Clear',
-  '未检测到文章内容': 'No article content detected',
-  '请选择要同步的平台': 'Select at least one platform',
-  '您在 {minutes} 分钟前刚同步过，频繁同步可能触发平台限制。': 'You synced this platform {minutes} min ago; frequent syncing may trigger platform limits.',
-  '不到 1': 'less than 1',
 
-  // Sync dialog
-  '文章同步': 'Article sync',
-  'DSwritesync · 同步': 'DSwritesync · Sync',
-  '关闭': 'Close',
-  '选择平台': 'Choose platforms',
-  '全选平台': 'Select all',
-  '取消全选': 'Deselect all',
-  '同步中': 'Syncing',
-  '同步完成': 'Sync complete',
-  '同步失败': 'Sync failed',
-  '重试失败项 ({count})': 'Retry failed ({count})',
+  // Dispatch progress list
+  '已取消': 'Cancelled',
   '完成': 'Done',
   '取消': 'Cancel',
-  '请先打开文章页面': 'Open an article page first',
-  '请选择同步平台': 'Select a platform to sync to',
-  '同步到 {count} 个平台': 'Sync to {count} platforms',
-  '已登录 {count} 个平台': '{count} platforms signed in',
-  '还没有登录任何平台': 'No platforms are signed in yet',
-  '请先在浏览器中登录平台账号': 'Sign in to the platforms in your browser first',
   '草稿': 'Draft',
   '查看': 'View',
   '失败': 'Failed',
@@ -206,21 +177,11 @@ const EN: Record<string, string> = {
   '保存中': 'Saving',
   '未执行': 'Skipped',
   '等待中': 'Waiting',
-  '当前页面未检测到文章': 'No article detected on this page',
-  '请在文章页面使用': 'Use it on an article page',
-  '已识别文章，选择平台后同步': 'Article detected. Choose platforms to sync.',
-
-  // Content scripts / FAB
   '正在提取文章内容...': 'Extracting article content...',
-  '正在提取文章...': 'Extracting article...',
-  '同步文章': 'Sync article',
-  '点击同步文章到多平台': 'Click to sync this article to multiple platforms',
-  '同步助手': 'Sync assistant',
   '无法连接当前页提取脚本': "Couldn't reach the page extraction script",
   '提取失败': 'Extraction failed',
 
   // Background / bridge client
-  '未知文章': 'Untitled article',
   'CMS 账户不存在': 'CMS account not found',
   '密码未找到': 'Password not found',
   '工作台拒绝了收录请求': 'The desk rejected the capture request',

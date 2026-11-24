@@ -64,6 +64,8 @@ async function handleMessage(message: MessageAction, sender?: chrome.runtime.Mes
     }
 
     case 'CHECK_ALL_AUTH': {
+      // 面板可能先于启动迁移打开:这里再跑一次幂等迁移,避免把旧 CMS id 写进缓存
+      await migrateCmsAccountIds().catch(() => {})
       const allPlatforms = await collectPlatforms(message.payload?.forceRefresh ?? false)
       // 缓存完整平台列表，供 popup 启动时立即渲染;同时把登录态快照写给工作台。
       // 快照走 fire-and-forget:助手没装/没连时不能让侧栏等 NM 超时。
@@ -388,6 +390,8 @@ chrome.alarms.onAlarm.addListener(alarm => {
 async function preCheckPlatformsAuth() {
   logger.info(' Pre-checking platform auth...')
   try {
+    // 先迁移旧 CMS id,快照与缓存才不会带着时间戳 id
+    await migrateCmsAccountIds().catch(() => {})
     const allPlatforms = await collectPlatforms(false) // 使用缓存，不强制刷新
     await chrome.storage.local.set({ platformListCache: allPlatforms }).catch(() => {})
     void syncTargets().catch(error => logger.debug('Target snapshot unavailable:', error))

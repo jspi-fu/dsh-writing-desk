@@ -28,8 +28,11 @@ export function DispatchPage() {
   } = useSyncStore()
 
   useEffect(() => {
-    void recoverSyncState()
-    void loadPlatforms()
+    // 先恢复任务再拉平台:loadPlatforms 结束时不能把 syncing 覆盖回 idle
+    void (async () => {
+      await recoverSyncState()
+      await loadPlatforms()
+    })()
 
     // client.ts 投递新任务时广播:已挂载的投递页重读 pendingSyncTask
     const handleMessage = (
@@ -55,7 +58,6 @@ export function DispatchPage() {
     icon: '/assets/icon-48.png',
     isAuthenticated: true,
   })
-  const selection = new Set(selectedPlatforms)
   const finished = status === 'completed' || status === 'failed' || status === 'cancelled'
 
   return (
@@ -71,7 +73,7 @@ export function DispatchPage() {
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {article ? (
-          <ArticleCard article={article} compact={status !== 'idle'} />
+          <ArticleCard article={article} />
         ) : (
           <div className="rounded-lg bg-muted/50 p-4">
             <EmptyState
@@ -85,13 +87,10 @@ export function DispatchPage() {
         {article && taskPlatforms.length > 0 && (
           <PlatformList
             platforms={taskPlatforms}
-            selected={selection}
             status={status}
             results={results}
             platformProgress={platformProgress}
             selectedPlatforms={selectedPlatforms}
-            onToggle={() => {}}
-            onSelectAll={() => {}}
           />
         )}
 

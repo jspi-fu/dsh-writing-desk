@@ -71,15 +71,16 @@ function PublishDialog({ work, onClose }) {
   const hidden = new Set(targets?.hidden ?? [])
   const authed = new Map((targets?.platforms ?? []).map(row => [row.id, row.authenticated === true]))
   const dslStatus = (id) => !targets ? 'ready' : authed.get(id) ? 'ready' : 'login'
+  const cmsTarget = (site) => ({ id: site.id, label: site.name, kind: 'cms' })
   const mainTargets = [
     ...DSL_TARGETS.filter(target => dslStatus(target.id) === 'ready' && !hidden.has(target.id)),
-    ...(targets?.cms ?? []).filter(site => site.connected).map(site => ({ id: site.id, label: site.name, kind: 'cms' })),
+    ...(targets?.cms ?? []).filter(site => site.connected).map(cmsTarget),
   ]
   const moreTargets = [
     ...DSL_TARGETS.filter(target => !mainTargets.some(row => row.id === target.id))
       .map(target => ({ ...target, disabled: dslStatus(target.id) !== 'ready' })),
     ...(targets?.cms ?? []).filter(site => !site.connected)
-      .map(site => ({ id: site.id, label: site.name, kind: 'cms', disabled: true })),
+      .map(site => ({ ...cmsTarget(site), disabled: true })),
   ]
 
   const chip = (target) => (
@@ -97,14 +98,14 @@ function PublishDialog({ work, onClose }) {
         <div className="md-field">
           <span>{t('投递到浏览器扩展(只到草稿箱)')}</span>
           <div className="md-dispatch-groups">
-            <div className="md-dispatch-group">
-              <span className="md-dispatch-group-title">{t('平台')}</span>
-              <div className="md-dispatch-picks" role="group" aria-label={t('选择平台')}>
-                {mainTargets.filter(target => target.kind === 'dsl').map(chip)}
-                <button type="button" className="md-btn is-small is-primary" onClick={send}
-                  disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
+            {mainTargets.some(target => target.kind === 'dsl') && (
+              <div className="md-dispatch-group">
+                <span className="md-dispatch-group-title">{t('平台')}</span>
+                <div className="md-dispatch-picks" role="group" aria-label={t('选择平台')}>
+                  {mainTargets.filter(target => target.kind === 'dsl').map(chip)}
+                </div>
               </div>
-            </div>
+            )}
             {mainTargets.some(target => target.kind === 'cms') && (
               <div className="md-dispatch-group">
                 <span className="md-dispatch-group-title">{t('自建站')}</span>
@@ -125,6 +126,10 @@ function PublishDialog({ work, onClose }) {
                 )}
               </div>
             )}
+          </div>
+          <div className="md-dispatch-send">
+            <button type="button" className="md-btn is-small is-primary" onClick={send}
+              disabled={busy || !picks.length}>{busy ? t('投递中…') : t('投递')}</button>
           </div>
           {dispatches.length ? <DispatchList dispatches={dispatches} /> : null}
         </div>
