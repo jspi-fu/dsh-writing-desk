@@ -511,26 +511,30 @@ function Desk() {
   )
 }
 
+// 硬依赖只列确实需要的：slots 用于所有槽位注册，layout 供提醒卡片「去处理」切面板
+// （mountScheduleReminder 在 apply 期一次性取 ctx.layout，必须保证服务已就绪），
+// sidebarRightTabs 用于右侧栏页签类型（与参考项目 StashDock 的 client.mjs 一致）。
+// 声明后运行时保证服务就绪，不再靠 try/catch 吞错。
 export const inject = ['slots', 'layout', 'sidebarRightTabs']
 
 export function apply(ctx) {
   ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL_ID }, Desk))
-  mountComposerDock(ctx)
+  mountInputDock(ctx)
   mountWorkspace(ctx)
   mountScheduleReminder(ctx, PANEL_ID)
   mountRightSidebarTab(ctx)
 }
 
 /**
- * 右侧边栏入口：走宿主 ui-sidebar-right 的官方两段式注册——
- * 阶段一 ctx.sidebarRightTabs.register 登记页签类型（含 guide 条目，
- * 右侧栏引导页据此列出入口）；阶段二把 Desk 挂进 keyed 的
- * sidebar.right.pane.tab 槽位（key = 类型的 kind）。ctx.sidebarRightTabs
- * 由宿主 ui-sidebar-right 提供，缺失时静默降级，不影响左侧入口。
+ * 右侧边栏入口：宿主 ui-sidebar-right 用两段式注册——
+ * 类型服务 register 登记页签类型（含 guide 条目，引导页据此列出入口），
+ * 再把 Desk 挂进 keyed 的 sidebar.right.pane.tab 槽位（key = 类型 id）。
+ * 类型服务已按参考项目（StashDock）作为硬依赖声明，运行时保证就绪；
+ * 直接用 ctx.sidebarRightTabs，不再做一次性软探测，也不再用 try/catch 吞异常。
  */
 function mountRightSidebarTab(ctx) {
-  try {
-    ctx.effect(() => ctx.sidebarRightTabs.register({
+  ctx.effect(() => {
+    const disposeType = ctx.sidebarRightTabs.register({
       id: 'dsh-writing-desk',
       kind: PANEL_ID,
       // 页面类型：不认资源地址，仅由 kind 打开（guide 条目 / openTab）
@@ -541,15 +545,14 @@ function mountRightSidebarTab(ctx) {
         title: () => t('图文创作台'),
         icon: GuideIcon,
       }],
-    }), 'dsh-writing-desk: right sidebar tab type')
+    })
     // body 槽位按定义的 id（非 kind）分发
-    ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+    const disposeBody = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
       { name: 'sidebar.right.pane.tab', key: 'dsh-writing-desk' },
       RightTabBody,
-    )), 'dsh-writing-desk: right sidebar tab body')
-  } catch (error) {
-    console.warn('[dsh-writing-desk] right sidebar entry skipped:', error)
-  }
+    ))
+    return () => { disposeBody(); disposeType() }
+  }, 'dsh-writing-desk: right sidebar tab')
 }
 
 /** 右侧栏 guide 条目图标（IconProps：按需取 size，缺省 16）。 */
@@ -563,21 +566,14 @@ function RightTabBody() {
 }
 
 /**
- * 素材接驳条挂进宿主对话输入区下方的 dock 槽位。宿主当前叫
- * conversation.input.dock，旧版本叫 conversation.composer.dock；
- * 两个名字都尝试注入，不存在的槽位会抛错或永不回调，各自 try/catch。
- * 宿主一个都没有(或 slots.inject 不存在)时静默跳过——降级为纯看板。
+ * 素材接驳条挂进宿主对话输入卡上方的 conversation.input.dock（ADR 0007）。
+ * conversation.composer.dock 是旧槽位，当前版本两者并存，重复注册会让两个
+ * DockRail 实例争抢 session-link.js 的 composer/dockRect 单例，只注册当前槽位。
  */
-function mountComposerDock(ctx) {
+function mountInputDock(ctx) {
   if (typeof ctx.slots?.inject !== 'function') return
-  const slots = ['conversation.input.dock', 'conversation.composer.dock']
-  for (const name of slots) {
-    try {
-      ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'writing-desk-dock' }, DockRail))
-    } catch (error) {
-      console.warn('[dsh-writing-desk] composer dock skipped:', name, error)
-    }
-  }
+  const name = 'conversation.input.dock'
+  ctx.slots.inject(name, () => ctx.slots.register({ name, id: 'writing-desk-dock' }, DockRail))
 }
 
 /**

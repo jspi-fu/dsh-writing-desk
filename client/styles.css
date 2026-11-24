@@ -67,15 +67,17 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
   display: flex; align-items: center; gap: 8px;
   padding: 14px 18px 14px max(18px, var(--dsh-frame-leading-clearance, 0px));
   pointer-events: none;
+  background: color-mix(in srgb, var(--glass) 60%, transparent);
+  backdrop-filter: blur(24px) saturate(160%);
 }
 .md-topbar > * { pointer-events: auto; }
-.md-nav { display: flex; gap: 2px; padding: 4px; border-radius: var(--r-lg); background: var(--glass); backdrop-filter: blur(24px) saturate(160%); box-shadow: var(--dsw-elevation-soft); }
+.md-nav { display: flex; gap: 2px; padding: 4px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--dsw-elevation-soft); }
 .md-nav button { height: 32px; padding: 0 13px; border-radius: var(--r-md); color: var(--ink2); font-size: 13px; line-height: 32px; transition: background .18s var(--ease), color .18s var(--ease); white-space: nowrap; }
 .md-nav button:hover { background: var(--hover); color: var(--ink); }
 .md-nav button.is-on { background: var(--primary); color: var(--on-primary); }
 /* 可选模块的弱化标识(工单 #10):数据面板不进主链路,导航上让用户一眼分清 */
 .md-nav .md-nav-optional { margin-left: 5px; font-size: 10px; line-height: 1; font-weight: 400; opacity: .6; }
-.md-sample { height: 28px; padding: 0 11px; border-radius: var(--r-sm); color: var(--ink3); font-size: 12px; line-height: 28px; background: var(--glass); backdrop-filter: blur(24px); box-shadow: var(--dsw-elevation-soft); white-space: nowrap; }
+.md-sample { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-radius: var(--r-md); color: var(--ink3); font-size: 12px; background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--dsw-elevation-soft); white-space: nowrap; }
 .md-sample:hover { color: var(--ink); }
 
 .md-content { flex: 1; min-height: 0; position: relative; animation: md-rise .45s var(--ease) both; }
@@ -88,7 +90,7 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
 .md-icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 32px; height: 32px; border-radius: var(--r-md); color: var(--ink2); transition: background .15s, color .15s; }
 .md-icon-btn:hover { background: var(--hover); color: var(--ink); }
 .md-icon-btn.is-active { background: var(--active); color: var(--ink); }
-.md-topbar .md-icon-btn { background: var(--glass); backdrop-filter: blur(24px); box-shadow: var(--dsw-elevation-soft); width: 36px; height: 36px; }
+.md-topbar .md-icon-btn { background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--dsw-elevation-soft); width: 36px; height: 36px; }
 .md-root .md-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: var(--r-md); border: .5px solid var(--line-strong); background: var(--card); font-size: 13px; line-height: 20px; white-space: nowrap; transition: background .15s, transform .25s var(--ease), border-color .15s; }
 .md-root .md-btn:hover { background: var(--hover); }
 .md-root .md-btn:active { transform: scale(.97); }
@@ -109,7 +111,7 @@ body[data-ds-dark-theme] .md-root { color-scheme: dark; }
 .md-seg { display: inline-flex; gap: 0; padding: 4px; border-radius: var(--r-md); background: var(--hover); flex: none; }
 .md-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 28px; min-width: 32px; padding: 0 10px; border-radius: var(--r-sm); color: var(--ink3); font-size: 12px; transition: background .2s var(--ease), color .2s; white-space: nowrap; }
 .md-seg button:hover { color: var(--ink); }
-.md-topbar .md-seg { background: var(--glass); backdrop-filter: blur(24px) saturate(160%); box-shadow: var(--dsw-elevation-soft); }
+.md-topbar .md-seg { background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--dsw-elevation-soft); }
 .md-seg button.is-on { background: var(--card); color: var(--ink); box-shadow: var(--dsw-elevation-soft); }
 
 /* 胶囊浮层：卡堆放大居中，一页六张两列，成员可拖拽排序、拖出即移出；头部是静态名字 + 张数 + 添加/解散/关闭 */
@@ -409,38 +411,15 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 
 
 /* 新版本提示：顶栏的小胶囊 + 设置底部的版本行 */
-.md-update { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; corner-shape: round; color: var(--ink); font-size: 12px; line-height: 28px; text-decoration: none; white-space: nowrap; background: color-mix(in srgb, var(--accent, #6b5cff) 14%, var(--glass)); box-shadow: inset 0 0 0 .5px var(--line-strong); backdrop-filter: blur(24px); transition: background .15s; }
+.md-update { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; corner-shape: round; color: var(--ink); font-size: 12px; line-height: 28px; text-decoration: none; white-space: nowrap; background: color-mix(in srgb, var(--accent, #6b5cff) 14%, var(--glass)); box-shadow: inset 0 0 0 .5px var(--line-strong); transition: background .15s; }
 .md-update:hover { background: color-mix(in srgb, var(--accent, #6b5cff) 24%, var(--glass)); }
 .md-version { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin: 14px 0 4px; color: var(--ink3); font-size: 12px; line-height: 18px; }
 .md-version a { color: var(--accent, #6b5cff); text-decoration: none; }
 .md-version a:hover { text-decoration: underline; }
 
 
-/* 素材接驳条(ADR 0006):conversation.composer.dock 槽位。
-   四态:dormant 近无(4px 占位,不碰宿主输入框) → listening 虚线行 → armed 实线内衬 → landed 签条。 */
-.md-dock {
-  position: relative; display: flex; align-items: center; justify-content: center; gap: 6px;
-  width: 100%; height: 4px; margin: 0; border-radius: 999px; corner-shape: round;
-  background: transparent; color: var(--ink3); font-size: 12.5px; line-height: 18px;
-  pointer-events: none; overflow: hidden; cursor: default;
-  transition: height .16s var(--ease), opacity .16s var(--ease), background .16s, box-shadow .16s, border-color .16s;
-}
-.md-dock.is-listening {
-  height: 36px; opacity: 1; pointer-events: auto;
-  border: 1px dashed var(--line-strong);
-  background: color-mix(in srgb, var(--card) 55%, transparent);
-}
-.md-dock.is-armed {
-  height: 36px; opacity: 1; pointer-events: auto; border: 1px dashed transparent;
-  background: var(--card);
-  box-shadow: inset 0 0 0 1.5px var(--ink), var(--dsw-elevation-soft);
-  color: var(--ink);
-}
-.md-dock.is-landed {
-  height: 36px; opacity: 1; pointer-events: auto; border: 1px dashed transparent;
-  background: var(--card); box-shadow: var(--dsw-elevation-soft);
-}
-.md-dock-hint { flex: none; animation: md-fade .18s both; white-space: nowrap; }
+/* 素材接驳条样式已迁到 client/dock.css，随 DockRail 注入 conversation.input.dock。
+   它不在 main 槽的 .md-root 树里，这里的规则对它无效，别再搬回来。 */
 .md-ref-chip.is-rest { background: var(--hover); color: var(--ink3); font-variant-numeric: tabular-nums; }
 
 .md-phase.is-reviewing { background: color-mix(in srgb, #4176e6 14%, transparent); }
@@ -1144,50 +1123,7 @@ button.md-stamp:not(:disabled):hover { transform: scale(1.08) rotate(-2deg); }
 .md-schedulebox-foot { display: flex; align-items: center; gap: 6px; }
 .md-schedulebox .md-field > span { font-size: 11.5px; }
 
-/* ══ 排期提醒横幅:挂在宿主 shell.overlay 根级浮层里,不在 .md-root 内 ═════════
-   所以这里自己声明一份最小的 token(--dsw-alias-* 仍是宿主语义色,明暗主题照旧),
-   底色纸白、只有 chrome 允许玻璃;槽位本身点击穿透,横幅必须自己开 pointer-events。
-   位置固定在底部中间,不跟随创作台面板,切到别的面板也还看得见。 */
-.md-reminder {
-  --ink: var(--dsw-alias-label-primary);
-  --ink3: var(--dsw-alias-label-tertiary);
-  --line-strong: var(--dsw-alias-border-l4);
-  --card: var(--dsw-alias-bg-layer-2);
-  --hover: var(--dsw-alias-interactive-bg-hover);
-  --primary: var(--dsw-alias-button-primary-fill);
-  --on-primary: var(--dsw-alias-label-primary-inverted);
-  --r-sm: var(--dsw-radius-sm, 8px);
-  --r-lg: var(--dsw-radius-lg, 16px);
-  --ease: cubic-bezier(.2, .8, .2, 1);
-  position: fixed; left: 50%; bottom: 24px; z-index: 60; transform: translateX(-50%);
-  display: flex; align-items: center; gap: 10px;
-  width: max-content; max-width: min(480px, calc(100vw - 32px));
-  padding: 10px 12px; border-radius: var(--r-lg);
-  background: var(--card); color: var(--ink);
-  box-shadow: inset 0 0 0 .5px var(--line-strong), 0 10px 28px -12px rgba(0, 0, 0, .32);
-  pointer-events: auto;
-  animation: md-reminder-in .3s var(--ease) both;
-}
-@keyframes md-reminder-in {
-}
-.md-reminder-icon {
-  display: grid; place-items: center; flex: none; width: 28px; height: 28px;
-  border-radius: 50%; background: var(--hover); color: var(--ink3);
-}
-.md-reminder-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.md-reminder-eyebrow { color: var(--ink3); font-size: 11px; line-height: 15px; font-variant-numeric: tabular-nums; }
-.md-reminder-title { font-size: 13px; line-height: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.md-reminder-meta { color: var(--ink3); font-size: 11.5px; line-height: 16px; }
-.md-reminder-actions { display: flex; align-items: center; flex: none; gap: 6px; margin-left: 4px; }
-.md-reminder-btn {
-  height: 28px; padding: 0 11px; border-radius: var(--r-sm);
-  border: .5px solid var(--line-strong); background: var(--card); color: var(--ink);
-  font-size: 12px; line-height: 18px; white-space: nowrap; transition: background .15s, transform .25s var(--ease);
-}
-.md-reminder-btn:hover { background: var(--hover); }
-.md-reminder-btn:active { transform: scale(.97); }
-.md-reminder-btn.is-primary { background: var(--primary); color: var(--on-primary); border-color: transparent; }
-.md-reminder-btn.is-primary:hover { background: var(--primary); opacity: .92; }
+/* 排期提醒横幅的样式已迁到 reminder.css，随 shell.overlay 里的横幅一起注入。 */
 
 
 /* ── 作品页(ADR 0015)────────────────────────────────────────────────

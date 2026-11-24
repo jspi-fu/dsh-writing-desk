@@ -1,5 +1,6 @@
 /* 风格 tab 的证据链展示。单独成文件:styles.css 上有用户未提交的改动,不碰它。
-   导入顺序上本文件先于 styles.css 注入,同权重选择器会被覆盖,所以这里统一多带一层 .md-rule。 */
+   本文件由 StyleView 里的 <style>{evidenceCss}</style> 注入 main 槽；
+   选择器多带一层 .md-rule，避免和 styles.css 的同权重规则互相覆盖。 */
 .md-rule .md-rule-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .md-rule .md-rule-head strong { display: inline; }
 .md-rule .md-rule-kind { display: inline-block; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 8px; font-size: 10.5px; line-height: 17px; color: var(--ink2); }

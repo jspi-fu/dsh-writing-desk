@@ -1,0 +1,35 @@
+/* 素材接驳条样式随 DockRail 一起注入 conversation.input.dock。
+   该槽位独立于 main 槽的 .md-root 样式树，styles.css 里的旧 .md-dock 规则拿不到，
+   所以在这里自带局部 token（都给 fallback，不依赖未注册的别名）。 */
+@keyframes md-dock-hint-in { from { opacity: 0; } to { opacity: 1; } }
+
+.md-dock {
+  --dock-ink: var(--dsw-alias-label-primary, #1b1b1f);
+  --dock-ink3: var(--dsw-alias-label-tertiary, #8b8b93);
+  --dock-line: var(--dsw-alias-border-l4, color-mix(in srgb, var(--dock-ink) 32%, transparent));
+  --dock-card: var(--dsw-alias-bg-layer-2, #fff);
+  --dock-ease: cubic-bezier(.2, .8, .2, 1);
+  --dock-shadow: var(--dsw-elevation-soft, 0 1px 3px rgb(0 0 0 / .12));
+  position: relative; display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; height: 4px; margin: 0; border-radius: 999px; corner-shape: round;
+  background: transparent; color: var(--dock-ink3); font-size: 12.5px; line-height: 18px;
+  pointer-events: none; overflow: hidden; cursor: default;
+  transition: height .16s var(--dock-ease), opacity .16s var(--dock-ease), background .16s, box-shadow .16s, border-color .16s;
+}
+.md-dock.is-listening {
+  height: 36px; opacity: 1; pointer-events: auto;
+  border: 1px dashed var(--dock-line);
+  background: color-mix(in srgb, var(--dock-card) 55%, transparent);
+}
+.md-dock.is-armed {
+  height: 36px; opacity: 1; pointer-events: auto; border: 1px dashed transparent;
+  background: var(--dock-card);
+  box-shadow: inset 0 0 0 1.5px var(--dock-ink), var(--dock-shadow);
+  color: var(--dock-ink);
+}
+.md-dock-hint { flex: none; animation: md-dock-hint-in .18s both; white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .md-dock { transition: none; }
+  .md-dock-hint { animation: none; }
+}

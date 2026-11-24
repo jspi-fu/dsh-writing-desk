@@ -97,8 +97,8 @@ Status: accepted(2026-11-18 与用户逐项定案;实现随本 ADR 落地。**�
 
 - **创作不再以纯文本 prompt 开新会话。** 宿主 `conversation.input.dock` 可用时，点卡 / 胶囊 / 多选浮条的「创作」先暂存 `quotePayload`，用 `startSession(undefined, { agentPreset: 'writing' })` 开新会话，由新会话挂载的 dock 把素材以 `insertQuote` **引用签**写进**空草稿**；不自动发送，等用户补一句意图再回车。1.2s 内没有新输入框（宿主复用当前写作会话）则把签补进当前 composer；pending 只消费一次。
 - **两种入口同款渲染。** 「添加到当前会话」与「创作」共用 `quotePayload`：灵感 = 标签「灵感」+ 标题 + 来源/摘要，胶囊 = 标签「胶囊」+ 名字 + 张数。宿主没有 `insertQuote` 时，创作仍回退到旧的纯文本 `prompt` + `whenDraftExists: 'append'`。
-- **dock 槽位兼容。** 宿主当前 slot 名是 `conversation.input.dock`（session scope，standardProps 含 `inputActions`），旧名 `conversation.composer.dock` 只作回退；两处都尝试注册、各自 try/catch。此前只注册旧名，dock 从未挂载，「添加到当前会话」没有输入面，「创作」也只剩纯文本兜底。
-- 证据：`client/session-link.js`（quotePayload / pushQuotes / pendingCreate / claimPendingReference / hasPendingReference）、`client/dock.jsx`（挂载即 claim，失败按 120ms 退避重试 5 次）、`client/index.jsx`（`mountComposerDock` 双槽位）。沙箱实机截图 `chip-verify.png`：创作会话 hero 显示「创作」，输入框只有一枚引用签，草稿未发送。
+- **dock 槽位兼容（2026-11-24 修订，覆盖本节原决定）。** 宿主当前 slot 名是 `conversation.input.dock`（session scope，standardProps 含 `inputActions`），旧名 `conversation.composer.dock` 当前版本仍存在但不再注册。> _Contradicts 本 ADR 原决定「两处都尝试注册、各自 try/catch」，但值得重开：两槽并存时会产生两个 `DockRail`，争抢 `client/session-link.js` 的 `composer`/`dockRect` 单例，后挂载实例覆盖前者；各自的 try/catch 还会静默吞掉注册失败。现在只注册 `conversation.input.dock`，删除旧名循环与 try/catch，函数由 `mountComposerDock` 更名为 `mountInputDock`。_
+- 证据：`client/session-link.js`（quotePayload / pushQuotes / pendingCreate / claimPendingReference / hasPendingReference）、`client/dock.jsx`（挂载即 claim，失败按 120ms 退避重试 5 次；样式自带 `dock.css`）、`client/index.jsx`（`mountInputDock` 单槽位注册）。沙箱实机截图 `chip-verify.png`：创作会话 hero 显示「创作」，输入框只有一枚引用签，草稿未发送。
 
 ## 回滚
 

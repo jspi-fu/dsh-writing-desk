@@ -1,0 +1,50 @@
+/* ══ 排期提醒横幅：独立样式，随横幅一起注入 shell.overlay ═══════════════════
+   横幅挂在宿主 root 级浮层槽位，不在 .md-root 内，拿不到工作台那张 <style>；
+   所以样式必须自带，并跟着横幅组件一起渲染（见 reminder.jsx）。
+   --dsw-alias-* 是宿主语义色 token，明暗主题照旧；位置固定在底部中间，
+   不跟随创作台面板，切到别的面板也还看得见。 */
+.md-reminder {
+  --ink: var(--dsw-alias-label-primary, #1b1b1f);
+  --ink3: var(--dsw-alias-label-tertiary, #8b8b93);
+  --line-strong: var(--dsw-alias-border-l4, color-mix(in srgb, var(--ink) 24%, transparent));
+  --card: var(--dsw-alias-bg-layer-2, #fff);
+  --hover: var(--dsw-alias-interactive-bg-hover, color-mix(in srgb, var(--ink) 6%, transparent));
+  --primary: var(--dsw-alias-button-primary-fill, #1b1b1f);
+  --on-primary: var(--dsw-alias-label-primary-inverted, #fff);
+  --r-sm: var(--dsw-radius-sm, 8px);
+  --r-lg: var(--dsw-radius-lg, 16px);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  position: fixed; left: 50%; bottom: 24px; z-index: 60; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  width: max-content; max-width: min(480px, calc(100vw - 32px));
+  padding: 10px 12px; border-radius: var(--r-lg);
+  background: var(--card); color: var(--ink);
+  box-shadow: inset 0 0 0 .5px var(--line-strong), 0 10px 28px -12px rgba(0, 0, 0, .32);
+  pointer-events: auto;
+  animation: md-reminder-in .3s var(--ease) both;
+}
+@keyframes md-reminder-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .md-reminder { animation: none; }
+}
+.md-reminder-icon {
+  display: grid; place-items: center; flex: none; width: 28px; height: 28px;
+  border-radius: 50%; background: var(--hover); color: var(--ink3);
+}
+.md-reminder-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.md-reminder-eyebrow { color: var(--ink3); font-size: 11px; line-height: 15px; font-variant-numeric: tabular-nums; }
+.md-reminder-title { font-size: 13px; line-height: 18px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.md-reminder-meta { color: var(--ink3); font-size: 11.5px; line-height: 16px; }
+.md-reminder-actions { display: flex; align-items: center; flex: none; gap: 6px; margin-left: 4px; }
+.md-reminder-btn {
+  height: 28px; padding: 0 11px; border-radius: var(--r-sm);
+  border: .5px solid var(--line-strong); background: var(--card); color: var(--ink);
+  font-size: 12px; line-height: 18px; white-space: nowrap; transition: background .15s, transform .25s var(--ease);
+}
+.md-reminder-btn:hover { background: var(--hover); }
+.md-reminder-btn:active { transform: scale(.97); }
+.md-reminder-btn.is-primary { background: var(--primary); color: var(--on-primary); border-color: transparent; }
+.md-reminder-btn.is-primary:hover { background: var(--primary); opacity: .92; }

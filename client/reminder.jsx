@@ -1,6 +1,6 @@
 // 排期提醒:到点后在应用里弹一条横幅(系统通知 DSH 未开放 API,别指望桌面通知)。
 // 挂在宿主 layout 的 shell.overlay 全局常驻槽位(根级 list,跨主面板可见),
-// 所以这里不能用 .md-root 里的样式与变量,颜色/圆角在本文件对应的 CSS 里自带一份。
+// 所以这里不能用 .md-root 里的样式与变量,reminder.css 自带一份并随组件注入槽位。
 //
 // 规则(与 ScheduleBox 的「系统提示」开关同一条链):
 // - 只提醒还没被 ack 的那一次:reminderDue() 比对 scheduledAt 与 remindedAt;
@@ -13,6 +13,7 @@ import { t, useLang } from './i18n.js'
 import { Icon } from './ui.jsx'
 import { fmtWhen } from './util.js'
 import { reminderDue } from '../src/state.js'
+import css from './reminder.css'
 
 const TICK_MS = 30_000
 // 浏览器本地的已读回执:宿主服务端可能还是旧进程(host 半片只在 DSH 启动时加载),
@@ -104,25 +105,30 @@ function ReminderBanner({ panelId, layout }) {
   }
 
   return (
-    <div className="md-reminder" role="status" aria-live="polite">
-      <span className="md-reminder-icon" aria-hidden="true"><Icon name="clock" size={16} /></span>
-      <div className="md-reminder-main">
-        <span className="md-reminder-eyebrow">
-          {t('排期到点')} · {fmtWhen(item.scheduledAt)}
-        </span>
-        <span className="md-reminder-title">{title}</span>
-        <span className="md-reminder-meta">
-          {capsule
-            ? t('整张胶囊 {n} 张素材，一起成稿', { n: members.length })
-            : t('该成稿了')}
-          {alerts.length > 1 ? t(' · 还有 {n} 条提醒', { n: alerts.length - 1 }) : ''}
-        </span>
+    <>
+      {/* 样式必须跟横幅一起进 overlay：主面板那张 <style> 只注入在 main 槽位里，
+          shell.overlay 是另一棵渲染树，拿不到，横幅会退化成裸 HTML。 */}
+      <style>{css}</style>
+      <div className="md-reminder" role="status" aria-live="polite">
+        <span className="md-reminder-icon" aria-hidden="true"><Icon name="clock" size={16} /></span>
+        <div className="md-reminder-main">
+          <span className="md-reminder-eyebrow">
+            {t('排期到点')} · {fmtWhen(item.scheduledAt)}
+          </span>
+          <span className="md-reminder-title">{title}</span>
+          <span className="md-reminder-meta">
+            {capsule
+              ? t('整张胶囊 {n} 张素材，一起成稿', { n: members.length })
+              : t('该成稿了')}
+            {alerts.length > 1 ? t(' · 还有 {n} 条提醒', { n: alerts.length - 1 }) : ''}
+          </span>
+        </div>
+        <div className="md-reminder-actions">
+          <button type="button" className="md-reminder-btn" onClick={open}>{t('去处理')}</button>
+          <button type="button" className="md-reminder-btn is-primary" onClick={ack}>{t('知道了')}</button>
+        </div>
       </div>
-      <div className="md-reminder-actions">
-        <button type="button" className="md-reminder-btn" onClick={open}>{t('去处理')}</button>
-        <button type="button" className="md-reminder-btn is-primary" onClick={ack}>{t('知道了')}</button>
-      </div>
-    </div>
+    </>
   )
 }
 

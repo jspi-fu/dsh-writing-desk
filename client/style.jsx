@@ -160,6 +160,8 @@ export function StyleView() {
   }
   return (
     <div className="md-board-page">
+      {/* 证据链样式单独成文件，这里随 StyleView 注入（main 槽）。 */}
+      <style>{evidenceCss}</style>
       <div className="md-style-page">
         <section className="md-tile md-i-hero md-style-hero">
           <div className="md-hero-copy">

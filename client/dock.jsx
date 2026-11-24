@@ -1,9 +1,10 @@
-// 素材接驳条(ADR 0006):conversation.composer.dock 槽位里的落点。
+// 素材接驳条(ADR 0006/0007):conversation.input.dock 槽位里的落点。
 // 平时近无(4px 占位);素材拖起时淡入虚线行;拖近转实线内衬;落手走「添加到当前会话」同一条路,
 // 引用签由宿主草稿插进去,接驳条自己不再画签条,整个浮层唯一的「作者时刻」。
 import React from 'react'
 import { addReferenceToCurrentSession, claimPendingReference, endRefDrag, hasPendingReference, registerDockRect, setComposer } from './session-link.js'
 import { t, useLang } from './i18n.js'
+import css from './dock.css'
 
 // 三态:dormant(近无) → listening(虚线行) → armed(实线内衬) → 落手回到 dormant。
 // 落手的表现交给「添加到当前会话」同一条路(引用签插进草稿),接驳条自己不再画签条。
@@ -163,22 +164,26 @@ export function DockRail(props) {
   }, [phase, land])
 
   return (
-    <div
-      ref={elRef}
-      className={`md-dock is-${phase}`}
-      data-composer-dock-entry="writing-desk"
-      onDragOver={(event) => {
-        if (!collectDataTransfer(event.dataTransfer, true) && !refRef.current) return
-        event.preventDefault()
-        setPhase('armed')
-      }}
-      onDragLeave={(event) => {
-        if (event.currentTarget.contains(event.relatedTarget)) return
-        setPhase(p => (p === 'armed' ? 'listening' : p))
-      }}
-    >
-      {phase === 'dormant' ? null : <span className="md-dock-hint">{t('拖到这里，把素材写进对话')}</span>}
-    </div>
+    <>
+      {/* 样式随组件注入：dock 在会话输入槽的独立渲染树里，main 槽的 <style>{css}</style> 够不着。 */}
+      <style>{css}</style>
+      <div
+        ref={elRef}
+        className={`md-dock is-${phase}`}
+        data-input-dock-entry="writing-desk"
+        onDragOver={(event) => {
+          if (!collectDataTransfer(event.dataTransfer, true) && !refRef.current) return
+          event.preventDefault()
+          setPhase('armed')
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget.contains(event.relatedTarget)) return
+          setPhase(p => (p === 'armed' ? 'listening' : p))
+        }}
+      >
+        {phase === 'dormant' ? null : <span className="md-dock-hint">{t('拖到这里，把素材写进对话')}</span>}
+      </div>
+    </>
   )
 }
 
