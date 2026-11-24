@@ -24,7 +24,7 @@ const EN: Record<string, string> = {
   '已连接': 'Connected',
   '连接中': 'Connecting',
   '未配对': 'Not paired',
-  'DSwritesync 本地助手连接状态': 'DSwritesync local helper status',
+  'DSH创作助手 本地助手连接状态': 'DSH Writing Assistant local helper status',
   '设置': 'Settings',
 
   // Stash page
@@ -104,8 +104,7 @@ const EN: Record<string, string> = {
   '跟随系统': 'Follow system',
   '中文': 'Chinese',
   '连接': 'Connection',
-  'DSwritesync 本地助手': 'DSwritesync local helper',
-  '扩展与图文创作台经浏览器 Native Messaging 直连：装好两边即自动配对，无需 token 或端口配置。': 'The extension connects to the desk over browser Native Messaging: once both sides are installed, pairing is automatic — no token or port setup.',
+  'DSH创作助手 本地助手': 'DSH Writing Assistant local helper',
   '未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。': 'If not paired: restart DeepSeek Harness once (launching repairs the registration automatically), make sure Node.js is installed, then come back here to check the status.',
   '图文创作台没在运行:现在收录的网页会在它下次启动后出现在灵感墙。': 'The desk is not running: pages captured now will appear on your wall after its next launch.',
   '投递设置': 'Dispatch',

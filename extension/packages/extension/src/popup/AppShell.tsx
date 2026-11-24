@@ -64,7 +64,7 @@ function ConnectionStatus() {
   return (
     <span
       className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-      title={t('DSwritesync 本地助手连接状态')}
+      title={t('DSH创作助手 本地助手连接状态')}
     >
       <span className={cn('h-2 w-2 rounded-full', dot)} />
       {label}
@@ -86,7 +86,7 @@ export function AppShell() {
   const pageName = settingsActive ? t('设置') : activeTab?.label ?? tabs[0].label
 
   useEffect(() => {
-    document.title = `${pageName} · DSwritesync`
+    document.title = `${pageName} · DSH创作助手`
   }, [pageName])
 
   // The FAB used to ask the service worker to open /sync; older storage may

@@ -268,7 +268,7 @@ export function SettingsPage() {
                 <Plug className="h-5 w-5 flex-shrink-0 text-muted-foreground"  strokeWidth={1.6} />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{t('DSwritesync 本地助手')}</p>
+                <p className="text-sm font-medium">{t('DSH创作助手 本地助手')}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{connectionStatus}</p>
                 {bridgeStatus.lastError && (
                   <p className="mt-1 text-xs text-destructive">{t(bridgeStatus.lastError)}</p>
@@ -276,21 +276,20 @@ export function SettingsPage() {
               </div>
             </div>
 
-            <div className="space-y-2 px-4 py-3">
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {t('扩展与图文创作台经浏览器 Native Messaging 直连：装好两边即自动配对，无需 token 或端口配置。')}
-              </p>
-              {!bridgeStatus.paired && (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t('未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。')}
-                </p>
-              )}
-              {bridgeStatus.paired && !bridgeStatus.dshActive && (
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {t('图文创作台没在运行:现在收录的网页会在它下次启动后出现在灵感墙。')}
-                </p>
-              )}
-            </div>
+            {(!bridgeStatus.paired || !bridgeStatus.dshActive) && (
+              <div className="space-y-2 px-4 py-3">
+                {!bridgeStatus.paired && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t('未配对时：重启一次 DeepSeek Harness（启动即自动注册修复），确认本机装有 Node.js，然后回到本页查看状态。')}
+                  </p>
+                )}
+                {bridgeStatus.paired && !bridgeStatus.dshActive && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {t('图文创作台没在运行:现在收录的网页会在它下次启动后出现在灵感墙。')}
+                  </p>
+                )}
+              </div>
+            )}
           </Section>
 
           <Section title={t('通用')}>

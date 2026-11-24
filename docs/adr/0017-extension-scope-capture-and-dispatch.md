@@ -20,6 +20,7 @@ Status: accepted(2026-11-24 与用户逐项定案;本 ADR 推翻 ADR 0010 的「
 | 事项 | 决策 |
 | --- | --- |
 | 身份 | 扩展是工作台的浏览器端,不是可独立使用的同步产品。每个功能都必须服务工作台的数据闭环:网页进灵感,作品出草稿。 |
+| 品牌 | 用户面产品名改为 DSH创作助手(原 DSwritesync);NM host、包名、扩展 ID 等技术标识不变,配对与投递箱契约不受影响。 |
 | 保留 | 收录(当前页/选区 → inbox);投递执行(只跑工作台下发的任务,显示逐平台进度与结果);账号(DSL 平台登录态与 CMS 自建站账户);设置与配对;适配器与预处理(含 WordPress / Typecho / MetaWeblog);头条 fetch 中继;提取内容脚本(`EXTRACT_SELECTION` / `EXTRACT_ARTICLE`)。 |
 | 删除 | 当前页独立同步;历史页与 `syncHistory` 持久化;通用悬浮按钮与 `floatingButtonEnabled` 设置;公众号文章页 FAB 与同步 iframe;公众号后台编辑器 FAB 与 iframe。 |
 | 侧栏 | 三个 tab:收录 / 投递 / 账号;默认收录;设置由齿轮进入。投递页只保留工作台下发的任务,不再有「当前页」来源。 |

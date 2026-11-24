@@ -131,9 +131,9 @@ dsh plugin --profile web add dsh-writing-desk
 <summary><b>能直接发布吗？</b></summary>
 <br>
 
-能发到<b>草稿箱</b>。装上 <a href="extension/">DSwritesync</a> 浏览器扩展即可：扩展与图文创作台经 Native Messaging 自动配对（插件在 DSH 启动时注册本地助手，零 token、零粘贴、零端口），作品编辑器一键把成稿投递到 20 个平台的草稿箱（公众号、知乎、掘金、微博、B 站、豆瓣、百家号、搜狐号、CSDN、思否、语雀、雪球、人人都是产品经理、51CTO、慕课手记、开源中国、博客园、东方财富、阿里云开发者社区、小红书；多数平台用你自己的登录态走官方 Web 接口，小红书走页面自动化，正文与图片由扩展转存）。各平台没有统一的正式发布接口，草稿到你确认后才算发布；小红书只保存到浏览器本地草稿箱，扩展不会点发布。
+能发到<b>草稿箱</b>。装上 <a href="extension/">DSH创作助手</a> 浏览器扩展即可：扩展与图文创作台经 Native Messaging 自动配对（插件在 DSH 启动时注册本地助手，零 token、零粘贴、零端口），作品编辑器一键把成稿投递到 20 个平台的草稿箱（公众号、知乎、掘金、微博、B 站、豆瓣、百家号、搜狐号、CSDN、思否、语雀、雪球、人人都是产品经理、51CTO、慕课手记、开源中国、博客园、东方财富、阿里云开发者社区、小红书；多数平台用你自己的登录态走官方 Web 接口，小红书走页面自动化，正文与图片由扩展转存）。各平台没有统一的正式发布接口，草稿到你确认后才算发布；小红书只保存到浏览器本地草稿箱，扩展不会点发布。
 
-DSwritesync 侧栏有「收录」（整页或选区一键收进灵感墙；DSH 没开着也照收，启动后自动出现在灵感墙）与「投递」（把工作台下发的成稿送到所选平台草稿箱，含 WordPress 等自建站）；两者共用同一个设置页。收录与投递执行是扩展的全部职责，它不再单独提供「同步当前网页」。
+DSH创作助手 侧栏有「收录」（整页或选区一键收进灵感墙；DSH 没开着也照收，启动后自动出现在灵感墙）与「投递」（把工作台下发的成稿送到所选平台草稿箱，含 WordPress 等自建站）；两者共用同一个设置页。收录与投递执行是扩展的全部职责，它不再单独提供「同步当前网页」。
 
 没有浏览器扩展时，照旧复制正文或保存文件夹：默认在 `~/Documents/图文创作台/`，里面有图文正文、封面首图和配图。
 
@@ -179,7 +179,7 @@ DSwritesync 侧栏有「收录」（整页或选区一键收进灵感墙；DSH �
 npm install && npm test        # Host 逻辑测试
 npm run watch                  # 监听 client/ 并重新打包
 npm run index                  # 发布后更新 index.json 的版本和发布时间
-cd extension && pnpm install && pnpm build:extension  # 构建 DSwritesync 扩展
+cd extension && pnpm install && pnpm build:extension  # 构建 DSH创作助手 扩展
 scripts/dev-sandbox.sh         # 在隔离的 DSH_HOME 里跑网页版，不碰 ~/.dsh
 npm pack                       # 打出可安装的 tgz
 ```
@@ -190,7 +190,7 @@ npm pack                       # 打出可安装的 tgz
 | --- | --- |
 | `client/` | 界面：灵感墙、作品页、排期、风格、作品编辑器、素材接驳条 |
 | `src/` | Host 接口、状态机、harness 工具与 skill、本地存储、桥接投递箱 |
-| `extension/` | DSwritesync：Wechatsync 2.0.10 的 GPL-3.0 vendored fork + StashDock 式收录侧栏（在 `extension/packages/extension`） |
+| `extension/` | DSH创作助手（原 DSwritesync）：Wechatsync 2.0.10 的 GPL-3.0 vendored fork + StashDock 式收录侧栏（在 `extension/packages/extension`） |
 | `native/` | 本地助手（helper.bat/helper.mjs）与 NM 注册器：浏览器扩展经 Native Messaging 与投递箱交换数据，主仓库 MIT 自研 |
 | `scripts/` | 打包、沙盒、示例素材生成、插件市场索引 |
 | `assets/` | 示例图片和视频，由 `scripts/gen-assets.py` 程序绘制（logo 为手工设计，存档见 `docs/logo-final/`） |
@@ -223,6 +223,6 @@ npm pack                       # 打出可安装的 tgz
 
 也感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 团队提供了开放的插件系统。
 
-浏览器扩展 [DSwritesync](extension/) 基于 [Wechatsync](https://github.com/wechatsync/Wechatsync) v2（GPL-3.0）源码二次开发，收录侧栏的交互与视觉参考了 StashDock（AGPL-3.0，仅借鉴未复制代码）；两者 upstream 的贡献者同样值得致谢。
+浏览器扩展 [DSH创作助手](extension/)（原 DSwritesync）基于 [Wechatsync](https://github.com/wechatsync/Wechatsync) v2（GPL-3.0）源码二次开发，收录侧栏的交互与视觉参考了 StashDock（AGPL-3.0，仅借鉴未复制代码）；两者 upstream 的贡献者同样值得致谢。
 
 <p align="center"><sub><a href="LICENSE">MIT</a> · 社区插件，与 DeepSeek 无关。DeepSeek Harness 的名称和标识归其所有者所有。</sub></p>
